@@ -1597,7 +1597,8 @@ export const APP = String.raw`
   // keeps select=* too: that one is meant to be everything.
   var CARD_COLS = "id,user_id,created_at,url,shortcode,platform,kind,author,title,thumb_url,category," +
     "muscle_groups,equipment,difficulty,duration_minutes,blocks,tags,has_full_workout,favorite,notes," +
-    "source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision";
+    "source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision," +
+    "pumpy_cover";
   var CARD_KEYS = CARD_COLS.split(",");
 
   // Two rows are the same card when those columns agree, and the caption too when
@@ -2501,7 +2502,7 @@ export const APP = String.raw`
     });
     function card(w, i, groupKey) {
       var key = (groupKey || "flat") + ":" + w.id;
-      var sig = JSON.stringify([w.title, w.ingest_status, w.media_stage, w.platform, w.thumb_url,
+      var sig = JSON.stringify([w.title, w.ingest_status, w.media_stage, w.platform, w.thumb_url, w.pumpy_cover,
         w.favorite, w.duration_minutes, w.category, w.difficulty, cardMeta(w)]);
       var entry = previous[key];
       // Pressed: kept as it is, with its old signature so the catch-up redraws it.
@@ -2616,6 +2617,48 @@ export const APP = String.raw`
     reconcile(grid, groups); gridCards = next;
   }
 
+  // ---------- a card's picture ----------
+  //
+  // A coach's card has no video, so it wears one of Pumpy's drawings. The server
+  // picks one when the card is made (confirm_pumpy_proposal), from the drawings
+  // none of this person's Pumpy cards shows yet, and keeps its name on the row.
+  // This list is the files in assets/pumpy/covers, in the server's order; new
+  // drawings are appended there and here together.
+  var pumpyCoverList = null;
+  function pumpyCovers() {
+    return pumpyCoverList || (pumpyCoverList = ("ab-wheel-rollout agility-ladder back-extension barbell-squat " +
+      "bear-crawl biceps-curl box-step-up boxing-bag chest-press-machine deadlift dumbbell-lunge elliptical " +
+      "farmers-carry goblet-squat hamstring-curl incline-bench-press jump-rope jumping-jack kettlebell-swing " +
+      "landmine-press leg-extension medicine-ball-slam pec-deck-fly pull-up resistance-band-lateral-walk " +
+      "rowing-erg side-plank sled-push stair-climber stationary-bike tire-flip treadmill triceps-dip " +
+      "wall-sit yoga-warrior").split(" "));
+  }
+
+  // A card made before drawings were picked has none on its row, and a name this
+  // build does not ship (one a later build added) has no file here. Either way the
+  // card's id chooses: the first eight hex digits into the first 35 drawings, which
+  // pumpy_cover_fallback computes the same way, so the server counts this drawing
+  // as shown when it picks the next, and the card looks the same on every paint.
+  function pumpyCover(w) {
+    var list = pumpyCovers();
+    if (w.pumpy_cover && list.indexOf(w.pumpy_cover) >= 0) return w.pumpy_cover;
+    var h = parseInt(String(w.id || "").slice(0, 8), 16);
+    return list[isFinite(h) ? h % 35 : 0];
+  }
+
+  function cardArt(w) {
+    return w.platform === "pumpy" ? pumpyAsset("covers/" + pumpyCover(w) + ".webp") : w.thumb_url;
+  }
+
+  // What the tile shows with no picture, or one that would not load: a coach's
+  // card still says whose it is.
+  function noArt(w) {
+    if (w.platform !== "pumpy") return icon(el("div", "noimg"), "dumbbell");
+    var pi = el("div", "noimg pumpyimg");
+    pi.innerHTML = PUMPY_MARK;   // constant markup
+    return pi;
+  }
+
   // One card, wherever it is going: the flat grid, or a section of it. i is its
   // place on the page, so the first four are still the ones told to hurry. Listed
   // under three muscles it flies in once — cardIn is how a NEW card arrives, and
@@ -2646,10 +2689,9 @@ export const APP = String.raw`
       card.onclick = function () { openDetail(w); };
       return card;
     }
-    var cover = w.platform === "pumpy" ? pumpyAsset("workout-" +
-      (w.category === "Legs" ? "legs" : w.category === "Core" ? "core" : "upper") + ".webp") : w.thumb_url;
+    var cover = cardArt(w);
     if (cover) {
-      var img = el("img", w.platform === "pumpy" ? "pumpy-cover" : null);
+      var img = el("img");
       // The four above the fold are the first thing anybody looks at, so they
       // are told to hurry; the rest keep the lazy default. decoding=async on all
       // of them, because a thumbnail decoded on the main thread is one decoded
@@ -2662,7 +2704,7 @@ export const APP = String.raw`
       img.onload = function () { tw.classList.remove("loading"); tw.classList.add("loaded"); };
       img.onerror = function () {
         tw.classList.remove("loading");
-        tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
+        tw.appendChild(noArt(w));
       };
       // Cached: a skeleton for a wait already over is the flicker it prevents.
       if (img.complete && img.naturalWidth) {
@@ -2672,13 +2714,7 @@ export const APP = String.raw`
       tw.appendChild(img);
     } else {
       tw.classList.remove("loading");
-      if (w.platform === "pumpy") {
-        var pi = el("div", "noimg pumpyimg");
-        pi.innerHTML = PUMPY_MARK;
-        tw.appendChild(pi);
-      } else {
-        tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
-      }
+      tw.appendChild(noArt(w));
     }
     // The star was a character a screen reader read out; an aria-hidden icon is
     // not, so the state it stands for has to be said in words.
@@ -3136,14 +3172,14 @@ export const APP = String.raw`
   // closes the card it was meant to open.
   function fromChip(src) {
     var b = el("button", "fromchip"), tw = el("span", "fromthumb"), t = el("span", "fromtext");
-    if (src.thumb_url) {
+    var art = cardArt(src);
+    if (art) {
       var img = el("img");
       img.loading = "lazy";
       img.alt = "";
-      img.src = src.thumb_url;
+      img.src = art;
       tw.appendChild(img);
-    } else if (src.platform === "pumpy") tw.appendChild(pumpyMark("pmark"));
-    else tw.appendChild(ic("dumbbell"));
+    } else tw.appendChild(ic("dumbbell"));
     if (src.author) t.appendChild(el("span", "fromwho", "@" + src.author));
     t.appendChild(el("span", "fromtitle", src.title || "Untitled workout"));
     b.appendChild(tw);
@@ -12192,8 +12228,8 @@ export const APP = String.raw`
     if (list.length) {
       var w = list[0].w;
       var body = el("div", "tbody");
-      var thumb;
-      if (w.thumb_url) { thumb = el("img", "tthumb"); thumb.src = w.thumb_url; thumb.alt = ""; }
+      var thumb, art = cardArt(w);
+      if (art) { thumb = el("img", "tthumb"); thumb.src = art; thumb.alt = ""; }
       else thumb = el("div", "tthumb");
       body.appendChild(thumb);
       var txt = el("div", "ttxt");
@@ -12291,10 +12327,10 @@ export const APP = String.raw`
   function planItem(p) {
     var w = planWorkout(p.workout_id);
     if (!w) return null;
-    var item = el("div", "planitem");
-    if (w.thumb_url) {
+    var item = el("div", "planitem"), art = cardArt(w);
+    if (art) {
       var img = el("img");
-      img.src = w.thumb_url;
+      img.src = art;
       img.alt = "";
       item.appendChild(img);
     }
@@ -12714,10 +12750,10 @@ export const APP = String.raw`
       list.appendChild(el("p", "lede", "Save a workout first, then you can plan it."));
     }
     state.workouts.forEach(function (w) {
-      var row = el("button", "pickrow");
-      if (w.thumb_url) {
+      var row = el("button", "pickrow"), art = cardArt(w);
+      if (art) {
         var img = el("img");
-        img.src = w.thumb_url;
+        img.src = art;
         img.alt = "";
         row.appendChild(img);
       }
@@ -14466,9 +14502,10 @@ export const APP = String.raw`
       var on = pumpy.refs.indexOf(w.id) >= 0;
       var row = el("button", "pickrow" + (on ? " on" : ""));
       row.setAttribute("aria-pressed", on ? "true" : "false");
-      if (w.thumb_url) {
+      var art = cardArt(w);
+      if (art) {
         var img = el("img");
-        img.src = w.thumb_url;
+        img.src = art;
         img.alt = "";
         row.appendChild(img);
       }

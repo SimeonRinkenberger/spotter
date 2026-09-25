@@ -513,11 +513,13 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
 
 // ---------- C7 ----------
 {
-  // Every column of public.workouts (information_schema, production, 24 Sept).
+  // Every column of public.workouts (information_schema, production, 24 Sept),
+  // plus pumpy_cover from 20260925100000_pumpy_covers.
   const TABLE = ['id', 'user_id', 'created_at', 'url', 'shortcode', 'platform', 'kind', 'author', 'title', 'caption', 'thumb_url',
     'category', 'muscle_groups', 'equipment', 'difficulty', 'duration_minutes', 'calories', 'blocks', 'tags', 'has_full_workout',
     'favorite', 'rating', 'notes', 'source_url', 'ingest_status', 'ingest_error', 'ingest_job_id', 'confidence', 'extracted_by',
-    'media_stage', 'read_quality', 'read_plan', 'user_workout_override', 'user_title_override', 'user_category_override', 'user_edit_revision'];
+    'media_stage', 'read_quality', 'read_plan', 'user_workout_override', 'user_title_override', 'user_category_override', 'user_edit_revision',
+    'pumpy_cover'];
   const ctx = vm.createContext({ JSON, Object, Array, String, Number });
   vm.runInContext(CARD_DECL, ctx);
   const keys = JSON.parse(vm.runInContext('JSON.stringify(CARD_KEYS)', ctx));

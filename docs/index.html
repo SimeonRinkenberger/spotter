@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-As7NLI6KtCDgWg15zthF4btz1Ljk2jQKk5wVMHLMWB4=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'sha256-CQNFLcz5MlTAdWt5inGERAISIeY1RNjLsb/SxAB0LXQ=' https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.115.0/ https://challenges.cloudflare.com https://accounts.google.com/gsi/client https://appleid.cdn-apple.com/appleauth/; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://api.fontshare.com https://accounts.google.com/gsi/style; font-src 'self' data: https://fonts.gstatic.com https://cdn.fontshare.com; img-src 'self' data: blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://i.ytimg.com https://simeonrinkenberger.github.io; media-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co https://simeonrinkenberger.github.io; connect-src 'self' blob: https://mtzevoxxpsktmrbbuxva.supabase.co wss://mtzevoxxpsktmrbbuxva.supabase.co https://accounts.google.com/gsi/; frame-src https://www.tiktok.com https://www.instagram.com https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com https://accounts.google.com/gsi/ https://appleid.apple.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="google-site-verification" content="unLzcq6TBz9Bm6q4KHpbTmZ88dQ_tTnViacVX5BLzS0">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Spotter by Quarterdeck Collective — save any workout video</title>
@@ -8593,10 +8593,6 @@ details.details-moving > :not(summary) {
 .recommendation {
   color: var(--ember-ink);
 }
-.thumbwrap img.pumpy-cover {
-  object-fit: contain;
-  background: #f8efdf;
-}
 .block-swipe {
   margin-bottom: 8px;
   border-radius: 12px;
@@ -10415,7 +10411,7 @@ details.details-moving > :not(summary) {
     }, function() {
     }), loaded;
   }
-  var CARD_COLS = "id,user_id,created_at,url,shortcode,platform,kind,author,title,thumb_url,category,muscle_groups,equipment,difficulty,duration_minutes,blocks,tags,has_full_workout,favorite,notes,source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision", CARD_KEYS = CARD_COLS.split(",");
+  var CARD_COLS = "id,user_id,created_at,url,shortcode,platform,kind,author,title,thumb_url,category,muscle_groups,equipment,difficulty,duration_minutes,blocks,tags,has_full_workout,favorite,notes,source_url,ingest_status,ingest_error,confidence,media_stage,read_quality,user_workout_override,user_edit_revision,pumpy_cover", CARD_KEYS = CARD_COLS.split(",");
   function cardSig(w) {
     for (var o = {}, i = 0; i < CARD_KEYS.length; i++) o[CARD_KEYS[i]] = w[CARD_KEYS[i]] === void 0 ? null : w[CARD_KEYS[i]];
     return JSON.stringify(o);
@@ -11129,6 +11125,7 @@ details.details-moving > :not(summary) {
         w.media_stage,
         w.platform,
         w.thumb_url,
+        w.pumpy_cover,
         w.favorite,
         w.duration_minutes,
         w.category,
@@ -11207,6 +11204,24 @@ details.details-moving > :not(summary) {
       }), sec2.appendChild(box), groups.push(sec2);
     }), reconcile(grid, groups), gridCards = next;
   }
+  var pumpyCoverList = null;
+  function pumpyCovers() {
+    return pumpyCoverList || (pumpyCoverList = "ab-wheel-rollout agility-ladder back-extension barbell-squat bear-crawl biceps-curl box-step-up boxing-bag chest-press-machine deadlift dumbbell-lunge elliptical farmers-carry goblet-squat hamstring-curl incline-bench-press jump-rope jumping-jack kettlebell-swing landmine-press leg-extension medicine-ball-slam pec-deck-fly pull-up resistance-band-lateral-walk rowing-erg side-plank sled-push stair-climber stationary-bike tire-flip treadmill triceps-dip wall-sit yoga-warrior".split(" "));
+  }
+  function pumpyCover(w) {
+    var list = pumpyCovers();
+    if (w.pumpy_cover && list.indexOf(w.pumpy_cover) >= 0) return w.pumpy_cover;
+    var h = parseInt(String(w.id || "").slice(0, 8), 16);
+    return list[isFinite(h) ? h % 35 : 0];
+  }
+  function cardArt(w) {
+    return w.platform === "pumpy" ? pumpyAsset("covers/" + pumpyCover(w) + ".webp") : w.thumb_url;
+  }
+  function noArt(w) {
+    if (w.platform !== "pumpy") return icon(el("div", "noimg"), "dumbbell");
+    var pi = el("div", "noimg pumpyimg");
+    return pi.innerHTML = PUMPY_MARK, pi;
+  }
   function cardNode(w, i) {
     var pending2 = isPending(w), failed = isFailed(w), card = el("button", "carditem" + (pending2 ? " pending" : "") + (failed ? " failed" : ""));
     pending2 && pendingMotion && pendingMotion.observe(card), card.setAttribute("data-id", w.id), cardIn(card, w.id);
@@ -11223,19 +11238,16 @@ details.details-moving > :not(summary) {
         openDetail(w);
       }, card;
     }
-    var cover = w.platform === "pumpy" ? pumpyAsset("workout-" + (w.category === "Legs" ? "legs" : w.category === "Core" ? "core" : "upper") + ".webp") : w.thumb_url;
+    var cover = cardArt(w);
     if (cover) {
-      var img = el("img", w.platform === "pumpy" ? "pumpy-cover" : null);
+      var img = el("img");
       img.loading = i < 4 ? "eager" : "lazy", img.decoding = "async", i < 4 && img.setAttribute("fetchpriority", "high"), img.alt = "", img.src = cover, img.onload = function() {
         tw.classList.remove("loading"), tw.classList.add("loaded");
       }, img.onerror = function() {
-        tw.classList.remove("loading"), tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
+        tw.classList.remove("loading"), tw.appendChild(noArt(w));
       }, img.complete && img.naturalWidth && (tw.classList.remove("loading"), tw.classList.add("loaded")), tw.appendChild(img);
-    } else if (tw.classList.remove("loading"), w.platform === "pumpy") {
-      var pi = el("div", "noimg pumpyimg");
-      pi.innerHTML = PUMPY_MARK, tw.appendChild(pi);
     } else
-      tw.appendChild(icon(el("div", "noimg"), "dumbbell"));
+      tw.classList.remove("loading"), tw.appendChild(noArt(w));
     if (w.favorite) {
       var fv = icon(el("div", "fav"), "star");
       fv.setAttribute("role", "img"), fv.setAttribute("aria-label", "Favourite"), tw.appendChild(fv);
@@ -11436,11 +11448,11 @@ details.details-moving > :not(summary) {
     }), out;
   }
   function fromChip(src) {
-    var b = el("button", "fromchip"), tw = el("span", "fromthumb"), t = el("span", "fromtext");
-    if (src.thumb_url) {
+    var b = el("button", "fromchip"), tw = el("span", "fromthumb"), t = el("span", "fromtext"), art = cardArt(src);
+    if (art) {
       var img = el("img");
-      img.loading = "lazy", img.alt = "", img.src = src.thumb_url, tw.appendChild(img);
-    } else src.platform === "pumpy" ? tw.appendChild(pumpyMark("pmark")) : tw.appendChild(ic("dumbbell"));
+      img.loading = "lazy", img.alt = "", img.src = art, tw.appendChild(img);
+    } else tw.appendChild(ic("dumbbell"));
     return src.author && t.appendChild(el("span", "fromwho", "@" + src.author)), t.appendChild(el("span", "fromtitle", src.title || "Untitled workout")), b.appendChild(tw), b.appendChild(t), b.onclick = function() {
       openDetail(src, !0), $("detail").scrollTop = 0;
     }, b;
@@ -16379,8 +16391,8 @@ details.details-moving > :not(summary) {
     if (more.setAttribute("aria-label", "More"), more.onclick = function() {
       openSheet("trainmore");
     }, head.appendChild(more), card.appendChild(head), list.length) {
-      var w = list[0].w, body = el("div", "tbody"), thumb;
-      w.thumb_url ? (thumb = el("img", "tthumb"), thumb.src = w.thumb_url, thumb.alt = "") : thumb = el("div", "tthumb"), body.appendChild(thumb);
+      var w = list[0].w, body = el("div", "tbody"), thumb, art = cardArt(w);
+      art ? (thumb = el("img", "tthumb"), thumb.src = art, thumb.alt = "") : thumb = el("div", "tthumb"), body.appendChild(thumb);
       var txt = el("div", "ttxt"), t = el("button", "ttitle", w.title || "Workout");
       t.onclick = function() {
         openDetail(w);
@@ -16438,10 +16450,10 @@ details.details-moving > :not(summary) {
   function planItem(p) {
     var w = planWorkout(p.workout_id);
     if (!w) return null;
-    var item = el("div", "planitem");
-    if (w.thumb_url) {
+    var item = el("div", "planitem"), art = cardArt(w);
+    if (art) {
       var img = el("img");
-      img.src = w.thumb_url, img.alt = "", item.appendChild(img);
+      img.src = art, img.alt = "", item.appendChild(img);
     }
     var t = el("div", "pt", w.title || "Workout");
     t.onclick = function() {
@@ -16690,10 +16702,10 @@ details.details-moving > :not(summary) {
   function openPicker(day, label) {
     var list = $("picklist");
     list.innerHTML = "", $("picktitle").textContent = "Add to " + (label || day), state.workouts.length || list.appendChild(el("p", "lede", "Save a workout first, then you can plan it.")), state.workouts.forEach(function(w) {
-      var row = el("button", "pickrow");
-      if (w.thumb_url) {
+      var row = el("button", "pickrow"), art = cardArt(w);
+      if (art) {
         var img = el("img");
-        img.src = w.thumb_url, img.alt = "", row.appendChild(img);
+        img.src = art, img.alt = "", row.appendChild(img);
       }
       var t = el("div", "pt");
       t.appendChild(el("b", null, w.title || "Workout")), t.appendChild(el("span", null, [w.category, fmtDur(w.duration_minutes)].filter(Boolean).join(" \xB7 "))), row.appendChild(t), row.onclick = function() {
@@ -17764,9 +17776,11 @@ details.details-moving > :not(summary) {
     });
     rows.length || list.appendChild(el("p", "lede", state.workouts.length ? "Nothing by that name." : "Save a workout first, then you can point Pumpy at it.")), rows.forEach(function(w) {
       var on = pumpy.refs.indexOf(w.id) >= 0, row = el("button", "pickrow" + (on ? " on" : ""));
-      if (row.setAttribute("aria-pressed", on ? "true" : "false"), w.thumb_url) {
+      row.setAttribute("aria-pressed", on ? "true" : "false");
+      var art = cardArt(w);
+      if (art) {
         var img = el("img");
-        img.src = w.thumb_url, img.alt = "", row.appendChild(img);
+        img.src = art, img.alt = "", row.appendChild(img);
       }
       var t = el("div", "pt");
       t.appendChild(el("b", null, w.title || "Workout")), t.appendChild(el("span", null, [w.author ? "@" + w.author : "", w.category, fmtDur(w.duration_minutes)].filter(Boolean).join(" \xB7 "))), row.appendChild(t), row.appendChild(icon(el("span", "ck"), "check")), full && !on && (row.disabled = !0), row.onclick = function() {
