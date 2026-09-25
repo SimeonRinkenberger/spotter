@@ -362,17 +362,24 @@ export const MARKUP_BODY = String.raw`</head>
 
 <!-- ---------- workout mode ---------- -->
 <div id="workout">
+  <!-- Finish sits top right, where Hevy and Strong keep it: always there, never
+       the biggest thing on the screen. At 375px the right side has room for the
+       list and Finish only, so sound moved beside the X and the clock keeps the
+       centre line. -->
   <div class="wtop">
-    <button class="iconbtn" id="wclose" aria-label="Exit workout"><svg class="ic"><use href="#i-x"></use></svg></button>
-    <div class="wclock" id="wclock">0:00</div>
     <!-- Sounds start themselves, so the switch for them belongs where they play,
          not three taps away in Settings. aria-pressed carries the state that the
          icon carries for everyone else. -->
     <div class="wtools">
+      <button class="iconbtn" id="wclose" aria-label="Exit workout"><svg class="ic"><use href="#i-x"></use></svg></button>
       <button class="iconbtn" id="wsound" aria-label="Timer sounds" aria-pressed="true"><svg class="ic"><use href="#i-volume-2"></use></svg></button>
+    </div>
+    <div class="wclock" id="wclock">0:00</div>
+    <div class="wtools">
       <button class="iconbtn" id="wlist" aria-label="All exercises"><svg class="ic"><use href="#i-list"></use></svg></button>
       <!-- Only on a past session, where it is the one place Delete lives. -->
       <button class="iconbtn" id="wmore" aria-label="Session" aria-haspopup="dialog"><svg class="ic"><use href="#i-more"></use></svg></button>
+      <button class="chip wfinish" id="wfinish">Finish</button>
     </div>
   </div>
   <div class="wdots" id="wdots"></div>
@@ -389,11 +396,15 @@ export const MARKUP_BODY = String.raw`</head>
         <button class="chip" id="restskip">Skip rest</button></div>
     </div>
   </div>
+  <!-- The thing done most gets the big button, and one button: app.ts (goState)
+       relabels it for the screen — Log set 2 · 8 × 90 lb, Start 0:45, Round 3
+       done, Finish workout. The row above it moves between exercises and opens
+       the exercise sheet. -->
   <div class="wbottom">
     <button class="wnav" id="wprev" aria-label="Previous exercise"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
-    <button class="btn ghost" id="waddexercise">+ Add exercise</button>
-    <button class="wfinish" id="wfinish">Finish workout</button>
+    <button class="btn ghost" id="wexmore" aria-haspopup="dialog"><svg class="ic"><use href="#i-more"></use></svg>Exercise</button>
     <button class="wnav" id="wnext" aria-label="Next exercise"><svg class="ic"><use href="#i-arrow-right"></use></svg></button>
+    <button class="btn wgo" id="wgo"><svg class="ic"><use href="#i-check"></use></svg><span></span></button>
   </div>
 </div>
 
