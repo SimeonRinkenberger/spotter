@@ -28,7 +28,7 @@ import vm from 'node:vm';
 
 const APP = fs.readFileSync('supabase/functions/spotter/app.ts', 'utf8');
 const STYLE = fs.readFileSync('supabase/functions/spotter/style.ts', 'utf8');
-const PAGE = fs.readFileSync('docs/index.html', 'utf8');
+const PAGE = fs.readFileSync('web-dist/index.html', 'utf8');
 
 function between(src, a, b) {
   const i = src.indexOf(a), j = src.indexOf(b, i);
@@ -808,7 +808,7 @@ function rule(src, sel) {
   return m[1].replace(/\s+/g, ' ');
 }
 
-for (const [where, src] of [['style.ts', STYLE], ['docs/index.html', PAGE]]) {
+for (const [where, src] of [['style.ts', STYLE], ['web-dist/index.html', PAGE]]) {
   ok(where + ': a page cannot scroll sideways and hands sideways drags to its parent', () => {
     const p = rule(src, '.page');
     assert.match(p, /overflow-x: ?hidden/);
@@ -826,7 +826,7 @@ for (const [where, src] of [['style.ts', STYLE], ['docs/index.html', PAGE]]) {
 
 // Found along the way on the simulator: a held thumbnail opened iOS's image menu
 // (Share / Save to Photos / Copy) over the Library. Card art is not for saving.
-for (const [where, src] of [['style.ts', STYLE], ['docs/index.html', PAGE]]) {
+for (const [where, src] of [['style.ts', STYLE], ['web-dist/index.html', PAGE]]) {
   ok(where + ': card art (grid, Train rows and pickers, the detail\'s source chips) has no image menu or drag', () => {
     const art = rule(src, '.thumbwrap img, .tthumb, .planitem img, .pickrow img, .fromthumb img');
     assert.match(art, /-webkit-touch-callout: ?none/);

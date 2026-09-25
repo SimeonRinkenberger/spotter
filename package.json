@@ -20,6 +20,7 @@
     "gtm:check": "node tools/gtm-check.mjs",
     "push:harness": "deno run --allow-env --allow-read --allow-write --allow-net=127.0.0.1 tools/apns-harness.ts",
     "verify:local": "node tools/verify-local.mjs",
+    "native:identity": "node tools/native-identity-check.mjs",
     "eval:test": "deno run --allow-read tools/pack-eval/score-test.ts",
     "eval:live": "deno run --allow-read --allow-net --allow-env tools/pack-eval/live.ts"
   },
