@@ -1495,10 +1495,13 @@ export const STYLE = String.raw`<style>
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
     box-shadow: var(--sh-lg); max-width: 88vw; text-align: center; }
   #toast.show { opacity: 1; transform: translate(-50%, -100%); }
-  /* Workout Mode has no tab bar to clear but a rest strip lands where the toast
-     does: 76px of bottom bar, 48px of strip, 12px of air. "New best" used to sit
-     on +15 s and Skip for three seconds. */
-  #workout.open ~ #toast { top: calc(var(--vvtop) + var(--vvh) - 136px - var(--sab)); }
+  /* Workout Mode's foot is all controls — the big button, the arrows, the rest
+     strip's +15 s and Skip — and a toast there sat on one of them: "New best"
+     over Skip, and now a set's Undo where a thumb reaches for the next set. It
+     comes down under the top bar instead, where Hevy shows a live best, over
+     the dots and nothing that takes a tap. */
+  #workout.open ~ #toast { top: calc(var(--vvtop) + env(safe-area-inset-top) + 57px); transform: translate(-50%, -14px); }
+  #workout.open ~ #toast.show { transform: translate(-50%, 0); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
   /* The one toast the landing ever shows — a shared link waiting for sign-in —
      belongs above the fold, not across the sign-in card. There is no tab bar here
@@ -1995,6 +1998,12 @@ export const STYLE = String.raw`<style>
   .wtop { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;
     padding: calc(10px + env(safe-area-inset-top)) 16px 6px; }
   .wtools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .wtools:first-child { justify-content: flex-start; }
+  /* Finish: a chip on the top bar's sand, not a second big button (HIG: one or
+     two prominent buttons a view). Ember-ink is 5.2:1 on sand. The reach grows
+     to 44px the way the icon buttons' does. */
+  .wfinish { position: relative; height: 38px; color: var(--ember-ink); font-size: 14.5px; font-weight: 700; }
+  .wfinish::after { content: ""; position: absolute; inset: -3px; }
   .wclock { font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--muted);
     font-variant-numeric: tabular-nums; }
   /* The dots are a band of their own between the bar and the screen: the screen
@@ -2052,7 +2061,15 @@ export const STYLE = String.raw`<style>
   .setpill.pr { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember); }
   .setpill.just.pr { animation: setpr var(--t-4) var(--e-spring); }
   @keyframes setpr { 0% { transform: scale(.88); } 45% { transform: scale(1.09); } }
-  .wactions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
+  /* The set the big button logs next: outlined in ember, the way the complex
+     outlines the movement it is on. Done sets stay filled. */
+  .setpill.up { border-color: var(--ember); }
+  /* "Exercise 2 of 5": where the session is, in ink-2 (the ember wash behind
+     the top of the screen takes --muted under 4.5:1). The goal line under the
+     name is what the card asks and what was lifted last time, one line. */
+  .wstep { color: var(--ink-2); }
+  .wstep + .wblock { margin-top: -6px; }
+  .wgoal { font-size: 15px; font-weight: 600; color: var(--ink-2); line-height: 1.45; text-wrap: balance; }
   .wbottom { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 10px 16px calc(14px + var(--sab)); }
   .wnav { border: none; background: var(--sand); color: var(--ink); border-radius: 999px;
@@ -2060,10 +2077,10 @@ export const STYLE = String.raw`<style>
     transition: transform var(--t-1) var(--e-out); }
   .wnav:active { transform: scale(.9); }
   .wnav[disabled] { opacity: .35; }
-  .wfinish { flex: 1; border: none; background: var(--ember); color: var(--on-ember); border-radius: 999px;
-    padding: 15px; font-size: 15px; font-weight: 700; box-shadow: 0 4px 18px var(--glow);
-    transition: transform var(--t-1) var(--e-out); }
-  .wfinish:active { transform: scale(.978); }
+  /* A new label rises into place, so the tap that changed it is seen to land. */
+  .wgo .ic { width: 19px; height: 19px; }
+  .wgo.swap span { animation: wgoin var(--t-2) var(--e-out); }
+  @keyframes wgoin { from { opacity: 0; transform: translateY(40%); } }
   /* A rest has a known length, so the ring says what is left of it. The strip sits
      between the exercise and the bottom bar rather than inside the screen, so it
      outlives the swipe to the next movement; the ring is also the pause button,
@@ -2108,12 +2125,13 @@ export const STYLE = String.raw`<style>
   .restcontrols .chip { justify-content: center; padding: 8px 12px; background: var(--card); }
   .reststrip.paused { border-color: var(--line-2); background: var(--sand); }
   .wbottom { flex-shrink: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr) 52px; }
-  #waddexercise { grid-column: 2; grid-row: 1; min-height: 48px; }
-  #wnext { grid-column: 3; grid-row: 1; }
-  .wfinish { grid-column: 1 / -1; grid-row: 2; width: 100%; min-height: 60px; font-size: 18px; padding: 18px; border-radius: 18px; }
+  #wexmore { min-height: 48px; }
+  .wgo { grid-column: 1 / -1; min-height: 60px; font-size: 18px; padding: 16px 18px; border-radius: 18px; gap: 9px; }
   .wmain { min-height: 0; justify-content: flex-start; }
   .wmain > * { flex-shrink: 0; }
-  .wo-extra-set { min-height: 48px; width: 100%; margin-bottom: 10px; }
+  @media (prefers-reduced-motion: reduce) {
+    .wgo.swap span { animation-name: fadeonly; }
+  }
 
   /* ---------- adding a movement mid-workout ----------
      The picker is a list first and a form second, so the only chrome it gets is
@@ -2230,7 +2248,6 @@ export const STYLE = String.raw`<style>
   .wtimer .ring:active { transform: scale(.965); }
   .wphase { margin: 12px 0 0; }
   .wup { color: var(--ink-2); font-weight: 600; }
-  .wstart { align-self: center; max-width: 280px; margin-top: 16px; }
 
   /* ---------- a complex, all at once ----------
      Five movements against a clock is ONE thing to do, so the screen holds all of
@@ -2272,8 +2289,6 @@ export const STYLE = String.raw`<style>
      steps up to ink-2 on a marked row rather than the wash being lightened, so the
      row still reads as filled from across a gym. */
   .cxmove.on .pt span { color: var(--ink-2); }
-  /* 64px because it is tapped mid-effort, by someone who is not looking at it. */
-  .cxdone { min-height: 64px; margin-top: 14px; font-size: 17px; }
   .cxundo { min-height: 44px; margin-top: 8px; padding: 10px; font-size: 14px; }
 
   /* ---------- a superset, one screen ----------
@@ -2313,10 +2328,8 @@ export const STYLE = String.raw`<style>
   .ssstack.hand .sswrap, .ssstack.hand .ssin { transition-delay: 90ms; }
   .ssin .setpills { margin: 12px 0 2px; }
   .ssin .stepper { margin: 8px 0; }
-  .sslog { min-height: 54px; margin-top: 8px; }
   .ssin .wtimer .ring { width: 124px; height: 124px; }
   .ssin .wup { display: none; }
-  .ssin .wstart { margin: 14px auto 0; }
   @media (prefers-reduced-motion: reduce) {
     .sspanel, .ssletter, .sshead::after, .sswrap, .ssin { transition: none; }
   }
@@ -2333,6 +2346,7 @@ export const STYLE = String.raw`<style>
   /* Both top-bar tools go quiet on the summary: there is no list left to open and
      no clock left to mute, and a control that does nothing is a small lie. */
   #workout.summary #wlist, #workout.summary #wsound { visibility: hidden; }
+  #workout.summary #wfinish { display: none; }
   /* ---------- the share card ----------
      The one thing a finished session can leave the phone as. Both card palettes
      live here rather than in the draw code, and both are written out in full so
@@ -2423,7 +2437,7 @@ export const STYLE = String.raw`<style>
   .scchip { min-width: 0; min-height: 44px; padding: 10px 4px; font-size: 13px;
     font-weight: 650; border: 1px solid var(--line-2); border-radius: 12px;
     background: var(--card); color: var(--ink-2);
-    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2); }
+    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2), transform var(--t-1) var(--e-out); }
   .scchip[aria-pressed="true"] { background: var(--pill); border-color: var(--ember);
     color: var(--ember-ink); }
   .schint { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
@@ -2452,8 +2466,7 @@ export const STYLE = String.raw`<style>
   .sheetbody #readytitle { font-size: 22px; line-height: 1.2; margin: 0; outline: none; }
   .readymeta { font-size: 13px; color: var(--muted); margin: 5px 0 18px; }
   .daychips { grid-template-columns: repeat(4, 1fr); }
-  .daychips .scchip { position: relative; white-space: nowrap; transition: background-color var(--t-2),
-    border-color var(--t-2), color var(--t-2), transform var(--t-1) var(--e-out); }
+  .daychips .scchip { position: relative; white-space: nowrap; }
   .daychips .scchip:active { transform: scale(.95); }
   .daychips .has::after { content: ""; position: absolute; top: 6px; right: 6px; width: 5px; height: 5px;
     border: 1.5px solid var(--ember); border-radius: 50%; }
@@ -3136,7 +3149,6 @@ export const STYLE = String.raw`<style>
   .exercise-actions > .exercise-options { width: 100%; }
   .exercise-options > summary { width: 100%; font-size: 12px; min-height: 44px; padding: 10px 6px;
     justify-content: flex-end; border-radius: 10px; }
-  .wactions .exercise-options > summary { justify-content: center; background: var(--sand); border-radius: 12px; font-size: 13px; }
   /* Keep the exercise and logging controls anchored when supporting actions open.
      Centering the whole stack makes every item drift upward during expansion. */
   /* 10px less than it was: the dots' band grew by that much, so at rest nothing
@@ -3234,9 +3246,6 @@ export const STYLE = String.raw`<style>
   .reader-offer { background: var(--ember-soft); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin: 16px 0; }
   .reader-offer p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin: 8px 0 12px; }
   .reader-offer .fixlink { background: none; border: 0; color: var(--ember-ink); font: inherit; text-align: left; padding: 0; display: block; margin-top: 12px; min-height: 44px; }
-  .set-goal { color: #bd3434; border: 1px solid currentColor; border-radius: 12px; padding: 12px; margin: 16px 0; font-size: 14px; font-weight: 650; text-align: center; }
-  .set-goal.reached { color: var(--good); }
-  @media (prefers-color-scheme: dark) { .set-goal:not(.reached) { color: #ff9292; } }
   /* ---------- the rows that can be swiped away ----------
      A card's exercise rows and its block heading each hide one action, Delete,
      behind a leftward swipe. They bleed to the card's inner edge like every

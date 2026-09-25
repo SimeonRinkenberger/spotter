@@ -341,6 +341,9 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div><h2 id="scheduletitle">Plan</h2>
   <p class="lede" id="schedulename"></p>
   <div class="field"><label for="scheduledate">Choose a day</label><div class="schedule-date-control"><input id="scheduledate" type="date" required></div></div>
+  <p class="autherr" id="scheduleerror" role="status"></p>
+  <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Plan</button></div>
+</div></div>
 <!-- The one way to put a workout on a day (app.ts, openPlanSheet): two weeks of
      days to tap, starting today. Move uses the same sheet with one day. -->
 <div class="sheet" id="plandays" role="dialog" aria-modal="true" aria-labelledby="plandaystitle"><div class="sheetbody">
@@ -350,31 +353,33 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="plandaysbody"></div>
   <div class="btnrow"><button class="btn ghost" data-close="plandays">Cancel</button><button class="btn" id="plandaysgo">Plan</button></div>
 </div></div>
-  <p class="autherr" id="scheduleerror" role="status"></p>
-  <div class="btnrow"><button class="btn ghost" data-close="schedulesheet">Cancel</button><button class="btn" id="schedulego">Plan</button></div>
-</div></div>
 <!-- A saved video has become a workout (app.ts, showReadySheet): start it now,
-     put it on a day, or look it over first. A sheet of its own, beside the others:
-     one nested in another sheet's body is inside that sheet's transform, and
-     never shows. -->
+     put it on a day, or look it over first. -->
 <div class="sheet" id="readysheet" role="dialog" aria-modal="true" aria-labelledby="readykick readytitle"><div class="sheetbody">
   <div class="grabber"></div>
-  <div id="readybody"></div>
+  <div id="readybody"><h2 id="readytitle">Ready to train</h2></div>
 </div></div>
 
 <!-- ---------- workout mode ---------- -->
 <div id="workout">
+  <!-- Finish sits top right, where Hevy and Strong keep it: always there, never
+       the biggest thing on the screen. At 375px the right side has room for the
+       list and Finish only, so sound moved beside the X and the clock keeps the
+       centre line. -->
   <div class="wtop">
-    <button class="iconbtn" id="wclose" aria-label="Exit workout"><svg class="ic"><use href="#i-x"></use></svg></button>
-    <div class="wclock" id="wclock">0:00</div>
     <!-- Sounds start themselves, so the switch for them belongs where they play,
          not three taps away in Settings. aria-pressed carries the state that the
          icon carries for everyone else. -->
     <div class="wtools">
+      <button class="iconbtn" id="wclose" aria-label="Exit workout"><svg class="ic"><use href="#i-x"></use></svg></button>
       <button class="iconbtn" id="wsound" aria-label="Timer sounds" aria-pressed="true"><svg class="ic"><use href="#i-volume-2"></use></svg></button>
+    </div>
+    <div class="wclock" id="wclock">0:00</div>
+    <div class="wtools">
       <button class="iconbtn" id="wlist" aria-label="All exercises"><svg class="ic"><use href="#i-list"></use></svg></button>
       <!-- Only on a past session, where it is the one place Delete lives. -->
       <button class="iconbtn" id="wmore" aria-label="Session" aria-haspopup="dialog"><svg class="ic"><use href="#i-more"></use></svg></button>
+      <button class="chip wfinish" id="wfinish">Finish</button>
     </div>
   </div>
   <div class="wdots" id="wdots"></div>
@@ -391,11 +396,15 @@ export const MARKUP_BODY = String.raw`</head>
         <button class="chip" id="restskip">Skip rest</button></div>
     </div>
   </div>
+  <!-- The thing done most gets the big button, and one button: app.ts (goState)
+       relabels it for the screen — Log set 2 · 8 × 90 lb, Start 0:45, Round 3
+       done, Finish workout. The row above it moves between exercises and opens
+       the exercise sheet. -->
   <div class="wbottom">
     <button class="wnav" id="wprev" aria-label="Previous exercise"><svg class="ic"><use href="#i-arrow-left"></use></svg></button>
-    <button class="btn ghost" id="waddexercise">+ Add exercise</button>
-    <button class="wfinish" id="wfinish">Finish workout</button>
+    <button class="btn ghost" id="wexmore" aria-haspopup="dialog"><svg class="ic"><use href="#i-more"></use></svg>Exercise</button>
     <button class="wnav" id="wnext" aria-label="Next exercise"><svg class="ic"><use href="#i-arrow-right"></use></svg></button>
+    <button class="btn wgo" id="wgo"><svg class="ic"><use href="#i-check"></use></svg><span></span></button>
   </div>
 </div>
 

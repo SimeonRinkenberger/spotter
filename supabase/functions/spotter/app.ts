@@ -8132,11 +8132,7 @@ export const APP = String.raw`
         // this one, not against itself.
         Object.keys(hist).forEach(function (k) { hist[k].was = hist[k].best; });
         histReady = true;
-        // Lands after the first exercise is drawn, so refill the line in place
-        // rather than redraw a screen under someone's thumb.
-        var line = $("wlast");
-        if (line && wo && !wo.finished) line.textContent = lastLine(wo.entries[wo.i]);
-        ssPrime();
+        if (wo && !wo.finished) woLate();
       });
   }
 
@@ -8278,6 +8274,33 @@ export const APP = String.raw`
       (s.block.type && s.block.type !== "straight" ? s.block.type : "Section " + (s.bi + 1));
   }
 
+  // "Exercise 2 of 5", counted in stops as the dots are — a complex or a superset
+  // is one thing to do — and, when the card has more than one section, which:
+  // its title, else its kind ("Warm-up", not "warmup"), else "Section 2". A
+  // superset and a complex name their block on the line under this one.
+  function stepLabel(s) {
+    var at = stopOf(wo.i), no = 0, of = 0, i, sec = blockName(s);
+    for (i = 0; i < wo.screens.length; i++) if (isStop(i)) { of++; if (i <= at) no++; }
+    // A card that is one thing to do has nowhere else to be: no "1 of 1".
+    return of < 2 ? "" : "Exercise " + no + " of " + of + (!(s.cx || s.ss) && wo.workout.blocks.length > 1
+      ? " · " + (sec === s.block.type ? kindName(sec) : sec) : "");
+  }
+
+  // What the card asks and what was lifted last time, one line, either half left
+  // off when it is not known: "Goal 2 × 6-8 · last time 8 × 90 lb". A goal met
+  // says so in the same voice. Unfinished is where every set starts, not an
+  // error, so nothing here is ever red.
+  function goalText(s, e) {
+    var h = histReady && hist[exKey(e)], ask = doseText(s.ex), bits = [];
+    if (e.sets.filter(Boolean).length >= targetOf(s)) return "Goal reached · extras welcome";
+    // In a circuit the lap outranks the dose: the reps do not change between rounds.
+    if (isCircuit(s.block)) bits.push("Round " + roundOf(s.bi) + " of " + roundsOf(s.block) + (ask ? " · " + ask : ""));
+    else if (ask) bits.push("Goal " + ask);
+    if (h && h.date) bits.push("last time " + (h.reps ? h.reps + (h.weight ? " × " + wtText(h.weight, h.unit) + " " +
+      state.unit + (h.pair ? " each" : "") : " reps") : timeText(h.secs || 0)));
+    return bits.join(" · ");
+  }
+
   // hush: no entrance; a logged round changed a number.
   function renderWorkout(hush) {
     if (!wo) return;
@@ -8304,47 +8327,44 @@ export const APP = String.raw`
 
     var s = wo.screens[wo.i];
     var entry = wo.entries[wo.i];
+    var more = $("wexmore");
+    // The set the big button will log or start, so its pill can say so too.
+    goUp = goState()[3];
 
+    // No written exercises: the big button logs a set through the sheet, and
+    // ⋯ Exercise adds a movement, the only thing it has to offer here.
     if (!s) {
       main.appendChild(el("div", "wblock", "Freestyle"));
       main.appendChild(el("h2", "wname", wo.workout.title || "Workout"));
       main.appendChild(el("div", "wnote",
         "This video had no written exercises. Log what you do — tap the button below to add a set."));
-      var addSet = el("button", "btn", "Log a set");
-      addSet.style.marginTop = "22px";
-      addSet.onclick = function () { openSetSheet(entry.sets.length); };
-      main.appendChild(addSet);
       renderSetPills(main, entry, null);
+      more._ex = null;
+      more.setAttribute("aria-label", "Exercise: add one");
+      paintGo();
       return;
     }
 
-    // A complex replaces the whole per-exercise body: the block is the screen. The
-    // options row below still belongs to ONE movement, so it follows the one the
-    // list is pointing at.
+    // Where the session is, over whatever this screen is: in ahead of a kept
+    // superset's stack, which is the one thing a redraw leaves in place.
+    var step = stepLabel(s);
+    if (step) main.insertBefore(el("div", "wblock wstep", step), main.firstChild);
+    // A complex replaces the whole per-exercise body: the block is the screen.
+    // ⋯ Exercise still speaks about ONE movement, so it follows the one the list
+    // is pointing at, and in a superset the panel that is open.
     var cx = s.cx && !s.ei ? s.cx : null, focus = s.ex;
     if (cx) {
       focus = cxBody(main, s, cx);
     } else if (s.ss) {
       focus = ssBody(main, s, kept);
     } else {
-      var blockLabel = blockName(s);
-      if (s.block.rounds) blockLabel += " · " + s.block.rounds + " rounds";
-      main.appendChild(el("div", "wblock", blockLabel));
       main.appendChild(el("h2", "wname", s.ex.name));
-
-      // The lap outranks the dose: the reps do not change between rounds.
-      var dose = doseText(s.ex);
-      if (isCircuit(s.block)) dose = "Round " + roundOf(s.bi) + " of " +
-        roundsOf(s.block) + (dose ? " · " + dose : "");
-      if (dose) main.appendChild(el("div", "wdose", dose));
+      main.appendChild(el("div", "wgoal", goalText(s, entry))).id = "wgoal";
       if (s.ex.recommendation) main.appendChild(el("div", "wnote", s.ex.recommendation.note));
 
       if (isTimed(s.ex)) {
         timedBody(main, s, entry);
       } else {
-        var last = el("div", "wnote wlast", lastLine(entry));
-        last.id = "wlast";
-        main.appendChild(last);
         if (s.ex.weight) main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight));
         // The cue, not "notes": mid-set is exactly where the creator's own coaching
         // point and the one setup detail the name would get wrong are worth reading.
@@ -8353,53 +8373,8 @@ export const APP = String.raw`
         renderSetPills(main, entry, s.ex, targetOf(s));
       }
     }
-
-    // Each panel of a superset counts its own sets and has its own button.
-    if (!cx && !s.ss) {
-      var intended = targetOf(s), completed = entry.sets.filter(Boolean).length;
-      var reached = completed >= intended;
-      var goal = el("div", "set-goal" + (reached ? " reached" : ""),
-        (reached ? "Goal reached · " : "") + completed + " / " + intended +
-        (isCircuit(s.block) ? " rounds" : " sets") + (reached ? " · Extras welcome" : " completed"));
-      goal.setAttribute("role", "status");
-      main.appendChild(goal);
-    }
-    var acts = el("div", "wactions exercise-actions");
-    if (!cx && !s.ss) {
-      var add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
-      add.onclick = function () {
-        if (isTimed(s.ex)) { logHold(entry.sets.length, s.ex.duration_seconds); renderWorkout(); }
-        else openSetSheet(entry.sets.length);
-      };
-      acts.appendChild(add);
-    }
-    var extra = disclosure("Options", "exercise-options");
-    extra.firstChild.setAttribute("aria-label", "Options for " + focus.name);
-    // Supporting actions stay together so sets and the timer remain the focus.
-    // A source with no embed or thumbnail simply has no Watch action.
-    // A coach's card has no video of its own; a borrowed movement does. So the clip
-    // follows the exercise rather than the workout, and the button names whose video
-    // is coming. An uncited line on a coach's card still offers nothing.
-    var w = wo.workout, clip = sourceOf(focus) || w;
-    if (clip.thumb_url || (clip.shortcode && /^(instagram|tiktok|youtube)$/.test(clip.platform))) {
-      var whose = clip.id !== w.id && clip.author ? "@" + clip.author + "’s" : "the";
-      var watch = icon(el("button", "pickrow"), "play", "Watch " + whose + " clip");
-      watch.onclick = function () { openWatch(clip, focus); };
-      extra.lastChild.appendChild(watch);
-    }
-    var help = icon(el("button", "pickrow"), "help", "Demo");
-    help.onclick = function () { explain(focus, wo.workout); };
-    extra.lastChild.appendChild(help);
-    var swapChip = icon(el("button", "pickrow"), "swap", "Swap or modify");
-    swapChip.onclick = function () { openSwap(focus.name, wo.workout.title, swapTarget(wo.workout, focus)); };
-    extra.lastChild.appendChild(swapChip);
-    // Swapping one movement for another and adding one that was never on the card
-    // are the same thought arriving from two directions, so they sit together.
-    var addChip = icon(el("button", "pickrow"), "plus", "Add an exercise");
-    addChip.onclick = openWorkoutAdd;
-    extra.lastChild.appendChild(addChip);
-    acts.appendChild(extra);
-    main.appendChild(acts);
+    more._ex = focus;
+    more.setAttribute("aria-label", "Exercise: " + focus.name);
 
     // Fitbod puts "+ Add Exercise" at the FOOT of the exercise list, which is
     // where somebody looks when the card has run out and they are not done. A
@@ -8413,6 +8388,7 @@ export const APP = String.raw`
       tile.onclick = openWorkoutAdd;
       main.appendChild(tile);
     }
+    paintGo();
 
     // A swipe said which way the lifter went, so the exercise arrives from that
     // side. An arrow did not, and keeps the entrance it had.
@@ -8439,12 +8415,12 @@ export const APP = String.raw`
     var pills = el("div", "setpills");
     var count = Math.max(target, entry.sets.length + (entry.sets.length >= target ? 1 : 0));
     var timed = isTimed(ex);
-    var just = justSet;
+    var just = justSet, up = entry === wo.entries[wo.i] ? goUp : -1;
     justSet = -1;
     for (var i = 0; i < count; i++) {
       (function (idx) {
         var done = entry.sets[idx];
-        var p = el("button", "setpill" + (done ? " done" : "") + (idx === just ? " just" : "") +
+        var p = el("button", "setpill" + (done ? " done" : idx === up ? " up" : "") + (idx === just ? " just" : "") +
           (done && done.pr ? " pr" : ""));
         var b = el("b", null, done ? setText(done)
           : timed ? ex.duration_seconds + "s" : "Set " + (idx + 1));
@@ -8461,6 +8437,151 @@ export const APP = String.raw`
       })(i);
     }
     main.appendChild(pills);
+  }
+
+  // ---------- the big button ----------
+  //
+  // A set is logged fifteen to twenty-five times a session and used to take a
+  // small pill and then a sheet, while the biggest button on the screen ended the
+  // workout. Now the big button does what this screen does most — logs the next
+  // set on the numbers the sheet would have opened on, starts a hold, counts a
+  // round — and says so, and after the last planned set of the last exercise it
+  // is Finish workout. Hevy's checkmark and Boostcamp's "tap a set, the timer
+  // starts" are the model. A set goes through logNextSet, the door the Lock
+  // Screen and the watch use, so the three cannot disagree on which set it was
+  // or what it weighed; saveSet then rests, buzzes, pops the pill and calls a best.
+
+  // goUp: the set the button logs or starts, whose pill renderSetPills outlines.
+  // goAt: when it was last tapped.
+  var goUp = -1, goAt = 0;
+
+  // Every planned set of a stop is in; a complex is done when its cap has run
+  // out or it has the rounds it asked for.
+  function stopFull(i) {
+    var s = wo.screens[i], a;
+    if (s.cx) { a = cxOf(s.bi, s.cx); return !!a.over || s.block.rounds > 0 && a.rounds >= s.block.rounds; }
+    if (s.ss) return ssTurn(i, 0).done;
+    return wo.entries[i].sets.filter(Boolean).length >= targetOf(s);
+  }
+
+  // What the button does on this screen: [what it does, what it says, its
+  // glyph, the set it logs or starts — none for a round or Finish].
+  function goState() {
+    var s = wo.screens[wo.i], e = wo.entries[wo.i], idx = ssIdx(e), dock, f;
+    if (!s) return ["sheet", "Log a set", "plus", idx];
+    // A hold under way: the button says what the ring's own tap does.
+    if (isTimed(s.ex) && woPhase !== "idle") return restHeld && restFace ? ["hold", "Resume", "play", idx] : ["hold", "Pause", "pause", idx];
+    if (stopOf(wo.i) === endStop() && stopFull(wo.i)) return ["finish", "Finish workout", "flag"];
+    if (s.cx && !s.ei) return ["round", "Round " + (cxOf(s.bi, s.cx).rounds + 1) + " done", "check"];
+    if (isTimed(s.ex)) return ["hold", "Start " + clock(s.ex.duration_seconds), "play", idx];
+    // An open superset panel's own steppers, when they hold this set: they are
+    // what logNextSet reads. The sheet's prefill otherwise.
+    dock = s.ss && stepRows ? stepRows[0].parentNode : null;
+    f = dock && dock._wo === wo && dock._k === wo.i && dock._idx === idx ? setCtx : setPrefill(idx);
+    return ["log", "Log set " + (idx + 1) + " · " + f.reps +
+      (f.weight ? " × " + f.weight.toLocaleString() + " " + wtUnit(s.ex, e) : " reps"), "check", idx];
+  }
+
+  // still: no rise, for a stepper held down, which changes it every tick.
+  function paintGo(still) {
+    if (!wo || wo.finished) return;
+    var b = $("wgo"), st = goState(), t = b.lastChild;
+    if (t.textContent === st[1]) return;
+    t.textContent = st[1];
+    b.firstChild.firstChild.setAttribute("href", "#i-" + st[2]);
+    if (still) return;
+    b.classList.remove("swap");
+    void b.offsetWidth;
+    b.classList.add("swap");
+  }
+
+  function goTap() {
+    if (!wo || wo.finished) return;
+    // Two taps on each other's heels are one tap landing twice, not the next
+    // set: the label under the finger has only just changed, perhaps to Finish.
+    if (Date.now() - goAt < 650) return;
+    goAt = Date.now();
+    var act = goState()[0], s = wo.screens[wo.i];
+    if (act === "log") logTap();
+    else if (act === "sheet") openSetSheet(wo.entries[wo.i].sets.length);
+    else if (act === "hold") ringTap();
+    else if (act === "round") cxRound(s.bi, s.cx);
+    else woFinish();
+  }
+
+  // The one-tap log, and the one door of the three that can take its set back:
+  // a button this wide makes a mistap likelier than a small pill did. While the
+  // toast is up, Undo returns the set, the rest it started, the screen it moved
+  // on from and any best it claimed, as if the tap had not happened. Sets from
+  // the Lock Screen and the wrist get no offer; they are corrected on the pill.
+  function logTap() {
+    var at = wo.i, e = wo.entries[at], k = exKey(e), h = hist[k], rest = restUntil,
+      was = { wo: wo, rounds: JSON.stringify(wo.rounds), pr: wo.prs[k], best: h && h.best };
+    // Said before the set is saved: tellSounds holds back while a toast is up, so
+    // the one-time note about timer sounds is not written over by the offer.
+    toast("Set " + (ssIdx(e) + 1) + " logged");
+    var r = logNextSet({ source: "app" });
+    if (!r.ok) return;
+    // Named when the screen has moved on — a superset handing over, the last set
+    // of a movement moving to the next — since "Set 2" would read as the new one.
+    var set = e.sets[r.idx], rested = restUntil && restUntil !== rest && !restFace;
+    offerUndo(r.pr && !was.pr ? "New best — " + (e.name || "that lift")
+      : (wo.i !== at ? e.name + " · set " : "Set ") + (r.idx + 1) + " logged", function () {
+      // The note held back above has its turn once the offer has gone.
+      setTimeout(function () { if (restUntil && !restFace) tellSounds(); }, 400);
+    }, function () {
+      if (wo !== was.wo || wo.finished) return;
+      // Whatever was opened since is about a screen this puts back.
+      [].forEach.call(document.querySelectorAll(".sheet.open"), function (n) { closeSheet(n.id); });
+      if (e.sets[r.idx] === set) { if (r.idx === e.sets.length - 1) e.sets.pop(); else e.sets[r.idx] = null; }
+      if (h) h.best = was.best;
+      if (was.pr) wo.prs[k] = was.pr; else delete wo.prs[k];
+      if (restFace) stopWork();
+      else if (rested && restUntil) stopRest();
+      // Back to where the tap was made, arriving from the side it left by.
+      if (stopOf(wo.i) !== stopOf(at)) woSlide = -1;
+      wo.i = at;
+      wo.rounds = JSON.parse(was.rounds);
+      haptic("tap");
+      saveDraft();
+      renderWorkout();
+    });
+  }
+
+  // Planned sets not yet logged, counted the way the Lock Screen's progress is.
+  function setsLeft() {
+    var n = 0;
+    wo.screens.forEach(function (s, i) { n += Math.max(0, targetOf(s) - wo.entries[i].sets.filter(Boolean).length); });
+    return n;
+  }
+
+  // Finish, from the pill or from the big button once the card is done: at once
+  // when every planned set is in, else the leave sheet asks first — Finish, Pause
+  // or Keep going. Nothing is ever thrown away, so there is no Discard.
+  function woFinish() {
+    if (!wo || wo.finished) return;
+    var left = setsLeft();
+    if (left || !loggedSets()) { openLeave(left); return; }
+    undoOff();
+    finishWorkout();
+  }
+
+  // A set's Undo is only true while its session is on screen; leaving commits it.
+  function undoOff() {
+    var t = $("toast");
+    flushUndo();
+    if (t.classList.contains("tappable")) { t.onclick = null; t.classList.remove("show", "tappable"); }
+  }
+
+  // The history read lands after the first screen is drawn: the lines that quote
+  // it and the button's weight are refilled where they stand, rather than the
+  // screen being drawn again under someone's thumb.
+  function woLate() {
+    var line = $("wlast"), goal = $("wgoal"), s = wo.screens[wo.i], e = wo.entries[wo.i];
+    if (line) line.textContent = lastLine(e);
+    if (goal && s) goal.textContent = goalText(s, e);
+    ssPrime();
+    paintGo();
   }
 
   var setCtx = { idx: 0, reps: 10, weight: 0 };
@@ -8566,6 +8687,9 @@ export const APP = String.raw`
     setCtx.weight = Math.round(setCtx.weight * 10) / 10;
     animateNumber($("repsval"), String(setCtx.reps), animate);
     animateNumber($("wtval"), setCtx.weight.toLocaleString(), animate);
+    // Turned in a superset's open panel, these are the figures the big button
+    // logs, and it follows them at once. A redraw docking them paints its own.
+    if (animate) paintGo(1);
   }
 
   function animateNumber(node, value, animate) {
@@ -8990,15 +9114,17 @@ export const APP = String.raw`
   // At the end of a lap the gap is the block's rest, not the move's: one pause.
   function restAfter(s) { return restOf(s.ex, s.block, atRoundEnd()).secs; }
 
+  // The ring is the dial and its own tap; the big button under the screen is
+  // the hold's Start, Pause and Resume (paintPhase words both).
   function timedBody(main, s, entry) {
     // The idle number is the clock the countdown will show: a twenty minute bike
     // opens on 20:00, not on 1200.
-    var t = el("div", "wtimer"), ring = el("button", "ring"), go = el("button", "btn wstart"),
+    var t = el("div", "wtimer"), ring = el("button", "ring"),
       num = el("span", null, s.ex.duration_seconds >= 60 ? clock(s.ex.duration_seconds) : String(s.ex.duration_seconds)),
       word = el("div", "wblock wphase");
-    t.id = "wtimer"; ring.id = "wring"; num.id = "wnum"; word.id = "wphase"; go.id = "wgobtn";
+    t.id = "wtimer"; ring.id = "wring"; num.id = "wnum"; word.id = "wphase";
     ring.setAttribute("aria-label", "Start or pause the countdown");
-    ring.onclick = go.onclick = ringTap;
+    ring.onclick = ringTap;
     ring.appendChild(num);
     t.appendChild(ring);
     t.appendChild(word);
@@ -9008,7 +9134,6 @@ export const APP = String.raw`
     var nx = wo.screens[atRoundEnd() ? wo.i - s.ei : wo.i + 1];
     if (nx) main.appendChild(el("div", "wnote wup", "Next: " + nx.ex.name));
     if (!isCircuit(s.block) && targetOf(s) > 1) renderSetPills(main, entry, s.ex, targetOf(s));
-    main.appendChild(go);
     paintPhase();
   }
 
@@ -9021,7 +9146,8 @@ export const APP = String.raw`
       : woPhase === "ready" ? "Get ready"
       : woPhase === "rest" ? (atRoundEnd() ? "Round done" : "Rest")
       : woPhase === "work" ? "Work" : "Tap to start";
-    $("wgobtn").textContent = woPhase === "idle" ? "Start" : held ? "Resume" : "Pause";
+    // The big button is the ring's words: Start 0:45, Pause, Resume.
+    paintGo();
     // A redraw builds a fresh ring; put the countdown back on it.
     if (restUntil && restFace) drawRest(restHeld || restUntil - Date.now());
   }
@@ -9250,7 +9376,7 @@ export const APP = String.raw`
     beep(1318.5, .34, .13);
     haptic("done");
     renderWorkout(1);
-    toast("Time — save the session when you are ready.");
+    toast("Time — finish when you are ready.");
   }
 
   // Whatever the clock is now — running, paused, never started or spent — and the
@@ -9439,12 +9565,8 @@ export const APP = String.raw`
     line.appendChild(el("span", null, cxScore(a.rounds, extra, 1)));
     head.appendChild(line);
     main.appendChild(head);
-    if (s.block.rounds > 0) {
-      var hit = a.rounds >= s.block.rounds;
-      var roundGoal = el("div", "set-goal" + (hit ? " reached" : ""),
-        (hit ? "Goal reached · " : "") + a.rounds + " / " + s.block.rounds + " rounds" + (hit ? " · Extras welcome" : " completed"));
-      roundGoal.setAttribute("role", "status"); main.appendChild(roundGoal);
-    }
+    if (s.block.rounds > 0) main.appendChild(el("div", "wgoal", a.rounds >= s.block.rounds
+      ? "Goal reached · extras welcome" : "Goal " + s.block.rounds + (s.block.rounds === 1 ? " round" : " rounds")));
 
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function (ex, j) {
@@ -9463,10 +9585,8 @@ export const APP = String.raw`
     });
     main.appendChild(list);
 
-    var go = el("button", "btn cxdone", "Round " + (a.rounds + 1) + " done");
-    go.onclick = function () { cxRound(s.bi, cx); };
-    main.appendChild(go);
-
+    // "Round 4 done" is the big button under the screen, 60px and full width —
+    // tapped mid-effort by someone not looking at it. Undo stays here, small.
     if (a.rounds || extra) {
       var un = el("button", "btn ghost cxundo", extra
         ? "Undo " + extra + (extra === 1 ? " movement" : " movements")
@@ -9777,10 +9897,11 @@ export const APP = String.raw`
   // The open panel: the set to do, drawn as the pager draws a movement — the
   // last-time line, the cue when it is short enough to read mid-set, the set pills
   // (a done one opens the sheet to be corrected, as everywhere) — then the sheet's
-  // own steppers and the button that logs it through saveSet.
+  // own steppers. The big button under the screen logs the set on their figures
+  // (logNextSet reads the dock), and says them: one button, not one per panel.
   function ssLive(p, k) {
     var box = p._in, s = wo.screens[k], e = wo.entries[k], ex = s.ex, idx = ssIdx(e), due = targetOf(s);
-    var cue = cueOf(ex), last, dock, go;
+    var cue = cueOf(ex), last, dock;
     box.innerHTML = "";
     if (ex.recommendation) box.appendChild(el("div", "wnote", ex.recommendation.note));
     // A hold is the pager's countdown; its "Next" line is hidden (see style.ts),
@@ -9796,9 +9917,6 @@ export const APP = String.raw`
     dock._wo = wo; dock._k = k; dock._idx = idx; dock._key = k + ":" + idx;
     // Under an open set sheet the rows stay in it; its closing brings them here.
     if (!$("setsheet").classList.contains("open")) stepDock(dock);
-    go = el("button", "btn sslog", idx < due ? "Log set " + (idx + 1) : "Log extra set");
-    go.onclick = saveSet;
-    box.appendChild(go);
   }
 
   // The panel that just logged folds with its last look still on it — the new pill
@@ -10098,8 +10216,13 @@ export const APP = String.raw`
     return n;
   }
 
-  function openLeave() {
-    var n = loggedSets();
+  // The X asks how to leave. The Finish pill asks only when planned sets are
+  // left (left: how many), and leads with the answer it was asked for. Neither
+  // door has a Discard: finishing saves what was logged, pausing keeps it all.
+  function openLeave(left) {
+    var n = loggedSets(), fin = $("wend"), pause = $("wpause");
+    $("wleavetitle").textContent = left ? left + (left === 1 ? " set" : " sets") + " not logged" : "Leave this workout?";
+    fin.parentNode.insertBefore(left ? fin : pause, left ? pause : fin);
     $("wendsub").textContent = n
       ? "Saves " + n + (n === 1 ? " set" : " sets") + " to your history."
       : "Nothing logged yet — closes without saving.";
@@ -10687,6 +10810,7 @@ export const APP = String.raw`
     // must not end a rest or throw away the draft of a workout somebody paused
     // this morning — which is what the old history sheet was kept separate for.
     if (wo) {
+      undoOff();
       var keep = pause && !wo.finished, at = new Date().toISOString(), w = wo.workout;
       clearInterval(woTimer);
       cxOff();
@@ -13409,7 +13533,7 @@ export const APP = String.raw`
   // The compact form: one line, no ring, for the today card and the summary.
   function weekLine(st) {
     if (st.streakWeeks > 0) {
-      return "Week " + st.streakWeeks + " · " + st.done + " of " + st.goal +
+      return st.streakWeeks + "-week streak · " + st.done + " of " + st.goal +
         (st.done >= st.goal ? " — week complete" : "");
     }
     return st.done + " of " + st.goal + " this week";
@@ -16866,7 +16990,7 @@ export const APP = String.raw`
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
    "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet", "ordersheet"]
+   "restsheet", "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -17049,10 +17173,6 @@ export const APP = String.raw`
     // Where VoiceOver starts: what this is, then what to do about it.
     h.focus({ preventScroll: true });
   }
-  wireSheet("readysheet");
-  $("readysheet").addEventListener("keydown", function (e) {
-    if (e.key === "Escape") { e.preventDefault(); closeSheet("readysheet"); }
-  });
 
   // The notification's door. Tapped — the banner, or Plan It — it was asked for,
   // so it moves what is in the way (never Workout Mode) and shows even for a card
@@ -20153,7 +20273,7 @@ export const APP = String.raw`
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
   ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet", "ordersheet"].forEach(function (id) {
+   "restsheet", "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
@@ -20237,6 +20357,7 @@ export const APP = String.raw`
   };
   $("wend").onclick = function () {
     var extra = sheetNav ? 1 : 0, n = loggedSets();
+    undoOff();
     closeSheet("wleavesheet", true);
     if (!n) { leaveWorkout(extra, false); toast("Workout closed — nothing logged."); return; }
     // The summary takes the session's place in the overlay, so only the sheet's
@@ -20249,8 +20370,17 @@ export const APP = String.raw`
   wireWmain($("wmain"));
   $("wprev").onclick = function () { woGo(-1); };
   $("wnext").onclick = skipMove;
-  $("wfinish").onclick = finishWorkout;
-  $("waddexercise").onclick = openWorkoutAdd;
+  $("wfinish").onclick = woFinish;
+  $("wgo").onclick = goTap;
+  // ⋯ Exercise: the card's exercise sheet, for the movement on screen — Watch,
+  // Demo, Swap, Add set, Add an exercise. Freestyle has no movement to speak
+  // about, so there it opens the one thing it can offer: adding one.
+  $("wexmore").onclick = function () {
+    if (!wo || wo.finished) return;
+    var s = wo.screens[wo.i];
+    if (!s || !this._ex) { openWorkoutAdd(); return; }
+    openExerciseSheet({ from: "workout", w: wo.workout, bi: s.bi, ei: s.ei, ex: this._ex, block: s.block });
+  };
   $("woaddsave").onclick = saveWorkoutAdd;
   // From the dose back to the list; from the list, when a section sheet handed
   // over, back to that sheet with its fields as they were left — handed over
