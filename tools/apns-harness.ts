@@ -38,6 +38,8 @@ Deno.env.set("SUPABASE_SERVICE_ROLE_KEY", "harness-not-a-jwt");
 
 const root = new URL("../", import.meta.url);
 const P = await import("../supabase/functions/spotter/push.ts");
+// Types only: erased before the module runs, so the env above still comes first.
+type ReadyCard = import("../supabase/functions/spotter/push.ts").ReadyCard;
 
 let passed = 0;
 const failures: string[] = [];
@@ -257,8 +259,195 @@ await check("the two origins are Apple's two origins", () => {
   same(P.apnsOrigin(""), "https://api.sandbox.push.apple.com");
 });
 
+// ---------- the ready notification, on the wire ----------
+//
+// A save shared in from another app has become a workout. The same stand-in for
+// Apple, and the same headers as a reminder except the collapse id — which is
+// the whole of the burst rule on the phone's side: every banner of a burst
+// replaces the one before it.
+
+const CARD = "7c1f2a9e-3b4d-4e5f-8a6b-9c0d1e2f3a4b";
+const PULL: ReadyCard = { id: CARD, title: "Pull Day Routine", exercises: 5, minutes: 45 };
+reply = { status: 200, body: "" };
+const readyOne = P.readyAlert(PULL, 1);
+const readySent = await P.sendApnsReady(device, readyOne, cfg, NOW, apple);
+
+await check("a ready card POSTs to the same /3/device/<token> as a reminder", () => {
+  same(seen().method, "POST");
+  same(seen().path, "/3/device/" + TOKEN);
+  same(seen().headers.get("apns-topic"), BUNDLE);
+  same(seen().headers.get("apns-push-type"), "alert");
+  same(seen().headers.get("apns-priority"), "10");
+  same(seen().headers.get("apns-expiration"), String(Math.floor(NOW / 1000) + 3600));
+});
+await check("a ready card collapses onto its own kind, so a burst is one banner", () =>
+  same(seen().headers.get("apns-collapse-id"), "spotter-ready"));
+await check("the ready payload is these exact bytes", () =>
+  same(seen().body,
+    '{"aps":{"alert":{"title":"Pull Day Routine is ready","body":"5 exercises · ~45 min · Start now or plan it"},' +
+    '"sound":"default","thread-id":"ready","category":"CARD_READY"},' +
+    '"url":"spotter://ready/' + CARD + '","card":"' + CARD + '"}'));
+await check("the category names the two actions the app registers, inside aps", () =>
+  same(JSON.parse(seen().body).aps.category, "CARD_READY"));
+await check("the link and the card are peers of aps, where custom keys are read", () => {
+  same(JSON.parse(seen().body).aps.url, undefined);
+  same(JSON.parse(seen().body).aps.card, undefined);
+});
+await check("a ready card is under Apple's 4 KB ceiling", () =>
+  ok(new TextEncoder().encode(seen().body).length < 4096, "payload over 4096 bytes"));
+await check("200 keeps the device for a ready card too", () =>
+  same({ status: readySent.status, gone: readySent.gone }, { status: 200, gone: false }));
+
 stop.abort();
 await server.finished;
+
+// ---------- the ready notification, in words ----------
+
+await check("one card: its name is the title, its size and the two actions the body", () =>
+  same(readyOne, { title: "Pull Day Routine is ready", body: "5 exercises · ~45 min · Start now or plan it",
+    url: "spotter://ready/" + CARD, card: CARD }));
+await check("a burst is counted, opens Workouts, and names the latest card for the actions", () =>
+  same(P.readyAlert(PULL, 3), { title: "3 workouts are ready", body: "Latest: Pull Day Routine · Start now or plan it",
+    url: "spotter://tab/library", card: CARD }));
+await check("a card read with nothing in it says only what it can", () =>
+  same(P.readyAlert({ id: CARD, title: "Stretch", exercises: 0, minutes: null }, 1).body, "Start now or plan it"));
+await check("one exercise is one exercise", () =>
+  same(P.readyAlert({ id: CARD, title: "Plank", exercises: 1, minutes: 3 }, 1).body,
+    "1 exercise · ~3 min · Start now or plan it"));
+await check("a long title is cut at a word so 'is ready' stays on the line", () => {
+  const t = P.readyAlert({ id: CARD, title: "Full Upper Body Dumbbell Workout For Beginners At Home", exercises: 8, minutes: 40 }, 1).title;
+  same(t, "Full Upper Body Dumbbell… is ready");
+});
+await check("an untitled card still reads as a sentence", () =>
+  same(P.readyAlert({ id: CARD, title: "  ", exercises: 3, minutes: null }, 1).title, "Your workout is ready"));
+
+// The whole decision, without a database: which cards count, which is named.
+const rows = [
+  { id: "c3", title: "Leg Day", blocks: [{ exercises: [{}, {}, {}] }], duration_minutes: 30 },
+  { id: CARD, title: "Pull Day Routine", blocks: [{ exercises: [{}, {}] }, { exercises: [{}, {}, {}] }], duration_minutes: 45 },
+  { id: "c1", title: "Core Finisher", blocks: [], duration_minutes: null },
+];
+await check("absent is on", () => same(P.readyNotice(CARD, rows.slice(1, 2), [], {}).send, true));
+await check("notifyReady false is off, whatever else is true", () =>
+  same(P.readyNotice(CARD, rows, [], { notifyReady: false }), { send: false, why: "switched off" }));
+await check("a card that is not among the ready ones sends nothing", () =>
+  same(P.readyNotice("gone", rows, [], null), { send: false, why: "not ready" }));
+await check("one ready card: the single notification, sized from its blocks", () => {
+  const n = P.readyNotice(CARD, rows.slice(1, 2), [], null);
+  same(n.send && n.count, 1);
+  same(n.send && n.alert.body, "5 exercises · ~45 min · Start now or plan it");
+});
+await check("three in the window: counted, and the card that just finished is the one named", () => {
+  const n = P.readyNotice(CARD, rows, [], null);
+  same(n.send && [n.count, n.alert.title, n.alert.card], [3, "3 workouts are ready", CARD]);
+});
+await check("a card already started is not news, and is not counted", () => {
+  const n = P.readyNotice(CARD, rows, ["c1"], null);
+  same(n.send && [n.count, n.alert.title], [2, "2 workouts are ready"]);
+});
+await check("if the named card was started, the newest one left is named instead", () => {
+  const n = P.readyNotice(CARD, rows, [CARD], null);
+  same(n.send && [n.count, n.alert.card], [2, "c3"]);
+});
+await check("everything started: nothing to say", () =>
+  same(P.readyNotice(CARD, rows, ["c1", "c3", CARD], null), { send: false, why: "already started" }));
+
+// ---------- sendReady, reads and all ----------
+//
+// The glue around readyNotice: which rows it asks PostgREST for, that it stops
+// reading the moment there is nobody to tell, that every device hears it, and
+// that a token Apple has let go of is dropped. One stand-in plays both
+// PostgREST and Apple. push.ts reads its Supabase address and the APNs key at
+// module load and per call, so a second copy of the module — a fresh URL — is
+// loaded with this environment instead of the first one's.
+
+const PORT2 = 8946;
+const U = "5b0c7a44-1d2e-4f3a-9b8c-7d6e5f4a3b2c";
+let world = { devices: [] as unknown[], settings: {} as unknown, jobs: [] as unknown[], cards: [] as unknown[], logs: [] as unknown[] };
+const asked: string[] = [];
+const pushed: { token: string; body: string }[] = [];
+const dropped: string[] = [];
+const stop2 = new AbortController();
+const server2 = Deno.serve({ hostname: "127.0.0.1", port: PORT2, signal: stop2.signal, onListen: () => {} }, async (req) => {
+  const url = new URL(req.url);
+  const table = url.pathname.replace("/rest/v1/", "");
+  if (url.pathname.startsWith("/3/device/")) {
+    const token = url.pathname.slice(10);
+    pushed.push({ token, body: await req.text() });
+    return token.startsWith("dead")
+      ? new Response(JSON.stringify({ reason: "Unregistered" }), { status: 410 })
+      : new Response(null, { status: 200 });
+  }
+  if (req.method === "DELETE") { dropped.push(decodeURIComponent(url.search)); return new Response(null, { status: 204 }); }
+  asked.push(table + url.search);
+  const rowsFor: Record<string, unknown> = {
+    push_devices: world.devices, profiles: [{ settings: world.settings }], ingest_jobs: world.jobs,
+    workouts: world.cards, workout_logs: world.logs,
+  };
+  return Response.json(rowsFor[table] ?? []);
+});
+Deno.env.set("SUPABASE_URL", `http://127.0.0.1:${PORT2}`);
+Deno.env.set("APNS_KEY_ID", KEY_ID);
+Deno.env.set("APNS_TEAM_ID", TEAM_ID);
+Deno.env.set("APNS_KEY_P8", pem);
+const R = await import("../supabase/functions/spotter/push.ts?sendReady");
+const here = () => `http://127.0.0.1:${PORT2}`;
+
+function reset(w: Partial<typeof world>) {
+  world = { devices: [], settings: {}, jobs: [], cards: [], logs: [], ...w };
+  asked.length = 0; pushed.length = 0; dropped.length = 0;
+}
+const dev = (token: string) => ({ token, bundle: BUNDLE, env: "sandbox" });
+
+reset({});
+await check("nobody to tell: one read, of the devices, and nothing else", async () => {
+  same(await R.sendReady(U, CARD, NOW, here), { sent: 0, why: "no device" });
+  same(asked.map((q) => q.split("?")[0]), ["push_devices"]);
+});
+
+reset({ devices: [dev("aa11")], settings: { notifyReady: false }, cards: [{ id: CARD, title: "Pull Day Routine", blocks: [] }] });
+await check("switched off in Settings: nothing is sent", async () => {
+  same((await R.sendReady(U, CARD, NOW, here)).sent, 0);
+  same(pushed.length, 0);
+});
+
+reset({
+  devices: [dev("aa11"), dev("dead22")], jobs: [{ id: "a1b2c3d4-0000-4000-8000-000000000001" }],
+  cards: [
+    { id: CARD, title: "Pull Day Routine", blocks: [{ exercises: [{}, {}, {}, {}, {}] }], duration_minutes: 45 },
+    { id: "c2", title: "Leg Day", blocks: [], duration_minutes: 30 },
+    { id: "c3", title: "Core", blocks: [], duration_minutes: 10 },
+  ],
+});
+const burst = await R.sendReady(U, CARD, NOW, here);
+await check("a burst of three goes to every device as one counted notification", () => {
+  same(pushed.map((p) => p.token), ["aa11", "dead22"]);
+  same(JSON.parse(pushed[0].body).aps.alert.title, "3 workouts are ready");
+  same(JSON.parse(pushed[0].body).card, CARD);
+  same(burst, { sent: 1, why: "sent" });
+});
+await check("a device Apple has let go of is dropped by its token", () =>
+  same(dropped, ["?token=eq.dead22"]));
+await check("the jobs read asks for this person's marked jobs finished in the last two minutes", () => {
+  const q = decodeURIComponent(asked.find((a) => a.startsWith("ingest_jobs")) ?? "");
+  const since = new Date(NOW - 120_000).toISOString();
+  ok(q.includes(`user_id=eq.${U}`) && q.includes("status=eq.done") && q.includes(`finished_at=gte.${since}`) &&
+    q.includes("meta->>notify_ready=eq.true"), "jobs query was " + q);
+});
+await check("the cards read counts the card, the marked jobs' cards and cache hits in the window", () => {
+  const q = decodeURIComponent(asked.find((a) => a.startsWith("workouts")) ?? "");
+  const since = new Date(NOW - 120_000).toISOString();
+  ok(q.includes(`user_id=eq.${U}`) && q.includes("ingest_status=eq.ready"), "cards query was " + q);
+  ok(q.includes(`or=(id.eq.${CARD},and(ingest_job_id.is.null,platform.neq.pumpy,created_at.gte."${since}"),` +
+    `ingest_job_id.in.(a1b2c3d4-0000-4000-8000-000000000001))`), "cards filter was " + q);
+});
+await check("and a card with a session already is asked about by id", () => {
+  const q = decodeURIComponent(asked.find((a) => a.startsWith("workout_logs")) ?? "");
+  ok(q.includes(`workout_id=in.(${CARD},c2,c3)`), "logs query was " + q);
+});
+
+stop2.abort();
+await server2.finished;
 
 // ---------- 3. the simulator fixtures ----------
 
@@ -291,10 +480,27 @@ for (const [kind, name, title, line] of CASES) {
   });
 }
 
+// The ready card, one and a burst. The id is a placeholder: to watch Start Now
+// and Plan It land on a real card, copy the file and put one of the signed-in
+// account's own card ids in "url" and "card".
+const READY_CASES = [["card-ready", readyOne], ["card-ready-burst", P.readyAlert(PULL, 3)]] as const;
+for (const [name, alert] of READY_CASES) {
+  await Deno.writeTextFile(new URL(name + ".apns", dir),
+    JSON.stringify({ "Simulator Target Bundle": BUNDLE, ...P.readyPayload(alert) }, null, 2) + "\n");
+}
+for (const [name, alert] of READY_CASES) {
+  await check(`the ${name} fixture is the sender's own payload`, async () => {
+    const file = JSON.parse(await Deno.readTextFile(new URL(name + ".apns", dir)));
+    same(file["Simulator Target Bundle"], BUNDLE, "target bundle: ");
+    delete file["Simulator Target Bundle"];
+    same(file, P.readyPayload(alert));
+  });
+}
+
 if (failures.length) {
   for (const f of failures) console.error("FAIL " + f);
   console.error(`\n${passed} passed, ${failures.length} failed`);
   Deno.exit(1);
 }
 console.log(`apns harness: ${passed} checks passed`);
-console.log("fixtures written to tools/ios/fixtures/reminder-{plan,risk}.apns");
+console.log("fixtures written to tools/ios/fixtures/reminder-{plan,risk}.apns and card-ready{,-burst}.apns");

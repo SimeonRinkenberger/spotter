@@ -2497,7 +2497,7 @@ export const STYLE = String.raw`<style>
   .scchip { min-width: 0; min-height: 44px; padding: 10px 4px; font-size: 13px;
     font-weight: 650; border: 1px solid var(--line-2); border-radius: 12px;
     background: var(--card); color: var(--ink-2);
-    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2); }
+    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2), transform var(--t-1) var(--e-out); }
   .scchip[aria-pressed="true"] { background: var(--pill); border-color: var(--ember);
     color: var(--ember-ink); }
   .schint { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
@@ -2510,6 +2510,39 @@ export const STYLE = String.raw`<style>
   @media (prefers-reduced-motion: reduce) {
     .sharewrap, .scbtns.in, .scvid { animation-name: fadeonly; animation-delay: 0ms; }
     .scprev img { transition: none; }
+  }
+  /* ---------- ready ----------
+     The sheet a new workout arrives in (app.ts, showReadySheet), and the recap's
+     "Plan your next one" under the figures. Their day chips are the share row's
+     own chips four across: 44px tall, pressed in ember, the same control the
+     recap already shows two of. A day with something planned wears the strip's
+     ring, small. The cover fades up when it has loaded rather than popping in. */
+  .readycover { display: block; width: 100%; aspect-ratio: 16 / 9; max-height: 200px; object-fit: cover;
+    border-radius: 16px; background: var(--sand); margin-bottom: 16px; opacity: 0;
+    transition: opacity var(--t-3) var(--e-out); }
+  .readycover.in { opacity: 1; }
+  .readykick, .readylabel { font-size: 12.5px; font-weight: 650; color: var(--ember-ink); margin: 0 0 4px; }
+  .readylabel { color: var(--muted); margin: 20px 0 9px; }
+  .sheetbody #readytitle { font-size: 22px; line-height: 1.2; margin: 0; outline: none; }
+  .readymeta { font-size: 13px; color: var(--muted); margin: 5px 0 18px; }
+  .daychips { grid-template-columns: repeat(4, 1fr); }
+  .daychips .scchip { position: relative; white-space: nowrap; }
+  .daychips .scchip:active { transform: scale(.95); }
+  .daychips .has::after { content: ""; position: absolute; top: 6px; right: 6px; width: 5px; height: 5px;
+    border: 1.5px solid var(--ember); border-radius: 50%; }
+  .readyfoot { display: flex; justify-content: space-between; margin: 8px -12px -8px; }
+  .readylook { min-height: 44px; padding: 0 12px; border: none; background: none; color: var(--ember-ink);
+    font-size: 14px; font-weight: 650; }
+  .readylook + .readylook { color: var(--muted); }
+  .sumnext { margin-top: 22px; text-align: left; animation: viewin var(--t-2) var(--e-out) 230ms both; }
+  .sumnext .scchip:last-child { grid-column: span 2; }
+  /* A lit switch in a Settings row wears its fill and not its glow: the value cell
+     clips (overflow, for the ellipsis) and the glow came out as a hard square. */
+  .setgroup .kv .v .chip.active { box-shadow: none; }
+  .sumnext + .reader-offer { text-align: left; }
+  @media (prefers-reduced-motion: reduce) {
+    .readycover, .daychips .scchip { transition: none; }
+    .sumnext { animation-name: fadeonly; animation-delay: 0ms; }
   }
   /* ---------- proof, in one screenshot ----------
      The card the summary drew, alone on the screen: no tab bar, no header, no

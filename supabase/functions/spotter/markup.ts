@@ -363,7 +363,7 @@ export const MARKUP_BODY = String.raw`</head>
 </div></div>
 <!-- A saved video has become a workout (app.ts, showReadySheet): start it now,
      put it on a day, or look it over first. -->
-<div class="sheet" id="readysheet" role="dialog" aria-modal="true" aria-labelledby="readytitle"><div class="sheetbody">
+<div class="sheet" id="readysheet" role="dialog" aria-modal="true" aria-labelledby="readykick readytitle"><div class="sheetbody">
   <div class="grabber"></div>
   <div id="readybody"><h2 id="readytitle">Ready to train</h2></div>
 </div></div>
@@ -918,6 +918,10 @@ export const MARKUP_BODY = String.raw`</head>
       <span class="v remset"><input class="remtime" id="remtime" type="time" value="17:30" aria-label="Time of the plan-day reminder"><button class="chip" id="remplan">Off</button></span></div>
     <div class="kv"><span class="k">Week at risk</span>
       <span class="v"><button class="chip" id="remrisk">Off</button></span></div>
+    <!-- Not a reminder but an answer: a video shared in from another app has
+         become a workout. Only in the app, which is the only thing it can reach. -->
+    <div class="kv hide" id="remreadyrow"><span class="k">When a saved video is ready</span>
+      <span class="v"><button class="chip" id="remready">Off</button></span></div>
   </div>
   <!-- Written by paintRemind, which runs before the sheet can be seen: the note
        has three things to say and only one of them is about reminders arriving. -->

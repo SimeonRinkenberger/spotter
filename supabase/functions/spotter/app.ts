@@ -1396,6 +1396,7 @@ export const APP = String.raw`
       // one in the background while the rest of the start carries on.
       .then(function () { if (accountNow(epoch, uid)) takeParkedShare(); })
       .then(function () { if (accountNow(epoch, uid)) consumeOpen(); })
+      .then(function () { if (accountNow(epoch, uid)) readyOnOpen(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
       .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
@@ -1516,8 +1517,8 @@ export const APP = String.raw`
     // Only announce a transition, so a favourite toggle or a note edit is silent.
     if (was && was.ingest_status === "processing" && row.ingest_status === "ready") {
       // A read that could not add anything leaves the card as it was and says
-      // why; "Ready" over an unchanged card would be the wrong news.
-      toast(UNCHANGED.test(row.ingest_error || "") ? row.ingest_error : "Ready: " + (row.title || "your workout"));
+      // why; anything else is the ready moment ("ready" further down).
+      if (UNCHANGED.test(row.ingest_error || "")) toast(row.ingest_error); else readyArrived(row);
     } else if (was && was.ingest_status === "processing" && row.ingest_status === "failed") {
       toast(row.ingest_error === UNAVAILABLE ? "That post is private, deleted or unavailable."
         : row.kind === "photo" || row.kind === "p" ? "Could not read that post — open it to try again."
@@ -1576,6 +1577,8 @@ export const APP = String.raw`
         // browser's own push subscription the moment Settings opens.
         if (s.remind) { remind.plan = !!s.remind.plan; remind.risk = !!s.remind.risk; }
         if (typeof s.remindAt === "number") remind.at = s.remindAt;
+        // Absent is on: only ever written to say Off (saveSettings).
+        remind.ready = s.notifyReady !== false;
         // The top-bar button and the strip were drawn from the default; correct them.
         paintSounds();
         // The plan is on this row, and the shelf counter is drawn from the plan.
@@ -10354,6 +10357,10 @@ export const APP = String.raw`
     main.appendChild(sum.prs = el("div", "setpills sumprs"));
     sumBests(prs);
 
+    // What next (sumNext), then the one thing that sells, and only under it — a
+    // live session's, since a past one's next step is long gone.
+    if (!past) [sumNext(w), sumOffer(w)].forEach(function (n) { if (n) main.appendChild(n); });
+
     // The card, and every way off this phone with it.
     main.appendChild(shareRow(payload, logged, past));
     // What was actually lifted, set by set. Closed, because the figures are the
@@ -17156,14 +17163,220 @@ export const APP = String.raw`
    * once it has been taken off the address bar, so a failed share puts it back in
    * the add sheet instead of dropping it.
    */
-  // ---------- ready (seam) ----------
+  // ---------- ready ----------
   //
   // A saved video has become a workout. The moment a save turns into a first set
-  // or a planned day is where a new person is won or lost, so it gets its own
-  // sheet: Start now, plan it for a day, or look it over first. sb-ready builds
-  // it; until then it is the card.
+  // or a planned day is where a new person is won or lost — they shared it from
+  // TikTok a minute ago and went back to scrolling — so it gets a sheet of its
+  // own: Start now, a day to plan it for, or a look first. Apple's rule for news
+  // that lands while the app is up is "discoverable but not distracting" (HIG,
+  // Notifications), and the rules below are that rule: never over a set, never
+  // over another sheet (it waits for that one to close), once per card, and not
+  // at all for the card already being read.
+  //
+  // Four doors, one sheet: a card turning ready with the app up (onWorkoutChange),
+  // a save that came back ready at once (doAdd), the app opening on one that
+  // turned ready while it was away (readyOnOpen, the seam's readyPick), and the
+  // notification (spotter://ready, push.ts).
+  //
+  // "Once per card" is kept in localStorage, per account, not in
+  // profiles.settings: it is a moment on this screen rather than a preference,
+  // and settings is written whole — a write per sheet would race every other
+  // setting, and a stale copy of that column is how it loses the AI consent.
+  // Forty ids is days of saves; readyPick looks back one.
+
+  var READY_KEY = "spotter_ready_seen:", linkAt = 0;
+
+  function seenReady() {
+    try { return JSON.parse(localStorage.getItem(READY_KEY + state.user.id)) || []; } catch (e) { return []; }
+  }
+
+  function readyMark(id) {
+    var list = seenReady();
+    if (list.indexOf(id) < 0) {
+      try { localStorage.setItem(READY_KEY + state.user.id, JSON.stringify(list.concat([id]).slice(-40))); } catch (e) { /* this launch */ }
+    }
+  }
+
+  // The quiet door: shown if it is still news and the screen is free — no other
+  // sheet, no keyboard over a field — and otherwise tried again until it is, for
+  // two minutes; two cards waiting take turns. Workout Mode drops it rather than
+  // holding it: the next open asks again (readyOnOpen).
+  function offerReady(w, at) {
+    var a = document.activeElement;
+    if (!w || isPending(w) || isFailed(w) || $("workout").classList.contains("open") || seenReady().indexOf(w.id) >= 0) return;
+    if (current && current.id === w.id && $("detail").classList.contains("open")) readyMark(w.id);
+    else if (!anySheet() && !(a && /^(INPUT|TEXTAREA)$/.test(a.tagName))) showReadySheet(w);
+    else if (Date.now() - (at = at || Date.now()) < 120000) setTimeout(function () { offerReady(planWorkout(w.id), at); }, 1500);
+  }
+
+  // A card that turned ready with the app up. The sheet if it is news — the
+  // seam's own rule, a save from the last day nobody has started — and the old
+  // line for a second read of a card already known.
+  function readyArrived(w) {
+    if (seenReady().indexOf(w.id) >= 0) return;
+    if (readyPick([w], state.logs, pausedDraft(), null, new Date(), false)) offerReady(w);
+    else toast("Ready: " + (w.title || "your workout"));
+  }
+
+  // The sheet: the picture the card will wear, what it is in one line, the one
+  // thing to do now, the days to do it instead, and the way to look first. Every
+  // way on is handed over, not stacked: the next screen opens first and the sheet
+  // closes behind it, so the history entry it held becomes that screen's (the
+  // order renderDay explains).
   function showReadySheet(w) {
-    if (w) openDetail(w);
+    if (!w || isPending(w) || isFailed(w)) return;
+    readyMark(w.id);
+    var box = $("readybody"), art = cardArt(w), n = exerciseNames(w).length, h;
+    box.innerHTML = "";
+    if (art) {
+      var img = box.appendChild(el("img", "readycover"));
+      img.alt = "";
+      img.onload = function () { img.classList.add("in"); };
+      img.onerror = function () { img.remove(); };
+      img.src = art;
+    }
+    box.appendChild(el("p", "readykick", "Ready to train")).id = "readykick";
+    h = box.appendChild(el("h2", null, w.title || "Workout"));
+    h.id = "readytitle";
+    h.tabIndex = -1;
+    box.appendChild(el("p", "readymeta", [n && n + (n === 1 ? " exercise" : " exercises"),
+      w.duration_minutes && "~" + w.duration_minutes + " min", (w.equipment || [])[0]].filter(Boolean).join(" · ")));
+    box.appendChild(icon(el("button", "btn"), "play", "Start now")).onclick = function () { startWorkout(w); closeSheet("readysheet"); };
+    box.appendChild(el("p", "readylabel", "Or plan it"));
+    box.appendChild(dayChips(w, planDays(new Date()).slice(0, 7), "More", function () {
+      openPlanSheet({ w: w, from: "ready" });
+      closeSheet("readysheet");
+    }, function () { closeSheet("readysheet"); }));
+    // The way out is a button as well as a swipe: VoiceOver cannot reach the scrim.
+    var foot = box.appendChild(el("div", "readyfoot"));
+    foot.appendChild(el("button", "readylook", "Look it over first")).onclick = function () { openDetail(w); closeSheet("readysheet"); };
+    foot.appendChild(el("button", "readylook", "Not now")).onclick = function () { closeSheet("readysheet"); };
+    openSheet("readysheet");
+    // Where VoiceOver starts: what this is, then what to do about it.
+    h.focus({ preventScroll: true });
+  }
+
+  // The notification's door. Tapped — the banner, or Plan It — it was asked for,
+  // so it moves what is in the way (never Workout Mode) and shows even for a card
+  // already offered. Arriving while the app is up (?auto=1, NotificationsHost) it
+  // is the quiet door instead.
+  function readyLink(w, auto) {
+    var open = document.querySelectorAll(".sheet.open"), i;
+    if (auto) return offerReady(w);
+    if ($("workout").classList.contains("open")) return toast("Pause or finish this workout to plan it.");
+    showReadySheet(w);
+    for (i = 0; i < open.length; i++) if (open[i].id !== "readysheet") closeSheet(open[i].id);
+  }
+
+  // Opening on a card that turned ready while the app was away: once, for the
+  // newest, once the library and the logs are in — and not when the open came
+  // with an errand of its own (a notification, a widget, a link). One greeting
+  // per open: the rest of what arrived meanwhile is on the shelf marked New, and
+  // three shares must not become three opens that each start with a sheet.
+  function readyOnOpen() {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    loadLogs().then(function () {
+      idle(function () {
+        var seen = {}, now = new Date(), busy = !!(wo && !wo.finished), w;
+        if (!accountNow(epoch, uid) || !fullLogs() || Date.now() - linkAt < 5000) return;
+        seenReady().forEach(function (id) { seen[id] = 1; });
+        w = readyPick(state.workouts, state.logs, pausedDraft(), seen, now, busy);
+        if (!w) return;
+        state.workouts.forEach(function (x) {
+          if (x !== w && readyPick([x], state.logs, pausedDraft(), seen, now, busy)) readyMark(x.id);
+        });
+        offerReady(w);
+      }, 600);
+    });
+  }
+
+  function cardLink(u) {
+    openDeepLink(u);
+    // Start Now with the ready sheet up: the session is open, so the sheet goes.
+    if (wo && !wo.finished && $("readysheet").classList.contains("open")) closeSheet("readysheet");
+  }
+
+  // Days to put w on, one tap each — the ready sheet's "Or plan it" and the
+  // recap's "Plan your next one" — named as the card statuses name them (today,
+  // tomorrow, then the weekday). A day with something on it already wears a dot.
+  // The last cell is the way to everything else (More, Pick another).
+  function dayChips(w, keys, last, lastFn, then) {
+    var box = el("div", "scchips daychips"), now = new Date();
+    box.setAttribute("role", "group");
+    box.setAttribute("aria-label", "Plan it for a day");
+    keys.forEach(function (key) {
+      var a = aheadWord(key, now), b = box.appendChild(el("button", "scchip" + (rowsFor(key).length ? " has" : ""),
+        a.charAt(0).toUpperCase() + a.slice(1)));
+      b.setAttribute("aria-label", "Plan for " + dayLabel(dayDate(key)));
+      b.setAttribute("aria-pressed", String(planned(w.id, key)));
+      b.onclick = function () { planOn(w, key, b, then); };
+    });
+    box.appendChild(el("button", "scchip", last)).onclick = lastFn;
+    return box;
+  }
+
+  function planned(id, key) {
+    return rowsFor(key).some(function (p) { return p.workout_id === id; });
+  }
+
+  // One day, one tap, and Undo, on the copy-week rule: written at once, so Up
+  // next, the strip and the widget agree straight away, and Undo removes what
+  // this wrote once the write has landed.
+  function planOn(w, key, chip, then) {
+    var epoch = accountEpoch, uid = state.user.id, said = "Planned " + aheadWord(key, new Date());
+    if (planned(w.id, key)) return toast("Already " + said.toLowerCase() + ".");
+    function mark(on) {
+      state.plan = on ? (state.plan || []).concat([{ id: "tmp-" + Date.now(), day: key, workout_id: w.id, user_id: uid }])
+        : (state.plan || []).filter(function (p) { return p.day !== key || p.workout_id !== w.id; });
+      repaintPlan();
+      if (chip) chip.setAttribute("aria-pressed", String(on));
+    }
+    mark(true);
+    haptic("tap");
+    if (then) then();
+    var put = planAdd(key, w.id).then(function (r) {
+      if (r.error && accountNow(epoch, uid)) { mark(false); toast("Could not plan it. Try again in a moment."); }
+      else loadPlan(true);
+      return !r.error;
+    });
+    offerUndo(said, function () { /* written already */ }, function () {
+      mark(false);
+      put.then(function (ok) {
+        if (ok) sb.from("plan").delete().eq("user_id", uid).eq("day", key).eq("workout_id", w.id).then(function () { loadPlan(true); });
+      });
+    });
+  }
+
+  // The recap's next step: the same workout on a day of the coming week, or
+  // another one on the first free day of it (the picker's title names it). Today
+  // has just been done, so the week is the six days after it — all of them named
+  // by weekday, and the wide cell they leave is Pick another's.
+  function sumNext(w) {
+    var card = planWorkout(w.id), keys = planDays(new Date()).slice(1, 7), wrap = el("div", "sumnext");
+    if (!card) return null;
+    wrap.appendChild(el("p", "readylabel", "Plan your next one"));
+    wrap.appendChild(dayChips(card, keys, "Pick another", function () {
+      var key = keys.filter(function (k) { return !rowsFor(k).length; })[0] || keys[0];
+      openPicker(key, dayLabel(dayDate(key)));
+    }));
+    return wrap;
+  }
+
+  // The read offer the card no longer puts between a new user and Start: after
+  // the workout, under the next step and never above the figures, and only the
+  // first time the card is done — after that the card has made its case, and its
+  // own "Improve this read" is where the offer lives. Out of Plus reads, the
+  // server's answer opens the Plus page (readVideo, limitHit).
+  function sumOffer(w) {
+    var card = planWorkout(w.id), box = el("div", "reader-offer");
+    if (!card || card.platform !== "tiktok" || card.kind === "photo" || card.read_quality === "premium" ||
+      (state.logs || []).some(function (l) { return l.workout_id === card.id && isSession(l); })) return null;
+    box.appendChild(el("b", null, "Basic read"));
+    box.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
+    var b = box.appendChild(el("button", "btn ghost", isFree() ? "Try a Plus read" : "Read with Plus"));
+    b.onclick = function () { readVideo(card, b, isFree()); };
+    return box;
   }
 
   function doAdd(fromShare) {
@@ -17187,6 +17400,8 @@ export const APP = String.raw`
     return deviceFrames({ url: url }).then(function (frames) {
       var body = { url: url };
       if (frames) body.frames = frames;
+      // From another app: the server says so when it is ready (push.ts, sendReady).
+      if (fromShare) body.source = "share";
       btn.textContent = "Saving…";
       return api("ingest", { method: "POST", body: JSON.stringify(body) });
     })
@@ -17211,20 +17426,15 @@ export const APP = String.raw`
 
         if (r.status === "saved") {
           $("addurl").value = "";
+          $("addurl").blur();
           closeSheet("addsheet");
-          // The cache hit is a good fact — somebody else already paid to read this
-          // video — so the receipt says the fact instead of a lightning bolt.
-          // The row is not in state.workouts until load() comes back, so the
-          // count this save makes is asked for one ahead.
-          if (r.cached) toast(withShelf(fromShare
-            ? "Saved from the share sheet — someone had already read this one, so it is ready"
-            : "Saved — someone had already read this one, so it is ready", 1), 3400);
-          else toast(withShelf(fromShare ? "Saved from the share sheet — read and ready"
-            : "Saved — read and ready", 1), 3400);
-          load().then(function () {
-            var w = state.workouts.filter(function (x) { return x.id === r.id; })[0];
-            if (w) openDetail(w);
-          });
+          // Ready at once, so the ready sheet is the receipt and the next step in
+          // one. The only thing left to say is how full the shelf is getting — and
+          // the row is not in state.workouts until load() comes back, so the count
+          // this save makes is asked for one ahead.
+          var full = withShelf("Saved", 1);
+          if (full !== "Saved") toast(full, 3400);
+          load().then(function () { offerReady(planWorkout(r.id)); });
           return true;
         } else if (r.status === "exists") {
           closeSheet("addsheet");
@@ -18034,6 +18244,10 @@ export const APP = String.raw`
     // open on the right words rather than on Off while it waits for its own row.
     s.remind = { plan: remind.plan, risk: remind.risk };
     s.remindAt = remind.at;
+    // "When a saved video is ready" is read by the server, and absent is on, so it
+    // is written only to say Off — and left as it was until the profile has said
+    // which (null), so an early write cannot flip it either way.
+    if (remind.ready === false) s.notifyReady = false; else if (remind.ready) delete s.notifyReady;
     s.tz = tzName();
     if (state.profile) state.profile.settings = s;
     // The then() is what sends it. A supabase-js builder is lazy — it only runs
@@ -18117,7 +18331,7 @@ export const APP = String.raw`
   // policy itself is never written twice.
 
   var remind = { plan: false, risk: false, at: 1050, sub: null, key: null, busy: false,
-    cfg: null, apns: false, perm: "unsupported", env: "sandbox", bundle: "", tok: null };
+    cfg: null, apns: false, perm: "unsupported", env: "sandbox", bundle: "", tok: null, ready: null };
 
   // The device token is the row's identity, and iOS reissues it — a restore from
   // backup, a long enough gap between launches. So the enrolment is remembered
@@ -18211,8 +18425,22 @@ export const APP = String.raw`
     // The time belongs to the reminder it sets, so it is live only while that is.
     t.disabled = !can || !remind.plan;
     t.value = hhmm(remind.at);
+    // The ready switch is the app's only (the web app it would open is retired),
+    // and it is On only while this install has a row to be reached at.
+    var rr = $("remready"), on = readyOn();
+    $("remreadyrow").classList.toggle("hide", !native);
+    rr.textContent = on ? "On" : "Off";
+    rr.classList.toggle("active", on);
+    rr.disabled = !can;
     $("setremnote").textContent = remindNote();
   }
+
+  // "When a saved video is ready": not a reminder but the answer to a share, and
+  // the one switch here that starts On once there is permission. It needs this
+  // install's row as the reminders do, so switching it on can be the tap that
+  // asks for permission (toggleRemind), and it keeps the row while no reminder
+  // does.
+  function readyOn() { return !!native && remind.ready !== false && !!(remind.tok || enrolled()); }
 
   // What this browser is actually subscribed to, which is the only thing the
   // sender reads. Drawn first from the profile so the group never opens blank,
@@ -18282,7 +18510,7 @@ export const APP = String.raw`
         // goes, so a failure between the two leaves a reminder that still
         // arrives rather than one that has quietly stopped.
         if (g.token === was) return;
-        if (remind.plan || remind.risk) saveRemind();
+        if (remind.plan || remind.risk || remind.ready !== false) saveRemind();
         sb.from("push_devices").delete().eq("token", was);
       });
     }).catch(paintRemind);
@@ -18385,12 +18613,13 @@ export const APP = String.raw`
 
   function toggleRemind(kind) {
     if (remind.busy || !pushable() || denied()) return;
-    if (remind[kind]) {
+    if (kind === "ready" ? readyOn() : remind[kind]) {
       remind[kind] = false;
       haptic("tap");
       paintRemind();
       saveSettings();
-      if (remind.plan || remind.risk) saveRemind(); else offRemind();
+      // The ready switch keeps an install's row too (readyOn).
+      if (remind.plan || remind.risk || readyOn()) saveRemind(); else offRemind();
       return;
     }
     remind.busy = true;
@@ -18402,7 +18631,8 @@ export const APP = String.raw`
         // the toast is only for the case where nothing was refused and nothing
         // worked either — no VAPID keys on the deployment, most likely.
         paintRemind();
-        if (!denied()) toast("Reminders are not switched on for this app yet.");
+        // Worded for all three switches: the ready one is not a reminder.
+        if (!denied()) toast("Notifications are not switched on for this app yet.");
         return;
       }
       remind.sub = sub;
@@ -18414,7 +18644,7 @@ export const APP = String.raw`
     }, function () {
       remind.busy = false;
       paintRemind();
-      toast("Could not switch that reminder on \u2014 try again in a moment.");
+      toast("Could not switch that on \u2014 try again in a moment.");
     });
   }
 
@@ -20069,6 +20299,7 @@ export const APP = String.raw`
   $("haptictoggle").onclick = toggleHaptics;
   $("remplan").onclick = function () { toggleRemind("plan"); };
   $("remrisk").onclick = function () { toggleRemind("risk"); };
+  $("remready").onclick = function () { toggleRemind("ready"); };
   $("remtime").onchange = setRemindAt;
   $("setnamerow").onclick = openName;
   $("setpwrow").onclick = openPassword;
@@ -20409,11 +20640,13 @@ export const APP = String.raw`
   function openDeepLink(url) {
     var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
     if (!m) return;
+    // An open with an errand of its own: the ready sheet does not add one (readyOnOpen).
+    linkAt = Date.now();
     var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, ""));
     if (head === "set") { openSetLink(arg, String(url)); return; }
     // "spotter://workout/" names nothing, which is a malformed link rather than a
     // card that has been deleted, and a malformed link says nothing at all.
-    var card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
+    var card = !!arg && (head === "workout" || head === "start" || head === "ready"), w = card ? planWorkout(arg) : null;
     if (head === "resume") woForward();
     else if (head === "tab") {
       if (!/^(train|library|plan|progress|pumpy)$/.test(arg)) return;
@@ -20432,6 +20665,8 @@ export const APP = String.raw`
     }
     else if (!card) return;
     else if (!w) toast("That workout is no longer in Workouts.");
+    // A saved video is ready (push.ts): the banner and Plan It land here.
+    else if (head === "ready") readyLink(w, /[?&]auto=1/.test(url));
     else if (head === "workout") openDetail(w);
     else if (wo && !wo.finished) { woForward(); toast("A workout is already running."); }
     // The card first, so finishing lands back where a Library tap would have.
@@ -20454,7 +20689,22 @@ export const APP = String.raw`
     // the same open, so the parked copy goes — otherwise the next launch would
     // replay a link the reader already followed.
     try { sessionStorage.removeItem(OPEN_KEY); } catch (e) { /* ignore */ }
-    openDeepLink(u);
+    // A card link can name a card this page has not seen — shared in from another
+    // app while Spotter slept, its row comes with the next read — or saw still
+    // being read. That row is read first and the link followed as if it had always
+    // been here. A tap counts as seeing it; the quiet door leaves that to the sheet.
+    var m = String(u).match(/^spotter:\/\/(?:workout|start|ready)\/([\w-]+)/), w = m && planWorkout(m[1]), epoch, uid;
+    if (!m) return openDeepLink(u);
+    if (w && !isPending(w)) return cardLink(u);
+    epoch = accountEpoch;
+    uid = state.user.id;
+    if (!/[?&]auto=1/.test(u)) readyMark(m[1]);
+    sb.from("workouts").select(CARD_COLS).eq("user_id", uid).eq("id", m[1]).maybeSingle().then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      if (r.error) return toast("Could not reach Spotter — check your connection.");
+      if (r.data) onWorkoutChange({ eventType: "UPDATE", new: r.data });
+      cardLink(u);
+    });
   }
 
   // A cold launch parks its URL in the shell before any listener could exist.
@@ -20518,7 +20768,7 @@ export const APP = String.raw`
     // on the shelf when the sheet or the card closes, and load() refreshes an open
     // card in place. Only a live session is left alone. The pending poll starts a
     // fresh budget, so a card that outlived the last one is asked about again.
-    if (state.user && !wo) { pendPolls = 0; watchPending(); load(); takeParkedShare(); }
+    if (state.user && !wo) { pendPolls = 0; watchPending(); load().then(readyOnOpen); takeParkedShare(); }
   });
 
   document.addEventListener("visibilitychange", function () {

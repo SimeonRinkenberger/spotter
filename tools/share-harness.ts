@@ -320,7 +320,8 @@ function check(ok: unknown, what: string): void {
 
   // The route wiring, read off the source: the hold is only for a job this save
   // created, and /media asks for the release before anything is charged.
-  check(/framesPending && !frames && q\.job_created && framesCouldHelp\(p, uc\.plan, cached\[0\]\)\s*\n\s*\? await holdForFrames\(q\.job_id, supplied\)/.test(SRC),
+  // The third argument is the ready mark (notify_ready), which rides on the held job's meta.
+  check(/framesPending && !frames && q\.job_created && framesCouldHelp\(p, uc\.plan, cached\[0\]\)\s*\n\s*\? await holdForFrames\(q\.job_id, supplied, mark\)/.test(SRC),
     "hold only for a new job with no frames yet, where frames could help");
   check(SRC.indexOf("releaseHeldJob(w, body.frames") < SRC.indexOf("const [countsR, cachedR, capsR] = await Promise.allSettled(["),
     "release is asked before /media counts or charges anything");
@@ -892,7 +893,9 @@ function check(ok: unknown, what: string): void {
       router.indexOf("if (req.method === \"POST\") req = await boundedRequest(req);") &&
     router.indexOf("if (!userId) return json(") < router.indexOf("const freeTick"),
     "throttle: started once the caller is known, before the body is read");
-  for (const h of ["authorizeUpload(req, userId!, cors)", "handleIngestPrepare(req, userId, cors)", "handleIngest(req, userId, cors)"]) {
+  // handleIngest also learns whether the ingest key opened the door (viaKey): a
+  // save from the Share Extension is announced when it is ready (push.ts).
+  for (const h of ["authorizeUpload(req, userId!, cors)", "handleIngestPrepare(req, userId, cors)", "handleIngest(req, userId, cors, viaKey)"]) {
     check(router.includes("return (await freeTick) ?? await " + h + ";"), "throttle: awaited before " + h.split("(")[0]);
   }
   check(!/request_tick/.test(fn("async function guardedUserRequest(")), "throttle: not part of admission");
