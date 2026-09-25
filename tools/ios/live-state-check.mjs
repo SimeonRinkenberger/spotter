@@ -75,6 +75,7 @@ function workoutContext() {
     hist: { 'n:Bench Press': { weight: 60, unit: 'kg', sets: 4, reps: '8', date: '2026-09-11' } },
     histReady: true,
     restUntil: NOW + 45000, restTotal: 60000, restHeld: 0, restFace: null,
+    setCtx: { idx: 0, reps: 10, weight: 0 }, stepRows: null, ssHeld: null,
     LB_PER_KG: 2.2046226,
     native: {
       live: {
@@ -86,7 +87,7 @@ function workoutContext() {
     Math, Date, Object, String, Number, Boolean, isFinite, parseInt, JSON
   });
   vm.runInContext(pull(['askText', 'blockName', 'isTimed', 'cxDosed', 'cxCap', 'complexOf', 'supersetOf', 'isCircuit', 'roundsOf',
-    'roundOf', 'targetOf', 'isStop', 'exKey', 'toUnit', 'setPrefill', 'plate',
+    'roundOf', 'targetOf', 'isStop', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'nextSet', 'plate',
     'cxOf', 'cxCurrent', 'cxMarks', 'cxLive', 'liveState', 'liveSync', 'liveEnd']), ctx);
   return { ctx, sent };
 }
@@ -150,6 +151,16 @@ same(vm.runInContext('(function () { var c = liveState().complex; return [c.roun
 vm.runInContext('wo.finished = true;', phases.ctx);
 assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'done');
 
+// The set the card names is the first one not yet done — the one the phone's
+// button names and a Log set logs (nextSet; superset-harness pins the tap) — so
+// set 2 logged out of order off its pill no longer puts "Set 2 · 70 kg" on the
+// Lock Screen over a tap that logs set 1 at last time's 60.
+const hole = workoutContext();
+vm.runInContext('wo.entries[1].sets = [undefined, { reps: 10, weight: 70, unit: "kg", done: true }];', hole.ctx);
+same(vm.runInContext('liveState().set', hole.ctx), { index: 1, total: 4 }, 'the hole is the set the card names');
+assert.equal(vm.runInContext('liveState().weight', hole.ctx), '60 kg', 'at set 1\'s dose, not the set after the hole');
+assert.equal(vm.runInContext('liveState().dose.weight', hole.ctx), 60);
+
 // A bodyweight movement with no history offers no weight.
 const bare = workoutContext();
 vm.runInContext('hist = {};', bare.ctx);
@@ -165,7 +176,7 @@ vm.runInContext('native = { live: { update: function () { throw new Error("no pl
 vm.runInContext('liveSync()', broken.ctx);
 vm.runInContext('wo = null; liveSync();', broken.ctx);
 
-console.log('PASS LiveState key set, 1-based set index, epoch rest deadline, five phases, one-block and bodyweight cases, liveSync delivery and its failure path.');
+console.log('PASS LiveState key set, 1-based set index (the first set not yet done), epoch rest deadline, five phases, one-block and bodyweight cases, liveSync delivery and its failure path.');
 
 // ---------- LiveSummary ----------
 
@@ -411,7 +422,7 @@ function actionContext() {
   const calls = { reps: [], weight: [], save: 0, done: 0, pause: 0, finish: 0, deep: [], toast: [], forward: 0,
     parked: [], unparked: 0 };
   const ctx = vm.createContext({
-    wo: fixture(), restUntil: 1, setCtx: { idx: 0, reps: 0, weight: 0 }, stepRows: null, setEvents: [],
+    wo: fixture(), restUntil: 1, setCtx: { idx: 0, reps: 0, weight: 0 }, stepRows: null, ssHeld: null, setEvents: [],
     $: id => overlay(calls, id, {}),
     OPEN_KEY: 'spotter_open_pending',
     sessionStorage: { setItem: (k, v) => calls.parked.push(v), removeItem: () => { calls.unparked++; } },
@@ -428,7 +439,7 @@ function actionContext() {
     toast: t => calls.toast.push(t),
     Math, Object, String, Number, isFinite, parseInt
   });
-  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'logNextSet', 'woForward', 'openLink', 'liveAction']), ctx);
+  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'nextSet', 'logNextSet', 'woForward', 'openLink', 'liveAction']), ctx);
   return { ctx, calls };
 }
 
@@ -497,7 +508,7 @@ console.log('PASS remote set with and without an adjusted dose, rest and finish 
 function complexActionContext() {
   const calls = { round: [], mark: [], save: 0, toast: [] };
   const ctx = vm.createContext({
-    wo: fixture(), restUntil: 0, setCtx: { idx: 0, reps: 0, weight: 0 }, stepRows: null, setEvents: [],
+    wo: fixture(), restUntil: 0, setCtx: { idx: 0, reps: 0, weight: 0 }, stepRows: null, ssHeld: null, setEvents: [],
     $: id => overlay(calls, id, {}), OPEN_KEY: 'spotter_open_pending',
     sessionStorage: { setItem: () => {}, removeItem: () => {} },
     state: { unit: 'kg', user: { id: 'u1' } }, hist: {}, LB_PER_KG: 2.2046226,
@@ -510,7 +521,7 @@ function complexActionContext() {
     cxMark: (bi, cx, j) => calls.mark.push([bi, j]),
     Math, Object, String, Number, isFinite, parseInt
   });
-  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'logNextSet', 'woForward', 'openLink', 'liveAction']), ctx);
+  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'nextSet', 'logNextSet', 'woForward', 'openLink', 'liveAction']), ctx);
   return { ctx, calls };
 }
 

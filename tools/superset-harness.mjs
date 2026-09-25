@@ -30,7 +30,8 @@ const LIFTED = ['isTimed', 'supersetOf', 'cxDosed', 'cxCap', 'complexOf', 'isCir
   'targetOf', 'restOf', 'restWord', 'clock', 'kindName', 'blockMetaText', 'flatten', 'isStop', 'endStop',
   'stopDone', 'stopOf', 'setUnit', 'ssMembers', 'ssDone', 'ssTurn', 'ssName', 'ssIdx', 'ssSum', 'askText',
   'setText', 'wtText', 'doseText', 'timeText', 'ssLogged', 'saveSet', 'setPrefill', 'setNum', 'setReps',
-  'setWeight', 'plate', 'clamp', 'liveAction', 'logNextSet', 'liveState', 'blockName', 'draftOf', 'woGo', 'logHold', 'workDone'];
+  'setWeight', 'plate', 'clamp', 'liveAction', 'logNextSet', 'liveState', 'blockName', 'draftOf', 'woGo', 'logHold', 'workDone',
+  'nextSet', 'goState', 'stopFull', 'wtUnit'];
 
 // Everything the lifted code reaches for that draws or talks to the device.
 // Each records what it was asked, which is what the checks below read.
@@ -38,7 +39,7 @@ const STUBS = `
 var state = { unit: "lb", haptics: true }, hist = {}, wo = null, REST_FALLBACK = 90, native = null;
 var setCtx = { idx: 0, reps: 10, weight: 0 }, justSet = -1, woPhase = "idle";
 var restUntil = 0, restTotal = 0, restHeld = 0, restFace = null, restThen = null, ssHand = false;
-var stepRows = null, setEvents = [];
+var stepRows = null, ssHeld = null, setEvents = [];
 var log = [];
 function capWord(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 function exKey(e) { return e && e.canonical_id ? "c:" + e.canonical_id : "n:" + ((e && e.name) || ""); }
@@ -307,6 +308,46 @@ ok('the island shows the member now open, and names the one after it', () => {
   assert.equal(st.next, 'A', 'round two comes back to the top');
   assert.equal(st.dose.loggable, true);
   assert.equal(st.block, 'Upper');
+});
+
+// The button's label, the Lock Screen's card and a Log set from it all read
+// nextSet(), so the three name one set at one dose — the review's two cases.
+ok('a weight dialled on the open panel: the button says it, the Lock Screen offers it, a Log set there logs it', () => {
+  session([superset([reps('A'), reps('B')]), straight]);
+  // Panel A's steppers are docked and turned to 30 lb for its set 1.
+  const dock = 'stepRows = [{ parentNode: { _wo: wo, _k: wo.i, _idx: 0 } }];';
+  run('setCtx.idx = 0; setCtx.reps = 10; setCtx.weight = 30;' + dock);
+  assert.equal(run('goState()[1]'), 'Log set 1 · 10 × 30 lb');
+  const st = run('liveState()');
+  assert.deepEqual([st.set, st.weight, st.dose.reps, st.dose.weight], [{ index: 1, total: 3 }, '30 lb', 10, 30],
+    'the card draws the panel\'s figures, not the prefill\'s bare 10 reps');
+  // Log set with the card's dial untouched sends no figures, and logs what the card showed.
+  run('liveAction({ kind: "set", source: "activity", id: null }); stepRows = null;');
+  assert.deepEqual(run('[wo.entries[0].sets[0].reps, wo.entries[0].sets[0].weight]'), [10, 30]);
+  // A figure turned on the wrist wins; the one left alone is still the panel's.
+  session([superset([reps('A'), reps('B')])]);
+  run('setCtx.idx = 0; setCtx.reps = 10; setCtx.weight = 30;' + dock + ' liveAction({ kind: "set", source: "watch", reps: 8 }); stepRows = null;');
+  assert.deepEqual(run('[wo.entries[0].sets[0].reps, wo.entries[0].sets[0].weight]'), [8, 30]);
+  // Lent to the set sheet for a moment (a pill tapped), the panel's figures are
+  // held for it, and they are still what its next set means everywhere.
+  session([superset([reps('A'), reps('B')])]);
+  run('ssHeld = { wo: wo, key: "0:0", reps: 12, weight: 40 }; stepRows = [{ parentNode: {} }];');
+  assert.equal(run('goState()[1]'), 'Log set 1 · 12 × 40 lb');
+  assert.deepEqual(run('[liveState().dose.reps, liveState().dose.weight]'), [12, 40]);
+  run('ssHeld = null; stepRows = null;');
+});
+
+ok('set 2 logged before set 1: the button, the Lock Screen and a Log set there all mean set 1, at one dose', () => {
+  session([{ title: null, type: 'straight', rounds: null, rest_seconds: null, exercises: [reps('Row', { sets: 4, reps: '8' })] }]);
+  run('wo.entries[0].sets = [undefined, { reps: 8, weight: 95, unit: "lb", done: true }];');
+  assert.equal(run('goState()[1]'), 'Log set 1 · 8 reps');
+  const st = run('liveState()');
+  assert.deepEqual(st.set, { index: 1, total: 4 }, 'not "Set 2 of 4"');
+  assert.deepEqual([st.dose.reps, st.dose.weight, st.weight], [8, 0, null], 'not the 95 lb of the set after the hole');
+  assert.deepEqual(st.progress, { done: 1, total: 4 });
+  run('liveAction({ kind: "set", source: "activity", id: null });');
+  assert.deepEqual(run('[wo.entries[0].sets[0].reps, wo.entries[0].sets[0].weight]'), [8, null], 'the hole is the set logged');
+  assert.equal(run('liveState().set.index'), 3, 'and the card moves on to the first set still owed');
 });
 
 // ---------- 5. pausing and coming back ----------

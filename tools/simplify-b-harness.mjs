@@ -262,12 +262,12 @@ check('the Lock Screen and the wrist go through logNextSet, not a copy of it', (
 check('an event id makes a replay harmless; a hold is answered "screen"; nothing running is "idle"', () => {
   const c = vm.createContext({ Date, Math, JSON, console, isFinite });
   vm.runInContext(`
-    var wo = null, setCtx = { idx: 0, reps: 0, weight: 0 }, stepRows = null, saved = [];
+    var wo = null, setCtx = { idx: 0, reps: 0, weight: 0 }, stepRows = null, ssHeld = null, saved = [];
     function isTimed(ex) { return !!(ex && ex.duration_seconds && !ex.reps); }
     function setPrefill(idx) { return { idx: idx, reps: 8, weight: 60 }; }
     function setReps(n) { setCtx.reps = n; } function setWeight(n) { setCtx.weight = n; }
     function saveSet() { var e = wo.entries[wo.i]; e.sets[setCtx.idx] = { reps: setCtx.reps, weight: setCtx.weight }; saved.push(setCtx.idx); }
-  ` + fn('ssIdx') + decl('setEvents') + fn('logNextSet'), c);
+  ` + fn('ssIdx') + fn('nextSet') + decl('setEvents') + fn('logNextSet'), c);
   const x = (js) => JSON.parse(JSON.stringify(vm.runInContext(js, c)));
   assert.equal(x('logNextSet({})').why, 'idle');
   vm.runInContext('wo = { finished: false, i: 0, screens: [{ ex: { name: "Row", reps: "8" } }, { ex: { name: "Plank", duration_seconds: 30 } }],' +

@@ -7303,12 +7303,13 @@ export const APP = String.raw`
     // In a superset it is the member this set hands over to, until the last set.
     var hand = s && s.ss ? ssTurn(wo.i, 1).next : -1;
     if (hand >= 0) j = hand;
-    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, round = cx ? cxLive(s) : null;
-    // The set about to be done. Past the plan it is an extra, and the phone says
-    // so ("Goal reached · Extras welcome") — but a Lock Screen card reading
-    // "Set 3 of 2" just looks broken, so the total grows with the index the way
-    // progress.total already does below.
-    var setNo = entry.sets.filter(Boolean).length + 1;
+    var cx = !!(s && s.cx), pre = s ? nextSet() : null, round = cx ? cxLive(s) : null;
+    // The set about to be done, and the dose it is dialled to: the ones the
+    // phone's button names and a Log set here logs (nextSet). Past the plan it
+    // is an extra, and the phone says so ("Goal reached · Extras welcome") — but
+    // a Lock Screen card reading "Set 3 of 2" just looks broken, so the total
+    // grows with the index the way progress.total already does below.
+    var setNo = pre ? pre.idx + 1 : 1;
     // A complex is scored in rounds off one screen, so it has no "set 2 of 4".
     return {
       v: 1,
@@ -7367,6 +7368,18 @@ export const APP = String.raw`
     // A mirror is never fatal: the plugin swallows its own rejection, and a shell
     // built before the Swift half existed throws here instead.
     if (wo) try { native.live.update(liveState()); } catch (e) { /* ignore */ }
+  }
+
+  // A figure changed with nothing saved behind it — a superset panel's stepper,
+  // the history landing under the button — and the dose the Lock Screen offers
+  // changed with it. A beat later rather than per step: a held stepper moves
+  // every 62 ms and the card needs only where it stopped. Never once the session
+  // has ended, which would put the activity back on the Lock Screen.
+  var liveT = 0;
+  function liveSoon() {
+    if (!native || !native.live) return;
+    clearTimeout(liveT);
+    liveT = setTimeout(function () { if (wo && !wo.finished) liveSync(); }, 400);
   }
 
   // Finished, or walked away from. Either way the Lock Screen has to stop showing
@@ -8477,17 +8490,15 @@ export const APP = String.raw`
   // What the button does on this screen: [what it does, what it says, its
   // glyph, the set it logs or starts — none for a round or Finish].
   function goState() {
-    var s = wo.screens[wo.i], e = wo.entries[wo.i], idx = ssIdx(e), dock, f;
+    var s = wo.screens[wo.i], e = wo.entries[wo.i], idx = ssIdx(e), f;
     if (!s) return ["sheet", "Log a set", "plus", idx];
     // A hold under way: the button says what the ring's own tap does.
     if (isTimed(s.ex) && woPhase !== "idle") return restHeld && restFace ? ["hold", "Resume", "play", idx] : ["hold", "Pause", "pause", idx];
     if (stopOf(wo.i) === endStop() && stopFull(wo.i)) return ["finish", "Finish workout", "flag"];
     if (s.cx && !s.ei) return ["round", "Round " + (cxOf(s.bi, s.cx).rounds + 1) + " done", "check"];
     if (isTimed(s.ex)) return ["hold", "Start " + clock(s.ex.duration_seconds), "play", idx];
-    // An open superset panel's own steppers, when they hold this set: they are
-    // what logNextSet reads. The sheet's prefill otherwise.
-    dock = s.ss && stepRows ? stepRows[0].parentNode : null;
-    f = dock && dock._wo === wo && dock._k === wo.i && dock._idx === idx ? setCtx : setPrefill(idx);
+    // What logNextSet will log, in its own words.
+    f = nextSet();
     return ["log", "Log set " + (idx + 1) + " · " + f.reps +
       (f.weight ? " × " + f.weight.toLocaleString() + " " + wtUnit(s.ex, e) : " reps"), "check", idx];
   }
@@ -8592,6 +8603,8 @@ export const APP = String.raw`
     if (goal && s) goal.textContent = goalText(s, e);
     ssPrime();
     paintGo();
+    // Last time's weight is the button's now, and the Lock Screen's dose with it.
+    liveSoon();
   }
 
   var setCtx = { idx: 0, reps: 10, weight: 0 };
@@ -8698,8 +8711,9 @@ export const APP = String.raw`
     animateNumber($("repsval"), String(setCtx.reps), animate);
     animateNumber($("wtval"), setCtx.weight.toLocaleString(), animate);
     // Turned in a superset's open panel, these are the figures the big button
-    // logs, and it follows them at once. A redraw docking them paints its own.
-    if (animate) paintGo(1);
+    // logs, and it follows them at once, the Lock Screen and the wrist a beat
+    // later. A redraw docking them paints its own.
+    if (animate) { paintGo(1); liveSoon(); }
   }
 
   function animateNumber(node, value, animate) {
@@ -8791,15 +8805,36 @@ export const APP = String.raw`
     if (document.activeElement === e.input) e.input.blur();
   }
 
+  // ---------- the next set, one answer ----------
+  //
+  // Which set the session is up to, and the figures it would be logged on, for
+  // the three places that say it or do it: the big button's label (goState), the
+  // tap (logNextSet) and the Lock Screen and the wrist (liveState). Each used to
+  // work it out for itself, which is how the Lock Screen came to read "Set 2 ·
+  // 95 lb" over a tap that logged set 1 bare. The set is the first one not yet
+  // done on the movement the session stands on, so one logged out of order off
+  // its pill leaves no hole behind it. The figures are the open superset panel's
+  // own steppers while they hold that set — dialled there, they are what the
+  // button says — or, while the set sheet has borrowed them for a moment, what
+  // they will be handed back with (stepDock); else setPrefill's, the numbers the
+  // sheet would open on.
+  function nextSet() {
+    var s = wo.screens[wo.i], idx = ssIdx(wo.entries[wo.i]), f = null;
+    var dock = s && s.ss && stepRows ? stepRows[0].parentNode : null;
+    if (dock && dock._wo === wo && dock._k === wo.i && dock._idx === idx) f = setCtx;
+    else if (s && s.ss && ssHeld && ssHeld.wo === wo && ssHeld.key === wo.i + ":" + idx) f = ssHeld;
+    f = f || setPrefill(idx);
+    return { idx: idx, reps: f.reps, weight: f.weight };
+  }
+
   // ---------- one way to log the next set (seam) ----------
   //
   // Workout Mode's big button, the Lock Screen's Log set and the watch's all come
   // through here, so the three can never log different numbers for the same set.
-  // The set is the first one not yet done on the movement the session stands on;
-  // its figures are the caller's if it sent any (a dial turned on the wrist),
-  // else the open superset panel's own steppers, else setPrefill's — the same
-  // numbers the sheet would open on. It goes through saveSet, the one place a
-  // set is written, rested, buzzed and checked for a best.
+  // The set and its figures are nextSet's, with any figure the caller sent (a
+  // dial turned on the wrist) in place of its own: one left alone is the one the
+  // card was showing. It goes through saveSet, the one place a set is written,
+  // rested, buzzed and checked for a best.
   //
   // Nothing here asks which screen is up: the next cycle's native session core
   // replays taps made on the Lock Screen and the watch through this door. An
@@ -8815,18 +8850,12 @@ export const APP = String.raw`
     if (!wo || wo.finished) return { ok: false, why: "idle" };
     var s = wo.screens[wo.i], entry = wo.entries[wo.i];
     if (!s || (s.cx && !s.ei) || isTimed(s.ex)) return { ok: false, why: "screen" };
-    var idx = ssIdx(entry), dock = s.ss && stepRows ? stepRows[0].parentNode : null;
-    var dialled = typeof opts.reps === "number" && isFinite(opts.reps) ||
-      typeof opts.weight === "number" && isFinite(opts.weight);
-    if (!dialled && dock && dock._wo === wo && dock._k === wo.i && dock._idx === idx) {
-      // The open panel's steppers already hold what this set will be.
-      setCtx.idx = idx;
-    } else {
-      var pre = setPrefill(idx);
-      setCtx.idx = pre.idx;
-      setReps(typeof opts.reps === "number" && isFinite(opts.reps) ? opts.reps : pre.reps);
-      setWeight(typeof opts.weight === "number" && isFinite(opts.weight) ? opts.weight : pre.weight);
-    }
+    // Through the stepper's own setters, so a figure from off the phone meets the
+    // clamp a thumb does; on the figures the steppers already hold, nothing moves.
+    var n = nextSet(), idx = n.idx;
+    setCtx.idx = idx;
+    setReps(typeof opts.reps === "number" && isFinite(opts.reps) ? opts.reps : n.reps);
+    setWeight(typeof opts.weight === "number" && isFinite(opts.weight) ? opts.weight : n.weight);
     var reps = setCtx.reps, weight = setCtx.weight;
     saveSet();
     if (opts.id) { setEvents.push(opts.id); if (setEvents.length > 64) setEvents.shift(); }
@@ -20951,7 +20980,9 @@ export const APP = String.raw`
     woForward();
     var s = wo.screens[wo.i];
     if (!s || (s.cx && !s.ei) || isTimed(s.ex)) return;
-    openSetSheet(wo.entries[wo.i].sets.length);
+    // The set the card was naming, which after one logged out of order is not
+    // the one past the end.
+    openSetSheet(nextSet().idx);
     if (reps) setReps(parseFloat(reps[1]));
     if (weight) setWeight(parseFloat(weight[1]));
     if (field === "weight" || field === "reps") $(field === "weight" ? "wtval" : "repsval").click();
