@@ -3191,7 +3191,7 @@ export const APP = String.raw`
     t.appendChild(el("span", "fromtitle", src.title || "Untitled workout"));
     b.appendChild(tw);
     b.appendChild(t);
-    b.onclick = function () { openDetail(src, true); $("detail").scrollTop = 0; };
+    b.onclick = function () { showCard(src); };
     return b;
   }
 
@@ -3822,6 +3822,16 @@ export const APP = String.raw`
     paintNav();
     $("detail").classList.add("docked", "open");
     if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
+  }
+
+  // A card opened from somewhere that can sit over another card — a citation
+  // chip, the ready sheet's Look it over first, a spotter://workout or start
+  // link — takes the open card's place and its history entry, at its own top.
+  // A second entry would outlive the Back that closes the overlay, and the next
+  // Back would spend it doing nothing. With no card open it is an ordinary open.
+  function showCard(w) {
+    openDetail(w, $("detail").classList.contains("open"));
+    $("detail").scrollTop = 0;
   }
 
   // Start is Resume while this card's session is paused — startWorkout resumes it
@@ -7316,12 +7326,13 @@ export const APP = String.raw`
     // In a superset it is the member this set hands over to, until the last set.
     var hand = s && s.ss ? ssTurn(wo.i, 1).next : -1;
     if (hand >= 0) j = hand;
-    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, round = cx ? cxLive(s) : null;
-    // The set about to be done. Past the plan it is an extra, and the phone says
-    // so ("Goal reached · Extras welcome") — but a Lock Screen card reading
-    // "Set 3 of 2" just looks broken, so the total grows with the index the way
-    // progress.total already does below.
-    var setNo = entry.sets.filter(Boolean).length + 1;
+    var cx = !!(s && s.cx), pre = s ? nextSet() : null, round = cx ? cxLive(s) : null;
+    // The set about to be done, and the dose it is dialled to: the ones the
+    // phone's button names and a Log set here logs (nextSet). Past the plan it
+    // is an extra, and the phone says so ("Goal reached · Extras welcome") — but
+    // a Lock Screen card reading "Set 3 of 2" just looks broken, so the total
+    // grows with the index the way progress.total already does below.
+    var setNo = pre ? pre.idx + 1 : 1;
     // A complex is scored in rounds off one screen, so it has no "set 2 of 4".
     return {
       v: 1,
@@ -7382,6 +7393,18 @@ export const APP = String.raw`
     if (wo) try { native.live.update(liveState()); } catch (e) { /* ignore */ }
   }
 
+  // A figure changed with nothing saved behind it — a superset panel's stepper,
+  // the history landing under the button — and the dose the Lock Screen offers
+  // changed with it. A beat later rather than per step: a held stepper moves
+  // every 62 ms and the card needs only where it stopped. Never once the session
+  // has ended, which would put the activity back on the Lock Screen.
+  var liveT = 0;
+  function liveSoon() {
+    if (!native || !native.live) return;
+    clearTimeout(liveT);
+    liveT = setTimeout(function () { if (wo && !wo.finished) liveSync(); }, 400);
+  }
+
   // Finished, or walked away from. Either way the Lock Screen has to stop showing
   // a workout nobody is doing, and it is the only thing that can say so.
   function liveEnd(completed) {
@@ -7395,11 +7418,16 @@ export const APP = String.raw`
 
   function startWorkout(w, resume) {
     // Start on a card whose session is waiting is Resume: nobody starting the
-    // workout they paused an hour ago wants a second copy of it.
+    // workout they paused an hour ago wants a second copy of it. Every Start
+    // door comes through here — the card's dock, the day card, Up next, the
+    // ready sheet, spotter://start — so this is where another card's waiting
+    // session stops being overwritten: with sets in it, it is finished or
+    // resumed first (askPaused); with none, there was nothing in it to keep.
     if (!resume) {
       var waiting = pausedDraft();
       if (waiting && waiting.workoutId === w.id) { resumeWorkout(); return; }
-      if (waiting) toast("Ended the paused " + (waiting.title || "workout") + ".");
+      if (waiting && draftSets(waiting)) { askPaused(waiting); return; }
+      if (waiting) toast("Closed " + (waiting.title || "the paused workout") + " — nothing was logged.");
     }
     guideClear(); guideStill();
     // The session owns its exercise list, including additions recovered from a draft.
@@ -7460,6 +7488,33 @@ export const APP = String.raw`
     history.pushState({ workout: 1 }, "");
     lastWeights();
   }
+
+  // Start on one card while another's session waits with sets in it. Apple's
+  // Workout app never loses a session, and nor does this: no Discard, and no
+  // new session written over the old one's draft. The waiting one is finished
+  // — saved with its recap, the paused bar's own Finish — or resumed, and the
+  // card that asked is a second Start away once the way is clear. The rows hand
+  // over as every sheet's do: Workout Mode opens first and the sheet closes
+  // behind it on the same history entry, taking with it the ready sheet a
+  // notification's Start Now can have left underneath.
+  function askPaused(d) {
+    var t = d.title || "Workout", n = draftSets(d);
+    $("patitle").textContent = t + " is paused";
+    $("palede").textContent = n + (n === 1 ? " set logged" : " sets logged");
+    $("pafin").querySelector("b").textContent = "Finish " + t;
+    $("pago").querySelector("b").textContent = "Resume " + t;
+    openSheet("pausedask");
+    // Where VoiceOver starts: which session, then what to do about it.
+    $("patitle").focus({ preventScroll: true });
+  }
+
+  function askDone(fin) {
+    resumeWorkout();
+    if (fin) finishWorkout();
+    [].forEach.call(document.querySelectorAll(".sheet.open"), function (n) { closeSheet(n.id); });
+  }
+  $("pafin").onclick = function () { askDone(true); };
+  $("pago").onclick = function () { askDone(false); };
 
   function appendSessionExercise(ex) {
     if (!wo || wo.finished) return false;
@@ -8490,17 +8545,15 @@ export const APP = String.raw`
   // What the button does on this screen: [what it does, what it says, its
   // glyph, the set it logs or starts — none for a round or Finish].
   function goState() {
-    var s = wo.screens[wo.i], e = wo.entries[wo.i], idx = ssIdx(e), dock, f;
+    var s = wo.screens[wo.i], e = wo.entries[wo.i], idx = ssIdx(e), f;
     if (!s) return ["sheet", "Log a set", "plus", idx];
     // A hold under way: the button says what the ring's own tap does.
     if (isTimed(s.ex) && woPhase !== "idle") return restHeld && restFace ? ["hold", "Resume", "play", idx] : ["hold", "Pause", "pause", idx];
     if (stopOf(wo.i) === endStop() && stopFull(wo.i)) return ["finish", "Finish workout", "flag"];
     if (s.cx && !s.ei) return ["round", "Round " + (cxOf(s.bi, s.cx).rounds + 1) + " done", "check"];
     if (isTimed(s.ex)) return ["hold", "Start " + clock(s.ex.duration_seconds), "play", idx];
-    // An open superset panel's own steppers, when they hold this set: they are
-    // what logNextSet reads. The sheet's prefill otherwise.
-    dock = s.ss && stepRows ? stepRows[0].parentNode : null;
-    f = dock && dock._wo === wo && dock._k === wo.i && dock._idx === idx ? setCtx : setPrefill(idx);
+    // What logNextSet will log, in its own words.
+    f = nextSet();
     return ["log", "Log set " + (idx + 1) + " · " + f.reps +
       (f.weight ? " × " + f.weight.toLocaleString() + " " + wtUnit(s.ex, e) : " reps"), "check", idx];
   }
@@ -8605,6 +8658,8 @@ export const APP = String.raw`
     if (goal && s) goal.textContent = goalText(s, e);
     ssPrime();
     paintGo();
+    // Last time's weight is the button's now, and the Lock Screen's dose with it.
+    liveSoon();
   }
 
   var setCtx = { idx: 0, reps: 10, weight: 0 };
@@ -8711,8 +8766,9 @@ export const APP = String.raw`
     animateNumber($("repsval"), String(setCtx.reps), animate);
     animateNumber($("wtval"), setCtx.weight.toLocaleString(), animate);
     // Turned in a superset's open panel, these are the figures the big button
-    // logs, and it follows them at once. A redraw docking them paints its own.
-    if (animate) paintGo(1);
+    // logs, and it follows them at once, the Lock Screen and the wrist a beat
+    // later. A redraw docking them paints its own.
+    if (animate) { paintGo(1); liveSoon(); }
   }
 
   function animateNumber(node, value, animate) {
@@ -8804,15 +8860,36 @@ export const APP = String.raw`
     if (document.activeElement === e.input) e.input.blur();
   }
 
+  // ---------- the next set, one answer ----------
+  //
+  // Which set the session is up to, and the figures it would be logged on, for
+  // the three places that say it or do it: the big button's label (goState), the
+  // tap (logNextSet) and the Lock Screen and the wrist (liveState). Each used to
+  // work it out for itself, which is how the Lock Screen came to read "Set 2 ·
+  // 95 lb" over a tap that logged set 1 bare. The set is the first one not yet
+  // done on the movement the session stands on, so one logged out of order off
+  // its pill leaves no hole behind it. The figures are the open superset panel's
+  // own steppers while they hold that set — dialled there, they are what the
+  // button says — or, while the set sheet has borrowed them for a moment, what
+  // they will be handed back with (stepDock); else setPrefill's, the numbers the
+  // sheet would open on.
+  function nextSet() {
+    var s = wo.screens[wo.i], idx = ssIdx(wo.entries[wo.i]), f = null;
+    var dock = s && s.ss && stepRows ? stepRows[0].parentNode : null;
+    if (dock && dock._wo === wo && dock._k === wo.i && dock._idx === idx) f = setCtx;
+    else if (s && s.ss && ssHeld && ssHeld.wo === wo && ssHeld.key === wo.i + ":" + idx) f = ssHeld;
+    f = f || setPrefill(idx);
+    return { idx: idx, reps: f.reps, weight: f.weight };
+  }
+
   // ---------- one way to log the next set (seam) ----------
   //
   // Workout Mode's big button, the Lock Screen's Log set and the watch's all come
   // through here, so the three can never log different numbers for the same set.
-  // The set is the first one not yet done on the movement the session stands on;
-  // its figures are the caller's if it sent any (a dial turned on the wrist),
-  // else the open superset panel's own steppers, else setPrefill's — the same
-  // numbers the sheet would open on. It goes through saveSet, the one place a
-  // set is written, rested, buzzed and checked for a best.
+  // The set and its figures are nextSet's, with any figure the caller sent (a
+  // dial turned on the wrist) in place of its own: one left alone is the one the
+  // card was showing. It goes through saveSet, the one place a set is written,
+  // rested, buzzed and checked for a best.
   //
   // Nothing here asks which screen is up: the next cycle's native session core
   // replays taps made on the Lock Screen and the watch through this door. An
@@ -8828,18 +8905,12 @@ export const APP = String.raw`
     if (!wo || wo.finished) return { ok: false, why: "idle" };
     var s = wo.screens[wo.i], entry = wo.entries[wo.i];
     if (!s || (s.cx && !s.ei) || isTimed(s.ex)) return { ok: false, why: "screen" };
-    var idx = ssIdx(entry), dock = s.ss && stepRows ? stepRows[0].parentNode : null;
-    var dialled = typeof opts.reps === "number" && isFinite(opts.reps) ||
-      typeof opts.weight === "number" && isFinite(opts.weight);
-    if (!dialled && dock && dock._wo === wo && dock._k === wo.i && dock._idx === idx) {
-      // The open panel's steppers already hold what this set will be.
-      setCtx.idx = idx;
-    } else {
-      var pre = setPrefill(idx);
-      setCtx.idx = pre.idx;
-      setReps(typeof opts.reps === "number" && isFinite(opts.reps) ? opts.reps : pre.reps);
-      setWeight(typeof opts.weight === "number" && isFinite(opts.weight) ? opts.weight : pre.weight);
-    }
+    // Through the stepper's own setters, so a figure from off the phone meets the
+    // clamp a thumb does; on the figures the steppers already hold, nothing moves.
+    var n = nextSet(), idx = n.idx;
+    setCtx.idx = idx;
+    setReps(typeof opts.reps === "number" && isFinite(opts.reps) ? opts.reps : n.reps);
+    setWeight(typeof opts.weight === "number" && isFinite(opts.weight) ? opts.weight : n.weight);
     var reps = setCtx.reps, weight = setCtx.weight;
     saveSet();
     if (opts.id) { setEvents.push(opts.id); if (setEvents.length > 64) setEvents.shift(); }
@@ -12857,7 +12928,10 @@ export const APP = String.raw`
           u.done.map(function (l) { return l.workout_title || "Workout"; }).join(", ")), card.lastChild);
       }
       go = card.lastChild.appendChild(icon(el("button", "iconbtn"), "more"));
-      go.setAttribute("aria-label", "More for this plan");
+      // Move, Swap and Remove act on the row by its id, which a row just planned
+      // is still waiting for: offered once the server has given it one.
+      go.disabled = String(u.row.id).indexOf("tmp-") === 0;
+      go.setAttribute("aria-label", go.disabled ? "Saving the plan…" : "More for this plan");
       go.onclick = function () {
         openMore(w.title || "Workout", [["Move", openPlanSheet, { w: w, row: u.row, from: "upnext" }],
           ["Swap", planSwap, u.row], ["Remove from plan", planRemove, u.row, 1]]);
@@ -12901,7 +12975,8 @@ export const APP = String.raw`
 
   // Any other day. Past: the sessions finished on it (each opens its recap), and
   // what was planned and not done, which can be done today instead. Ahead: what
-  // is planned, to start now, move or remove. Either way a workout can be added.
+  // is planned, to start now. Either way a planned row can be moved (Move works
+  // on any planned row, a missed one included) or removed, and a workout added.
   function dayCard(d) {
     var card = el("div", "daycard tcard");
     card.appendChild(el("div", "dayname", dayDate(d.key).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })));
@@ -12910,18 +12985,19 @@ export const APP = String.raw`
         (l.duration_seconds ? " · " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : ""), openRecap, l));
     });
     // A planned row is the picker's row (the workout, its word and length), with
-    // the plan's actions under it, the first of them a button.
+    // the plan's actions under it, the first of them a button. A row planWrite has
+    // drawn before the server gave it an id says so, and its plan actions wait
+    // for the id: there is nothing yet to take off a day or move by.
     d.missed.concat(d.planned).forEach(function (it) {
       var miss = d.missed.indexOf(it) >= 0, w = it.w, head = card.appendChild(tbtn("pickrow", null, openDetail, w));
-      var t = el("span", "pt"), row = card.appendChild(el("div", "piacts"));
+      var t = el("span", "pt"), row = card.appendChild(el("div", "piacts")), wait = String(it.row.id).indexOf("tmp-") === 0;
       if (cardArt(w)) { var img = head.appendChild(el("img")); img.alt = ""; img.src = cardArt(w); }
       t.appendChild(el("b", null, w.title || "Workout"));
-      t.appendChild(el("span", null, [miss ? "Missed" : "Planned", fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
+      t.appendChild(el("span", null, [wait ? "Saving…" : miss ? "Missed" : "Planned", fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
       head.appendChild(t);
-      (miss ? [["btn ghost", "Do it today", doToday, it]] : [["btn ghost", "Start now", startWorkout, w],
-        ["linkbtn", "Move", openPlanSheet, { w: w, row: it.row, from: "day" }]])
-        .concat([["linkbtn", "Remove", planRemove, it.row]])
-        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])); });
+      [miss ? ["btn ghost", "Do it today", doToday, it] : ["btn ghost", "Start now", startWorkout, w],
+        ["linkbtn", "Move", openPlanSheet, { w: w, row: it.row, from: "day" }], ["linkbtn", "Remove", planRemove, it.row]]
+        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])).disabled = wait && a[2] !== startWorkout; });
     });
     if (d.empty) card.appendChild(el("div", "tdose", d.when === "past" ? "Nothing logged or planned." : "Nothing planned yet."));
     card.appendChild(tbtn("planadd", "+ Plan a workout", planPick, d.key));
@@ -13066,59 +13142,41 @@ export const APP = String.raw`
     }
   }
 
-  // Off the day on the tap. With a message it is a Remove, on the delayed commit
-  // this file uses everywhere: the row leaves the screen now and the database
-  // when the toast offering Undo does, so nothing can half-fail; undone runs if
-  // the Undo is taken. Without one it is the second half of a move, gone at once.
-  // A row the server has not confirmed yet has no id to delete by; it goes on
-  // its own when loadPlan lands.
-  function planDrop(p, msg, undone) {
-    if (String(p.id).indexOf("tmp-") === 0) return Promise.resolve();
+  // Off the day on the tap, on the delayed commit this file uses everywhere: the
+  // row leaves the screen now and the database when the toast offering Undo
+  // does, so nothing can half-fail. (A move is planWrite's, which deletes only
+  // once the new row is in.) A row the server has not confirmed yet has no id to
+  // delete by, so nothing offers this on one (dayCard, upCard) until it has.
+  function planDrop(p, msg) {
     planRev++;
-    var epoch = accountEpoch, uid = state.user.id, range = JSON.stringify(fetchRange()), kept = state.plan;
     state.plan = (state.plan || []).filter(function (q) { return q.id !== p.id; });
-    if (msg) {
-      planGone[p.id] = 1;
-      repaintPlan();
-      offerUndo(msg, function () {
-        sb.from("plan").delete().eq("id", p.id).then(function (r) {
-          delete planGone[p.id];
-          if (r && r.error) toast("That did not come off the day — it is still planned.");
-          loadPlan(true);
-        });
-      }, function () {
+    planGone[p.id] = 1;
+    repaintPlan();
+    offerUndo(msg, function () {
+      sb.from("plan").delete().eq("id", p.id).then(function (r) {
         delete planGone[p.id];
-        state.plan = state.plan.concat([p]);
-        repaintPlan();
-        if (undone) undone();
+        if (r && r.error) toast("That did not come off the day — it is still planned.");
+        loadPlan(true);
       });
-      return Promise.resolve();
-    }
-    renderTrain();
-    return sb.from("plan").delete().eq("id", p.id).then(function (r) {
-      if (!accountNow(epoch, uid)) return;
-      planRev++;
-      if (range !== JSON.stringify(fetchRange())) { loadPlan(true); return; }
-      if (r && r.error) {
-        state.plan = kept;
-        renderTrain();
-        toast("That did not come off the day — it is still planned.");
-        return;
-      }
-      loadPlan(true);
+    }, function () {
+      delete planGone[p.id];
+      state.plan = state.plan.concat([p]);
+      repaintPlan();
     });
   }
 
   function planRemove(p) { planDrop(p, "Removed from plan"); }
 
-  // Missed, and done today instead: the row moves to today. The new one is
-  // written now, the old one leaves with the toast, and one Undo takes back both.
+  // Missed, and done today instead: the row moves to today through planWrite,
+  // the Plan sheet's own write — today's row goes in first and the missed one
+  // comes off only once it has, so a failed write leaves the workout where it
+  // was, and one Undo takes back both. Already planned today, there is nothing
+  // to move: the missed row only comes off, with its Undo, rather than putting
+  // the workout on today twice.
   function doToday(it) {
-    var add = planAdd(ymd(new Date()), it.w.id);
-    add.then(function () { loadPlan(true); });
-    planDrop(it.row, "Moved to today", function () {
-      add.then(function (r) { if (r.data && r.data[0]) planDrop(r.data[0]); });
-    });
+    var key = ymd(new Date());
+    if (planned(it.w.id, key)) planDrop(it.row, "Already planned today — removed from " + pdWord(it.row.day));
+    else planWrite(it.w, [key], it.row, "Moved to today");
   }
 
   // The picker, for a day ("+ Plan a workout"), or in place of a planned row (Swap).
@@ -13361,9 +13419,8 @@ export const APP = String.raw`
   var pickCtx = null;
 
   function openPicker(day, label, opts) {
-    var rep = opts && opts.replace, when = pdWord(day);
-    // A row still waiting for its id cannot be taken off by it; that pick is an add.
-    pickCtx = { day: day, rep: rep && String(rep.id).indexOf("tmp-") !== 0 ? rep : null };
+    var when = pdWord(day);
+    pickCtx = { day: day, rep: opts && opts.replace || null };
     // "today" and "tomorrow" say it best; any other day by the caller's own name for it.
     $("picktitle").textContent = pickCtx.rep ? "Swap" : "Plan for " + (/^to/.test(when) ? when : label || dayLabel(dayDate(day)));
     $("pickq").value = "";
@@ -13447,7 +13504,7 @@ export const APP = String.raw`
   function openPlanSheet(o) {
     if (!o || !o.w || !state.user) return;
     var w = o.w, box = $("plandaysbody"), keys = planDays(new Date()), mine = {};
-    var row = o.row && String(o.row.id).indexOf("tmp-") !== 0 ? o.row : null;
+    var row = o.row || null;
     (state.plan || []).forEach(function (p) { if (p.workout_id === w.id) mine[p.day] = 1; });
     planCtx = { w: w, row: row, sel: {}, epoch: accountEpoch, uid: state.user.id };
     $("plandaystitle").textContent = row ? "Move" : "Plan";
@@ -17511,7 +17568,7 @@ export const APP = String.raw`
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
    "trainmore", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
    "workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"]
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet", "pausedask"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -17688,7 +17745,7 @@ export const APP = String.raw`
     }, function () { closeSheet("readysheet"); }));
     // The way out is a button as well as a swipe: VoiceOver cannot reach the scrim.
     var foot = box.appendChild(el("div", "readyfoot"));
-    foot.appendChild(el("button", "readylook", "Look it over first")).onclick = function () { openDetail(w); closeSheet("readysheet"); };
+    foot.appendChild(el("button", "readylook", "Look it over first")).onclick = function () { showCard(w); closeSheet("readysheet"); };
     foot.appendChild(el("button", "readylook", "Not now")).onclick = function () { closeSheet("readysheet"); };
     openSheet("readysheet");
     // Where VoiceOver starts: what this is, then what to do about it.
@@ -17771,10 +17828,10 @@ export const APP = String.raw`
 
   // The recap's next step: the same workout on a day of the coming week, or
   // another one on the first free day of it (the picker's title names it). Today
-  // has just been done, so the week is the six days after it — all of them named
-  // by weekday, and the wide cell they leave is Pick another's.
+  // has just been done, so the week is the seven days after it, tomorrow to the
+  // same weekday next week (named by its date), and Pick another the eighth cell.
   function sumNext(w) {
-    var card = planWorkout(w.id), keys = planDays(new Date()).slice(1, 7), wrap = el("div", "sumnext");
+    var card = planWorkout(w.id), keys = planDays(new Date()).slice(1, 8), wrap = el("div", "sumnext");
     if (!card) return null;
     wrap.appendChild(el("p", "readylabel", "Plan your next one"));
     wrap.appendChild(dayChips(card, keys, "Pick another", function () {
@@ -20775,7 +20832,7 @@ export const APP = String.raw`
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
   ["workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet"].forEach(function (id) {
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet", "pausedask"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
@@ -21026,7 +21083,9 @@ export const APP = String.raw`
     woForward();
     var s = wo.screens[wo.i];
     if (!s || (s.cx && !s.ei) || isTimed(s.ex)) return;
-    openSetSheet(wo.entries[wo.i].sets.length);
+    // The set the card was naming, which after one logged out of order is not
+    // the one past the end.
+    openSetSheet(nextSet().idx);
     if (reps) setReps(parseFloat(reps[1]));
     if (weight) setWeight(parseFloat(weight[1]));
     if (field === "weight" || field === "reps") $(field === "weight" ? "wtval" : "repsval").click();
@@ -21064,10 +21123,10 @@ export const APP = String.raw`
     else if (!w) toast("That workout is no longer in Workouts.");
     // A saved video is ready (push.ts): the banner and Plan It land here.
     else if (head === "ready") readyLink(w, /[?&]auto=1/.test(url));
-    else if (head === "workout") openDetail(w);
+    else if (head === "workout") showCard(w);
     else if (wo && !wo.finished) { woForward(); toast("A workout is already running."); }
     // The card first, so finishing lands back where a Library tap would have.
-    else { openDetail(w); startWorkout(w); }
+    else { showCard(w); startWorkout(w); }
   }
 
   // A link can only open something once there is a library to open it in.

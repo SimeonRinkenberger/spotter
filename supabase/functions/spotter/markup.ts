@@ -339,6 +339,17 @@ export const MARKUP_BODY = String.raw`</head>
   <button class="pickrow leaverow" id="wend"><svg class="ic"><use href="#i-flag"></use></svg><span class="pt"><b>Finish workout</b><span id="wendsub">Saves what you logged.</span></span></button>
   <button class="btn ghost" data-close="wleavesheet">Keep going</button>
 </div></div>
+<!-- Start on one card while another's session waits paused with sets in it
+     (app.ts, askPaused). The leave sheet's two doors, for the waiting session:
+     finish it or go back to it. Never a Discard. -->
+<div class="sheet" id="pausedask" role="dialog" aria-modal="true" aria-labelledby="patitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <h2 id="patitle" tabindex="-1"></h2>
+  <p class="lede" id="palede"></p>
+  <button class="pickrow leaverow" id="pafin"><svg class="ic"><use href="#i-flag"></use></svg><span class="pt"><b></b></span></button>
+  <button class="pickrow leaverow" id="pago"><svg class="ic"><use href="#i-play"></use></svg><span class="pt"><b></b></span></button>
+  <button class="btn ghost" data-close="pausedask">Cancel</button>
+</div></div>
 <div class="sheet" id="filtersheet" role="dialog" aria-modal="true" aria-labelledby="filtertitle"><div class="sheetbody">
   <div class="grabber"></div><h2 id="filtertitle">Filters</h2>
   <div id="filterlist"></div>

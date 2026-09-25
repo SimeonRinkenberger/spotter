@@ -1455,6 +1455,9 @@ export const STYLE = String.raw`<style>
     color: var(--ember-ink); }
   .leaverow .pt b { font-size: 15px; white-space: normal; }
   .leaverow .pt span { display: block; margin-top: 1px; line-height: 1.4; }
+  /* The same rows ask about a paused session (askPaused), whose title takes
+     VoiceOver's focus as the sheet opens: a focus that draws no ring. */
+  #patitle { outline: none; }
   /* A card with no picture keeps the column: a sand tile where the art would be. */
   .pickrow .noimg { width: 46px; height: 46px; border-radius: 11px; flex: 0 0 auto; display: flex;
     align-items: center; justify-content: center; background: var(--sand); color: var(--muted); }
@@ -1779,6 +1782,12 @@ export const STYLE = String.raw`<style>
   .tbtns .tmove, .piacts .btn { flex: 0 0 auto; width: auto; padding: 12px 16px; font-size: 14px; }
   .tbtns .iconbtn { width: 50px; height: auto; border-radius: 14px; }
   .piacts { display: flex; align-items: center; gap: 20px; margin-top: -4px; }
+  /* Level with the button beside them: .tcard .linkbtn lifts a card's own links
+     to the top of their line, which beside a 44px button reads as a slip. */
+  .piacts .linkbtn { align-self: center; }
+  /* A row planned a moment ago waits for the server's id, and its plan actions
+     with it (app.ts, dayCard and Up next's ⋯). */
+  .piacts .linkbtn[disabled], .tbtns .iconbtn[disabled] { opacity: .42; }
   .dayses { width: 100%; min-height: 44px; background: none; border: 0; border-top: 1px solid var(--line);
     text-align: left; color: var(--ink); }
   .dayses .ic { color: var(--muted); flex: 0 0 auto; }
@@ -2572,7 +2581,10 @@ export const STYLE = String.raw`<style>
     font-size: 14px; font-weight: 650; }
   .readylook + .readylook { color: var(--muted); }
   .sumnext { margin-top: 22px; text-align: left; animation: viewin var(--t-2) var(--e-out) 230ms both; }
-  .sumnext .scchip:last-child { grid-column: span 2; }
+  /* Seven days and Pick another: the ready sheet's two rows of four. A quarter of
+     375px has 68px for a label and "Pick another" is 80, so its two words take
+     two lines inside the 44px every chip keeps, rather than a row of their own. */
+  .sumnext .scchip:last-child { white-space: normal; line-height: 1.1; padding-top: 5px; padding-bottom: 5px; }
   /* A lit switch in a Settings row wears its fill and not its glow: the value cell
      clips (overflow, for the ellipsis) and the glow came out as a hard square. */
   .setgroup .kv .v .chip.active { box-shadow: none; }

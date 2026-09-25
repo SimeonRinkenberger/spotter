@@ -145,12 +145,15 @@ assert(/var reps: Int\?/.test(state) && /var weight: Double\?/.test(state),
   'LiveAction must carry optional reps and weight for a dose dialled on the wrist');
 // The set goes through logNextSet, the one door the phone's own button uses too:
 // liveAction hands it the wrist's figures, and it reads them as numbers or falls
-// back to setPrefill.
-const nextSet = /function logNextSet\(opts\) \{[\s\S]*?\n  \}/.exec(app);
-assert(nextSet && /logNextSet\(\{ reps: a\.reps, weight: a\.weight/.test(liveAction[0]) &&
-  /typeof opts\.reps === "number"/.test(nextSet[0]) && /typeof opts\.weight === "number"/.test(nextSet[0]) &&
-  /setPrefill\(idx\)/.test(nextSet[0]),
-  APP + ' must read a.reps and a.weight as numbers and fall back to its own prefill');
+// back, figure by figure, to nextSet() — the set and dose liveState() drew the
+// card from, whose own last resort is setPrefill.
+const door = /function logNextSet\(opts\) \{[\s\S]*?\n  \}/.exec(app);
+const next = /function nextSet\(\) \{[\s\S]*?\n  \}/.exec(app);
+const drawn = /function liveState\(\) \{[\s\S]*?\n  \}/.exec(app);
+assert(door && next && drawn && /logNextSet\(\{ reps: a\.reps, weight: a\.weight/.test(liveAction[0]) &&
+  /typeof opts\.reps === "number"/.test(door[0]) && /typeof opts\.weight === "number"/.test(door[0]) &&
+  /nextSet\(\)/.test(door[0]) && /nextSet\(\)/.test(drawn[0]) && /setPrefill\(idx\)/.test(next[0]),
+  APP + ' must read a.reps and a.weight as numbers and fall back to the set and dose the card was drawn from');
 
 console.log('PASS every action the wrist can send (' + [...new Set(sent)].sort().join(', ') +
   ') has a branch in app.ts, and an adjusted dose survives the trip.');
