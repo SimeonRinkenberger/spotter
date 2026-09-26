@@ -228,7 +228,10 @@ async function androidShell() {
       return;
     }
     if (document.querySelector('.sheet.open, #detail.open, #workout.open')) history.back();
-    else AndroidHost.background().catch(ignore);
+    // A step the page takes without a history entry (the sign-in card's email
+    // and code faces) is the page's to take back, and it says so by cancelling
+    // this event; anything else leaves the app, as Android's Back does.
+    else if (window.dispatchEvent(new CustomEvent('spotter:back', { cancelable: true }))) AndroidHost.background().catch(ignore);
   });
   await AndroidHost.addListener('sharedUrl', ({ url }) => window.dispatchEvent(new CustomEvent('spotter:shared-url', { detail: { url } })));
   const pending = await AndroidHost.takeShare();

@@ -22109,6 +22109,18 @@ export const APP = String.raw`
   $("otp").addEventListener("keydown", function (e) { if (e.key === "Enter") otpGo(); });
   $("mailresend").onclick = mailResend;
   $("mailback").onclick = mailBack;
+  // Android's Back (native/bridge.js asks here before it leaves the app). The
+  // card's faces are not history entries, so Back takes the step their own
+  // controls take: the code face to the email face (Use a different email), the
+  // email face to the three doors (its arrow). The doors themselves, and any
+  // signed-in page, are left to the shell. iOS has no such button.
+  window.addEventListener("spotter:back", function (e) {
+    if (!$("landing").classList.contains("open")) return;
+    if (!$("mailsent").classList.contains("hide")) $("mailback").click();
+    else if (authMode === "email") $("authback").click();
+    else return;
+    e.preventDefault();
+  });
   $("oagoogle").onclick = function () { if (!codeBad()) googleSignIn(); };
   $("oaapple").onclick = function () { if (!codeBad()) appleSignIn(); };
   // Focused inside the tap: the only focus iOS answers with a keyboard.
