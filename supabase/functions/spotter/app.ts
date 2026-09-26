@@ -190,14 +190,18 @@ export const APP = String.raw`
     if (h && Date.now() - h.at < 7000) toast(h.msg, h.ms);
   }
 
-  // A tap on the toast is the toast's alone. On the phone a tap aimed at a toast
-  // as it expired — and now and then the very tap that ran its Undo — reached
-  // the card under it once the toast had let go of it. For half a second after
-  // the toast goes, a click where it stood is swallowed.
+  // A tap on a toast that takes one (Undo, Tap to mute) is the toast's alone. On
+  // the phone a tap aimed at one as it expired — and now and then the very tap
+  // that ran its Undo — reached the card under it once the toast had let go. For
+  // a second after such a toast goes (QA's late taps landed up to one), a click
+  // where it stood is swallowed. A toast that takes no tap never took one, so it
+  // leaves nothing behind.
   var toastSpot = null;
   function toastGone(t) {
     var r = t.getBoundingClientRect();
-    if (t.classList.contains("show")) toastSpot = { l: r.left - 8, t: r.top - 8, r: r.right + 8, b: r.bottom + 8, until: Date.now() + 500 };
+    if (t.classList.contains("show") && t.classList.contains("tappable")) {
+      toastSpot = { l: r.left - 8, t: r.top - 8, r: r.right + 8, b: r.bottom + 8, until: Date.now() + 1000 };
+    }
   }
   document.addEventListener("click", function (e) {
     var s = toastSpot;
