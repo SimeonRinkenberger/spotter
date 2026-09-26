@@ -100,7 +100,7 @@ function freshDom() {
 const LIFTED = ['num', 'capNum', 'capMany', 'planWord', 'money', 'dayMonth', 'billOn', 'myPlan', 'isFree', 'loadPrices',
   'loadCaps', 'loadUse', 'loadSub', 'planRows', 'paintTable', 'pumpyRoom', 'planCtxLine', 'skelRow', 'priceCard', 'goneCard',
   'setBuyLabel', 'finePrint', 'paintChoice', 'pickInterval', 'planState', 'paintPlans', 'paintSoon', 'retryPrices', 'paintCtx',
-  'openPlans', 'paintPlanGroup', 'adoptPlan', 'shelf', 'withShelf', 'renderLibCount', 'limitHit', 'storeName', 'nativePurchase',
+  'openPlans', 'paintPlanGroup', 'adoptPlan', 'shelf', 'shelfHeld', 'withShelf', 'renderLibCount', 'limitHit', 'storeName', 'nativePurchase',
   'syncNativePurchase', 'absorbPlan', 'setPending'];
 const VARS = [block('  var billing = {', '\n  };'), block('  var AWARDS_KEPT = ', ';'), block('  var CAP_WORDS = {', '\n  };'),
   block('  var MULT = ', ';'), block('  var PLAN_RESET = ', '";'), block('  var BILL_FLAG = ', ';')];
@@ -463,6 +463,21 @@ await ok('the library counter and the save receipt read the server’s caps, on 
     assert(nodes.libcount.cls.has('near'), 'ember from four fifths');
     assert.equal(run('withShelf("Saved")'), 'Saved. That is 14 of your 17 saved workouts.');
   }
+  // A kept starter and a program's own workouts are not saves: the server's
+  // libraryCount and the cap's trigger leave them out, and so does every count here.
+  reset({ workouts: 14 });
+  ctx.state.workouts.push({ id: 's1', kind: 'starter' }, { id: 'p1', kind: 'program' }, { id: 'p2', kind: 'program' });
+  await run('loadCaps()');
+  run('renderLibCount()');
+  assert.equal(nodes.libcount.textContent, '14 of 17 saved · Plus', 'starters and program workouts are off the meter');
+  assert.equal(run('withShelf("Saved")'), 'Saved. That is 14 of your 17 saved workouts.');
+  // 13 saves and 3 that are not: 16 rows, but under the four fifths (14) of 17.
+  ctx.state.workouts.splice(13, 1);
+  assert.equal(ctx.state.workouts.length, 16);
+  run('renderLibCount()');
+  assert.equal(nodes.libcount.textContent, '13 of 17 saved · Plus');
+  assert(!nodes.libcount.cls.has('near'), 'the four-fifths warning counts saves only');
+  assert.equal(run('withShelf("Saved")'), 'Saved', 'no receipt warning below four fifths of saves');
   reset({ plan: 'plus', workouts: 40 });
   await run('loadCaps()');
   run('renderLibCount()');

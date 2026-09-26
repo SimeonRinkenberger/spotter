@@ -17366,7 +17366,7 @@ export const APP = String.raw`
   // feature is a list of the plans that have it; an older server without the
   // list gets today's truth, which is Plus has it and Basic does not.
   function planRows(c, mine) {
-    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = state.workouts.length;
+    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = shelfHeld();
     function has(k, plan) { var l = c.features && c.features[k]; return l ? l.indexOf(plan) >= 0 : plan !== "free"; }
     function month(n) { n = capNum(n); return n === null ? "No limit" : n ? n.toLocaleString() + " a month" : "—"; }
     function shelfN(n) { n = capNum(n); return n === null ? "No limit" : n.toLocaleString(); }
@@ -18431,7 +18431,16 @@ export const APP = String.raw`
     if (!isFree() || !billing.caps) return null;
     var cap = capNum(billing.caps.free.library);
     if (cap === null || cap <= 0) return null;
-    return { used: state.workouts.length + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
+    return { used: shelfHeld() + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
+  }
+
+  // What Basic's shelf holds, counted the way the server counts it for the cap
+  // (libraryCount, the guard_workout_library trigger): a kept Spotter Starter
+  // and a program's own workouts are not saves. Every number a Basic account
+  // reads against its cap comes from here — the meter, its four-fifths warning,
+  // the save receipts, the Plus page's row — so none of them runs early.
+  function shelfHeld() {
+    return state.workouts.filter(function (w) { return w.kind !== "starter" && w.kind !== "program"; }).length;
   }
 
   // Every app that warns well warns before the wall, once: the save receipt says
