@@ -111,6 +111,8 @@ function resetPager() {} function measureChrome() {} function mailClose() {} fun
 function maybeInstallHint() {} function watchWorkouts() {} function welcomeMaybe() {} function restoreSession() {}
 function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {}
 function takeParkedShare() {} function readyOnOpen() {}
+// B.2: boot reads the goals beside the profile, and ends by asking the intent screen.
+function loadGoals() { if (typeof nets !== "undefined") nets.push("goals"); return Promise.resolve([]); } function introCheck() {}
 function warmPages() {} function sharePending() { return false; } function toast(m) { toasts.push(m); }
 function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
 function loadProfile() { nets.push("profiles"); return Promise.resolve(); }
@@ -174,7 +176,7 @@ const tick = () => new Promise((r) => setImmediate(r));
   const renders = c.log.filter((l) => l.startsWith('render:'));
   assert.equal(renders.length, 1, 'boot does not paint the same cache twice: ' + renders.join(' | '));
   assert.equal(grid(c), 'a-card-1,a-card-2');
-  assert.deepEqual([...c.nets].sort(), ['plan', 'profiles', 'workout_logs', 'workouts'], 'boot reads the library and Train');
+  assert.deepEqual([...c.nets].sort(), ['goals', 'plan', 'profiles', 'workout_logs', 'workouts'], 'boot reads the library and Train');
   assert.equal(c.earlyUid, null);
   ok('C2 stale token: cached library painted before the refresh, once');
 }
@@ -299,7 +301,7 @@ for (const door of ['callback', 'getSession', 'both']) {
   c.authCb('TOKEN_REFRESHED', { user: A }); c.flush(); await tick();
   assert.equal(c.state.user.id, A.id);
   assert.equal(c.log.filter((l) => l.startsWith('render:')).length, 1, 'the cache is not painted a second time');
-  assert.deepEqual([...c.nets].sort(), ['plan', 'profiles', 'workout_logs', 'workouts'], 'boot reads the library and Train');
+  assert.deepEqual([...c.nets].sort(), ['goals', 'plan', 'profiles', 'workout_logs', 'workouts'], 'boot reads the library and Train');
   assert(tap(c, '#settingsbtn'), 'the gate lifts with the account');
   (c.winL.online || []).forEach((f) => f());
   assert.equal(c.sessionAsks, 1, 'and the nudge stops');
@@ -461,7 +463,11 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
       function guideUser() {} function loadProfile() { return Promise.resolve(); } function maybeInstallHint() {} function watchWorkouts() {}
       function consumeShare() {} function consumeOpen() {} function consumeBilling() {} function consumeCreator() {} function warmPages() {} function welcomeMaybe() {}
       function takeParkedShare() {} function readyOnOpen() {}
+// B.2: boot reads the goals beside the profile, and ends by asking the intent screen.
+function loadGoals() { if (typeof nets !== "undefined") nets.push("goals"); return Promise.resolve([]); } function introCheck() {}
       function isSession(l) { return !!(l && l.completed_at); }
+      // prepareTrain's eight-second net (B.2): nothing is loading here, so it stands down.
+      var trainLean = null; function upNext() { return { s: 6 }; }
     ` + DECL + '\n' + REAL, ctx);
     return ctx;
   }

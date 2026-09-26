@@ -23,14 +23,14 @@ export const APP = String.raw`
   var SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU";
   var API = SB_URL + "/functions/v1/spotter/api/";
 
-  // Public identifiers for the two sign-in providers. Neither is a secret: a Google
-  // web client id and an Apple Services id are visible to anyone who opens this page,
-  // which is why they live here and not in app_config (service-role only) or in a
-  // second file to host. Fill them in after creating the credentials — README,
-  // "Sign in with Google / Apple". Leaving one blank does not break anything: the
-  // button only appears once the provider is switched on for the Supabase project,
-  // and a blank id simply sends that button down the redirect fallback.
-  var PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" };
+  // How the email door works (B.2). emailCode: a six-digit code by mail, which
+  // makes the account when there is none; custom SMTP carries it since 25 Sept
+  // 2026. Off, the same face asks for a password, as the card did before. The
+  // password path stays either way, for the accounts that have one and for App
+  // Review. The providers need nothing here any more: both sign in through the
+  // phone's own sheet (native/apple-auth.js, native/google-auth.js), and the web
+  // app whose Google and Apple scripts needed client ids is retired.
+  var PUBLIC_AUTH = { emailCode: true };
 
   // The other half of the signup boundary, and public for the same reason: a
   // Turnstile SITE key is meant to be read off the page. Its secret twin lives in
@@ -77,7 +77,7 @@ export const APP = String.raw`
     user: null, profile: null, workouts: [], logs: null, plan: null,
     collections: [], colItems: [],
     filter: "All", q: "", view: "library", weekStart: null, unit: "lb",
-    sounds: true, haptics: true, goal: null, awards: null
+    sounds: true, haptics: true, goal: null, awards: null, goals: null
   };
 
   function $(id) { return document.getElementById(id); }
@@ -479,45 +479,50 @@ export const APP = String.raw`
   }
 
   // ---------- auth ----------
-
-  var authMode = "signup";
+  //
+  // One card, three faces (markup.ts, #authcard): the doors (Apple, Google and
+  // email, the legal line, the creator code), the email step, and the code.
+  // "signup" is the doors' name: every door there makes an account as readily
+  // as it signs into one, so there is no "Already have an account?" any more,
+  // and the second face is "email". pwMode: the email face asks for a password
+  // (the code flag off, or asked for). pwNew: a password that signed nobody in,
+  // offered back as a new account, in words that never say whether that address
+  // already has one.
+  var authMode = "signup", pwMode = !PUBLIC_AUTH.emailCode, pwNew = false;
 
   function setAuthMode(mode) {
+    var was = authMode, mail = mode === "email";
     authMode = mode;
-    var isUp = mode === "signup";
-    $("authtitle").textContent = isUp ? "Create your account" : "Welcome back";
-    $("authgo").textContent = isUp ? "Create account" : "Sign in";
-    $("pw").setAttribute("autocomplete", isUp ? "new-password" : "current-password");
-    $("authswap").innerHTML = "";
-    $("authswap").appendChild(document.createTextNode(
-      isUp ? "Already have an account? " : "New here? "));
-    var b = el("button", null, isUp ? "Sign in" : "Create an account");
-    b.onclick = function () { setAuthMode(isUp ? "signin" : "signup"); };
-    $("authswap").appendChild(b);
-    $("forgotwrap").classList.toggle("hide", isUp);
-    // Same rule as Forgot your password, the other way round: the sentence is
-    // about creating an account, so it belongs to the face that creates one.
-    $("consent").classList.toggle("hide", !isUp);
-    // So does the creator code fold: a code is for an account being made.
-    $("authcodewrap").classList.toggle("hide", !isUp);
-    if (isUp) paintAuthCode();
+    $("doors").classList.toggle("hide", mail);
+    $("mailface").classList.toggle("hide", !mail);
+    if (mail) paintMail(); else paintAuthCode();
+    if (was !== mode) faceIn($(mail ? "mailface" : "doors"), mail ? 24 : -24);
+  }
+
+  // A face arrives from the side it is on: the email step from the right, the
+  // doors from the left on the way back, a push and a pop.
+  function faceIn(n, fx) {
+    n.style.setProperty("--fx", fx + "px");
+    n.classList.remove("facein");
+    void n.offsetWidth;
+    n.classList.add("facein");
+  }
+
+  // The email face as it stands: one field or two, and a button that says what
+  // it will do.
+  function paintMail() {
+    $("pwfield").classList.toggle("hide", !pwMode);
+    $("authgo").textContent = pwNew ? "Create an account with this email" : "Continue";
+    $("pw").setAttribute("autocomplete", pwNew ? "new-password" : "current-password");
+    $("pwswap").textContent = pwMode ? "Email me a code instead" : "Use a password instead";
+    $("pwswap").classList.toggle("hide", pwMode && !PUBLIC_AUTH.emailCode);
   }
 
   function authError(msg) {
     var e = $("autherr");
-    e.classList.remove("ok");
     if (!msg) { e.classList.remove("show"); return; }
     e.textContent = msg;
     e.classList.add("show");
-  }
-
-  // The same box, carrying good news: a reset link on its way, or an account that
-  // is gone. Two sentences do not earn a second element.
-  function authOK(msg) {
-    var e = $("autherr");
-    e.textContent = msg;
-    e.classList.add("show");
-    e.classList.add("ok");
   }
 
   // gotrue writes for a log ("AuthApiError: User already registered"); the person
@@ -531,16 +536,14 @@ export const APP = String.raw`
     // A six-digit code that is wrong and one that has been used read the same to
     // gotrue ("Token has expired or is invalid"), and they read the same here.
     if (/token|otp/i.test(m)) return "That code is wrong or has expired. Ask for a new one.";
-    if (/already regist/i.test(m)) return "That email already has an account — sign in instead.";
+    if (/already regist/i.test(m)) return "That email already has an account. Check the password, or tap Forgot password.";
     if (/invalid login|invalid.*credential/i.test(m)) return "Wrong email or password.";
     if (/rate limit|too many|for security purposes/i.test(m)) return "Too many tries. Give it a minute.";
-    if (/confirm/i.test(m)) return "Check your email to confirm your account, then sign in.";
+    if (/confirm/i.test(m)) return "Check your email for the code, then try again.";
     if (/network|fetch|failed to fetch/i.test(m)) return "Could not reach Spotter — check your connection.";
     if (/password/i.test(m) && /weak|short|least|6 char/i.test(m)) return "Use at least 8 characters.";
     if (/email/i.test(m) && /invalid|valid/i.test(m)) return "That email address does not look right.";
-    return authMode === "signup"
-      ? "Could not create your account. Try again in a moment."
-      : "Could not sign you in. Try again in a moment.";
+    return "Could not sign you in. Try again in a moment.";
   }
 
   // AI permission is separate from account creation and is checked before any
@@ -556,13 +559,16 @@ export const APP = String.raw`
     var a = el("a", null, text); a.href = href; return a;
   }
 
+  // The one sentence App Store 5.1.2(i) asks for, written once: the front door
+  // opens it with "By continuing you agree to the", Settings with the words for
+  // an account that already exists.
   function consentFill(node, opening) {
     node.innerHTML = "";
     node.appendChild(document.createTextNode(opening));
     node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms"));
-    node.appendChild(document.createTextNode(". AI processing is optional; Spotter asks for permission before using it. "));
-    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy"));
-    node.appendChild(document.createTextNode("."));
+    node.appendChild(document.createTextNode(" and "));
+    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy Policy"));
+    node.appendChild(document.createTextNode(". Spotter asks before it uses AI on your videos."));
   }
 
   function consentAt() {
@@ -711,71 +717,80 @@ export const APP = String.raw`
     return opts;
   }
 
+  // The code Supabase mails, and the account it makes when there is none: the
+  // one call behind Continue and behind Send a new code.
+  function sendCode(email, tok) {
+    return sb.auth.signInWithOtp({ email: email,
+      options: withCap({ shouldCreateUser: true, emailRedirectTo: AUTH_RETURN }, tok) });
+  }
+
   function doAuth() {
-    var email = $("email").value.trim();
-    var pw = $("pw").value;
+    var email = $("email").value.trim(), pw = $("pw").value, btn = $("authgo"), code = !pwMode, make = pwNew;
     authError("");
-    if (!email || !pw) { authError("Enter your email and a password."); return; }
-    if (authMode === "signup" && pw.length < 8) {
-      authError("Use at least 8 characters."); return;
-    }
-    // Optional, but never silently dropped: a code that is not a code is said
-    // so here, where the field can be emptied, rather than lost after sign-up.
-    if (authMode === "signup" && $("authcode").value.trim() && !creatorCode($("authcode").value)) {
-      authError(creatorSays("bad_code")); return;
-    }
-    var btn = $("authgo");
-    var mode = authMode;
+    if (email.indexOf("@") < 1) { authError("Type your email address."); $("email").focus(); return; }
+    if (!code && !pw) { authError("Type your password."); $("pw").focus(); return; }
+    if (make && pw.length < 8) { authError("Use at least 8 characters for a new account."); return; }
     btn.disabled = true;
-    btn.textContent = mode === "signup" ? "Creating…" : "Signing in…";
-    function idle() { btn.disabled = false; setAuthMode(authMode); }
+    btn.textContent = code ? "Sending…" : make ? "Creating…" : "Signing in…";
+    function idle() { btn.disabled = false; paintMail(); }
     capToken().then(function (tok) {
-      if (mode === "signup") {
-        return sb.auth.signUp({ email: email, password: pw,
-          options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
-      }
+      if (code) return sendCode(email, tok);
+      if (make) return sb.auth.signUp({ email: email, password: pw, options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
       var args = { email: email, password: pw };
       if (tok) args.options = { captchaToken: tok };
       return sb.auth.signInWithPassword(args);
     }).then(function (r) {
+      var m = r.error ? String(r.error.message || r.error) : "";
       idle();
-      if (r.error) {
-        // An account that exists but was never confirmed is not a wrong password,
-        // and the one thing it needs is the resend button, not a red box.
-        if (/not confirmed/i.test(r.error.message)) { mailSent(email); return; }
-        authError(authMessage(r.error.message));
+      // An account that exists but was never confirmed is not a wrong password:
+      // what it needs is its code, not a red box.
+      if (/not confirmed/i.test(m)) { mailSent(email, "signup"); return; }
+      // A wrong password and an address with no account read the same to gotrue,
+      // and they read the same here: the way on is offered, the answer is not.
+      if (!code && !make && /invalid login|invalid.*credential/i.test(m)) {
+        pwNew = true;
+        paintMail();
+        authError("That email and password didn’t sign you in. New to Spotter? Create an account with them.");
         return;
       }
-      // The button that was just pressed carried the sentence above it, so this
-      // is the agreement. It is written once there is a profile row to write it
-      // on, which is after boot.
-      // Confirmations on: signUp answers with a user and no session. gotrue
-      // answers exactly the same way for an address that already has an account,
-      // and that is right — this form must not be a way to ask which addresses
-      // are registered.
-      if (!r.data.session) mailSent(email);
+      if (m) { authError(authMessage(m)); return; }
+      // A code on its way; or confirmations on, where signUp answers with a user
+      // and no session — exactly as it does for an address that already has an
+      // account, which is right: this card is not a way to ask who is registered.
+      if (code || !r.data.session) mailSent(email, code ? "email" : "signup");
     }).catch(function (e) {
       idle();
       authError(authMessage(e && e.message ? e.message : e));
     });
   }
 
+  // A creator code typed at the door is said to be wrong at the door, where it
+  // can be fixed, rather than lost once the account is made.
+  function codeBad() {
+    var raw = $("authcode").value.trim();
+    if (!raw || creatorCode(raw)) return false;
+    toast(creatorSays("bad_code"));
+    return true;
+  }
+
   // ---------- check your email ----------
   //
   // Apple's own account sheets answer three things at this moment and so does
-  // this one: what was sent, which address it went to, and what to do when it
-  // does not arrive. The resend sits behind a countdown because gotrue's
-  // max_frequency refuses a second send inside a minute anyway, and a button that
-  // fails for a reason nobody explained is worse than a button that says wait.
+  // this face: what was sent, which address it went to, and what to do when it
+  // does not arrive. Send a new code waits a minute, because gotrue's
+  // max_frequency refuses a second send inside one anyway, and a button that
+  // fails for a reason nobody explained is worse than one that says wait.
+  // mailType is the kind of code, as verifyOtp names it: "email" (a sign-in, or
+  // the account it made), "signup" (a confirmation) or "recovery".
   var mailAddr = null;
-  var mailType = "signup";
+  var mailType = "email";
   var mailLeft = 0;
   var mailTick = null;
 
   function mailLabel() {
     var b = $("mailresend");
     b.disabled = mailLeft > 0;
-    b.textContent = mailLeft > 0 ? "Resend in " + mailLeft + "s" : "Resend the email";
+    b.textContent = mailLeft > 0 ? "Send a new code in " + mailLeft + "s" : "Send a new code";
   }
 
   function mailCount(secs) {
@@ -792,17 +807,15 @@ export const APP = String.raw`
 
   function mailSent(email, type) {
     mailAddr = email;
-    mailType = type === "recovery" ? "recovery" : "signup";
+    mailType = type;
     var p = $("mailbody");
     p.innerHTML = "";
-    // Recovery keeps the sentence that promises nothing: whether that address has
-    // an account is not a question this form is allowed to answer.
-    p.appendChild(document.createTextNode(mailType === "recovery"
-      ? "If that address has an account, a reset link and a six-digit code are on their way to "
-      : "We sent a confirmation link and a six-digit code to "));
+    // A reset promises nothing: whether that address has an account is not a
+    // question this card answers.
+    p.appendChild(document.createTextNode(type === "recovery"
+      ? "If that address has an account, a six-digit code is on its way to " : "We sent a six-digit code to "));
     p.appendChild(el("b", null, email));
-    p.appendChild(document.createTextNode(". Tap the link, or type the code in below. It can " +
-      "take a minute, and it is worth a look in spam."));
+    p.appendChild(document.createTextNode(". It can take a minute, and it is worth a look in spam."));
     $("otp").value = "";
     otpError("");
     $("mailsent").classList.remove("hide");
@@ -814,12 +827,10 @@ export const APP = String.raw`
 
   // ---------- the six-digit code ----------
   //
-  // The confirmation link signs a person in wherever it opens, which on a phone
-  // is the browser and not this app. A code is the way out of that: it is typed
-  // into the session that asked for it, so the account lands where the person is
-  // standing. The link still works untouched for anyone reading the mail on a
-  // desktop. gotrue puts the code in the template as {{ .Token }} — README,
-  // "Self-hosting", item 8.
+  // Typed into the session that asked for it, so the account lands where the
+  // person is standing; the link in the same mail opens the retired web page, so
+  // in the app the code is the way. gotrue puts it in the template as
+  // {{ .Token }}.
   function otpError(msg) {
     var e = $("otperr");
     e.textContent = msg || "";
@@ -838,7 +849,7 @@ export const APP = String.raw`
     b.disabled = true;
     b.textContent = "Checking…";
     otpError("");
-    function idle() { b.disabled = false; b.textContent = "Confirm"; }
+    function idle() { b.disabled = false; b.textContent = "Continue"; }
     capToken().then(function (tok) {
       var args = { email: mailAddr, token: code, type: mailType };
       if (tok) args.options = { captchaToken: tok };
@@ -858,22 +869,32 @@ export const APP = String.raw`
     });
   }
 
-  function mailClose() {
+  // The code face closes. With keep it goes back to the email step; without, the
+  // whole card starts again at the doors (showLanding's use: whoever signs in
+  // next is not the person who was told to check an inbox), and every field goes
+  // with it, since a code or a password left in one is readable by the next
+  // person holding this phone.
+  function mailClose(keep) {
     clearInterval(mailTick);
     mailAddr = null;
-    // A code left in a field is a code the next person at this browser can read.
     $("otp").value = "";
     otpError("");
     $("mailsent").classList.add("hide");
     $("authcard").classList.remove("sent");
+    if (keep) return;
+    $("pw").value = "";
+    pwNew = false;
+    pwMode = !PUBLIC_AUTH.emailCode;
+    authError("");
+    setAuthMode("signup");
   }
 
   function mailBack() {
-    mailClose();
+    mailClose(true);
     authError("");
-    setAuthMode("signup");
-    $("email").value = "";
+    faceIn($("mailface"), -24);
     $("email").focus();
+    $("email").select();
   }
 
   function mailResend() {
@@ -882,12 +903,12 @@ export const APP = String.raw`
     b.disabled = true;
     b.textContent = "Sending…";
     capToken().then(function (tok) {
-      // Two different endpoints send the two mails, and resend only knows about
-      // the confirmation one; asking for a reset again is asking for a reset.
-      return mailType === "recovery"
-        ? sb.auth.resetPasswordForEmail(mailAddr, withCap({ redirectTo: AUTH_RETURN }, tok))
-        : sb.auth.resend({ type: "signup", email: mailAddr,
-            options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
+      // Each code is asked for again the way it was asked for: a sign-in code by
+      // the same call, a reset as a reset, and a confirmation by resend, which
+      // knows about nothing else.
+      return mailType === "email" ? sendCode(mailAddr, tok)
+        : mailType === "recovery" ? sb.auth.resetPasswordForEmail(mailAddr, withCap({ redirectTo: AUTH_RETURN }, tok))
+        : sb.auth.resend({ type: "signup", email: mailAddr, options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
     }).then(function (r) {
       mailCount(60);
       if (r && r.error) { toast(authMessage(r.error.message)); return; }
@@ -898,47 +919,21 @@ export const APP = String.raw`
     });
   }
 
-  // Coming back on a link that is spent. gotrue answers an expired link and an
-  // already-used one identically — the token is consumed either way — so one
-  // sentence covers both, and it is a sentence rather than the error_description
-  // gotrue wrote for a log. Only the error case is touched: a good link still
-  // carries its session past here untouched.
-  function linkProblem() {
-    var q = location.hash.indexOf("error") > 0 ? location.hash.slice(1) : location.search.slice(1);
-    if (q.indexOf("error") < 0) return;
-    var p;
-    try { p = new URLSearchParams(q); } catch (e) { return; }
-    var code = p.get("error_code") || p.get("error") || "";
-    if (!code) return;
-    try { history.replaceState(null, "", location.pathname); } catch (e) { /* ignore */ }
-    if (state.user) return;
-    authError((/expired|invalid|denied/i.test(code)
-      ? "That link has expired or was already used."
-      : "That link could not be opened.") + " Sign in below, or ask for a new one.");
-  }
-
   // ---------- provider sign-in (Google / Apple) ----------
   //
-  // Token flow, not redirect flow. An installed PWA on iOS runs in its own window,
-  // and a full-page navigation out to accounts.google.com leaves it — the person
-  // finishes in Safari, where the session lands in storage the PWA cannot read, and
-  // comes back to a signed-out home screen icon. Both providers below hand us an
-  // OpenID id_token inside the page we are already in, and signInWithIdToken turns
-  // that into a session with no navigation at all. signInWithOAuth is kept as the
-  // fallback for the cases the token flow cannot cover: the provider script blocked
-  // or missing, One Tap declining to show, or no public client id configured yet.
-  //
-  // Nonce: gotrue compares sha256hex(the nonce we send it) against the id_token's
-  // nonce claim, so the provider must have put that hash in the token. Google copies
-  // the value through untouched; Apple's JS SDK hashes it on the way out. We hand
-  // both providers the hashed value and then read the claim back off the token to
-  // decide which of our two values to forward — correct either way, one prompt.
-
-  var GIS_SRC = "https://accounts.google.com/gsi/client";
-  var APPLEID_SRC = "https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js";
+  // Both through the phone's own sheet: Google's in the system web session with
+  // PKCE (native/google-auth.js), Apple's in the Sign in with Apple sheet
+  // (native/apple-auth.js), which also hands Apple's grant to the server so that
+  // deleting the account revokes it (registerAppleGrant, apple-auth.ts). The web
+  // app's in-page token flows — Google's script, Apple's pop-up, the nonce
+  // juggling between them and the redirect behind both — went with the web app
+  // (B.2). loadScript stays for Turnstile.
   var SCRIPT_WAIT = 8000;
 
-  var authProviders = null;
+  // What the project has switched on (auth/v1/settings), answered before it is
+  // asked: both are on, so both are drawn with the page rather than popping in
+  // under a thumb, and a project that turns one off hides it on the next read.
+  var authProviders = { google: true, apple: true };
   var oauthBusy = false;
   var oaLabels = {};
   var scriptOnce = {};
@@ -972,61 +967,10 @@ export const APP = String.raw`
     scriptOnce[src] = p;
     return p;
   }
-
-  function randomNonce() {
-    var b = new Uint8Array(32);
-    window.crypto.getRandomValues(b);
-    var raw = "";
-    for (var i = 0; i < b.length; i++) raw += String.fromCharCode(b[i]);
-    return btoa(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  }
-
-  function sha256Hex(str) {
-    return window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(str))
-      .then(function (buf) {
-        var out = "";
-        var view = new Uint8Array(buf);
-        for (var i = 0; i < view.length; i++) out += ("0" + view[i].toString(16)).slice(-2);
-        return out;
-      });
-  }
-
-  // Read-only peek at the payload. Nothing here is trusted — the token is verified
-  // by gotrue against the provider's keys; we only need to know which nonce it holds.
-  function tokenNonce(jwt) {
-    try {
-      var part = String(jwt).split(".")[1];
-      if (!part) return null;
-      part = part.replace(/-/g, "+").replace(/_/g, "/");
-      while (part.length % 4) part += "=";
-      var body = JSON.parse(atob(part));
-      return body && body.nonce ? String(body.nonce) : null;
-    } catch (e) { return null; }
-  }
-
-  function nonceToSend(idToken, raw, hashed) {
-    var claim = tokenNonce(idToken);
-    // No nonce in the token means the provider dropped it; gotrue rejects the pair
-    // unless we drop it too.
-    if (!claim) return null;
-    // Claim is our hashed value: the provider copied it through, so gotrue needs the
-    // value that hashes to it. Otherwise the provider hashed ours, and gotrue needs
-    // the value we handed over.
-    return claim === hashed ? raw : hashed;
-  }
-
-  function isAppleDevice() {
-    var ua = navigator.userAgent || "";
-    // iPadOS reports itself as a Mac; both are Apple hardware, so both take the
-    // Apple-first order anyway.
-    return /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(ua);
-  }
-
   function oaLabelOf(id) {
     if (!oaLabels[id]) oaLabels[id] = $(id).querySelector(".oalabel").textContent;
     return oaLabels[id];
   }
-
   function setOauthBusy(id) {
     ["oagoogle", "oaapple"].forEach(function (b) {
       var node = $(b);
@@ -1035,13 +979,11 @@ export const APP = String.raw`
       node.querySelector(".oalabel").textContent = b === id ? "Opening…" : oaLabelOf(b);
     });
     oauthBusy = !!id;
-    // Both provider UIs are somebody else's window, and neither is guaranteed to
-    // tell us it went away — a blocked pop-up, a FedCM sheet closed in a way that
-    // fires no moment. Without this, one of those leaves the buttons disabled until
-    // the page is reloaded. Long enough that it never interrupts a real sign-in.
+    // The sheet is the phone's, and a sheet that never reports back must not
+    // leave both buttons disabled until the app is restarted.
     clearTimeout(oauthWatchdog);
     if (id) oauthWatchdog = setTimeout(function () {
-      setOauthBusy(null); authError("Sign-in did not open. Try again, or use email while we reconnect.");
+      setOauthBusy(null); toast("Sign-in did not open. Try again, or continue with email.");
     }, 30000);
   }
 
@@ -1049,43 +991,13 @@ export const APP = String.raw`
     var m = e && e.message ? String(e.message) : String(e || "");
     if (/not enabled|unsupported provider/i.test(m)) return "That sign-in method is not switched on yet.";
     if (/nonce/i.test(m)) return "That sign-in took too long — try again.";
-    if (/popup|blocked/i.test(m)) return "Allow pop-ups for Spotter, then try again.";
     // What the provider said is for the console.
-    return "That sign-in did not work. Try again, or use your email and password.";
+    return "That sign-in did not work. Try again, or continue with email.";
   }
 
   function oauthFailed(e) {
     setOauthBusy(null);
     toast(oauthMessage(e));
-  }
-
-  // Whole-page handover to the provider and back. Only used when the in-page token
-  // flow is not available.
-  function oauthRedirect(provider) {
-    sb.auth.signInWithOAuth({
-      provider: provider,
-      options: { redirectTo: AUTH_RETURN }
-    }).then(function (r) {
-      if (r && r.error) oauthFailed(r.error);
-      // On success the browser is already navigating; leave the button busy.
-    }).catch(oauthFailed);
-  }
-
-  function finishIdToken(provider, idToken, raw, hashed, fullName) {
-    var args = { provider: provider, token: idToken };
-    var n = nonceToSend(idToken, raw, hashed);
-    if (n) args.nonce = n;
-    sb.auth.signInWithIdToken(args).then(function (r) {
-      setOauthBusy(null);
-      if (r.error) { oauthFailed(r.error); return; }
-      // onAuthStateChange has already swapped the view. The name write below is
-      // deliberately on the next tick: supabase-js holds the auth lock across that
-      // callback and a query started inside it deadlocks.
-      if (fullName && r.data && r.data.user) {
-        var u = r.data.user;
-        setTimeout(function () { saveProviderName(u, fullName); }, 0);
-      }
-    }).catch(oauthFailed);
   }
 
   // Apple hands over the person's name on the FIRST authorization only and never
@@ -1102,7 +1014,6 @@ export const APP = String.raw`
         if (r && !r.error && state.profile) state.profile.display_name = fullName;
       }, function () {});
   }
-
   // The system authentication sheet returns a one-use code to this app. The
   // verifier stays in native auth storage and Supabase validates the exchange.
   function nativeGoogleSignIn() {
@@ -1116,61 +1027,15 @@ export const APP = String.raw`
       oauthFailed(e);
     });
   }
+  // No shell, no sheet to open: the page works only inside the app now, so a
+  // desktop browser or the review lab is told where these two doors lead.
+  var NO_SHELL = "Apple and Google sign-in open in the Spotter app on your phone.";
 
   function googleSignIn() {
     if (oauthBusy) return;
+    if (!native) { toast(NO_SHELL); return; }
     setOauthBusy("oagoogle");
-    authError("");
-    if (native) { nativeGoogleSignIn(); return; }
-    if (!PUBLIC_AUTH.google_client_id) { oauthRedirect("google"); return; }
-    var raw = randomNonce();
-    var hashed = null;
-    var handed = false;
-    sha256Hex(raw).then(function (h) {
-      hashed = h;
-      return loadScript(GIS_SRC);
-    }).then(function () {
-      var gid = window.google && window.google.accounts && window.google.accounts.id;
-      if (!gid) throw new Error("script blocked");
-      gid.initialize({
-        client_id: PUBLIC_AUTH.google_client_id,
-        nonce: hashed,
-        context: "signin",
-        auto_select: false,
-        itp_support: true,
-        callback: function (resp) {
-          handed = true;
-          if (!resp || !resp.credential) { oauthRedirect("google"); return; }
-          finishIdToken("google", resp.credential, raw, hashed, null);
-        }
-      });
-      gid.prompt(function (note) {
-        if (handed) return;
-        var type = null;
-        try { type = note && note.getMomentType ? note.getMomentType() : null; } catch (e) { type = null; }
-        // FedCM is always on now, and it took isNotDisplayed/getNotDisplayedReason
-        // with it; getMomentType and getDismissedReason are what is left.
-        if (type === "skipped" || (note && note.isNotDisplayed && note.isNotDisplayed())) {
-          // No Google session in this browser, or One Tap suppressed. The whole-page
-          // flow can still sign this person in, so send them there.
-          handed = true;
-          oauthRedirect("google");
-          return;
-        }
-        if (type === "dismissed") {
-          var why = null;
-          try { why = note && note.getDismissedReason ? note.getDismissedReason() : null; } catch (e) { why = null; }
-          // credential_returned arrives in the callback above. Anything else is the
-          // person closing the sheet, and bouncing them to a redirect they did not
-          // ask for would be rude.
-          if (why !== "credential_returned") { handed = true; setOauthBusy(null); }
-        }
-      });
-    }).catch(function () {
-      if (handed) return;
-      handed = true;
-      oauthRedirect("google");
-    });
+    nativeGoogleSignIn();
   }
 
   function registerAppleGrant(code, session) {
@@ -1185,7 +1050,6 @@ export const APP = String.raw`
       });
     }, 25000);
   }
-
   function nativeAppleSignIn() {
     clearTimeout(oauthWatchdog);
     native.signInWithApple(sb, registerAppleGrant).then(function (result) {
@@ -1199,86 +1063,34 @@ export const APP = String.raw`
       oauthFailed(e);
     });
   }
-
   function appleSignIn() {
     if (oauthBusy) return;
+    if (!native) { toast(NO_SHELL); return; }
     setOauthBusy("oaapple");
-    authError("");
-    if (native) { nativeAppleSignIn(); return; }
-    if (!PUBLIC_AUTH.apple_services_id) { oauthRedirect("apple"); return; }
-    var raw = randomNonce();
-    var hashed = null;
-    var ready = false;
-    sha256Hex(raw).then(function (h) {
-      hashed = h;
-      return loadScript(APPLEID_SRC);
-    }).then(function () {
-      if (!window.AppleID || !window.AppleID.auth) throw new Error("script blocked");
-      ready = true;
-      window.AppleID.auth.init({
-        clientId: PUBLIC_AUTH.apple_services_id,
-        scope: "name email",
-        // With usePopup the result comes back by postMessage to this window, so the
-        // redirect URI has to be this page's own origin — and that origin has to be
-        // registered against the Services ID. README has the exact values.
-        redirectURI: AUTH_RETURN,
-        usePopup: true,
-        nonce: hashed
-      });
-      return window.AppleID.auth.signIn();
-    }).then(function (res) {
-      var tok = res && res.authorization ? res.authorization.id_token : null;
-      if (!tok) throw new Error("Apple did not return a token.");
-      var name = null;
-      if (res.user && res.user.name) {
-        var parts = [res.user.name.firstName, res.user.name.middleName, res.user.name.lastName];
-        name = parts.filter(Boolean).join(" ").trim() || null;
-      }
-      finishIdToken("apple", tok, raw, hashed, name);
-    }).catch(function (e) {
-      // Before the script is up this is a load failure and the whole-page flow is
-      // the right answer. After it, the person was in Apple's sheet: a cancel is a
-      // cancel, and any other failure is worth saying out loud rather than silently
-      // starting a second, different sign-in.
-      if (!ready) { oauthRedirect("apple"); return; }
-      var code = e && e.error ? String(e.error) : String((e && e.message) || e || "");
-      if (/popup_closed|user_cancelled|user_trigger_new_signin_flow/i.test(code)) {
-        setOauthBusy(null);
-        return;
-      }
-      oauthFailed(e);
-    });
+    nativeAppleSignIn();
   }
 
-  // Which buttons exist is the project's answer, not ours: auth/v1/settings lists
-  // every provider switched on for this Supabase project. Fetched once, cached in
-  // memory; if the fetch fails we show neither button rather than a button that
-  // cannot work.
+  // Which buttons exist is the project's answer: auth/v1/settings lists every
+  // provider switched on. A read that fails keeps what the page assumed.
   function loadAuthProviders() {
     return fetch(SB_URL + "/auth/v1/settings", { headers: { apikey: SB_ANON } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
-        authProviders = j && j.external ? j.external : null;
+        if (j && j.external) authProviders = j.external;
         renderAuthProviders();
       })
-      .catch(function () { authProviders = null; });
+      .catch(function () {});
   }
 
   function renderAuthProviders() {
     var wrap = $("oauthwrap");
     if (!wrap) return;
     var hasGoogle = !!(authProviders && authProviders.google);
-    var hasApple = !!(authProviders && authProviders.apple) &&
-      (native ? native.platform === "ios" : !!PUBLIC_AUTH.apple_services_id);
+    // Apple's sheet is an iPhone's; Android has Google and email, as before.
+    var hasApple = !!(authProviders && authProviders.apple) && !!native && native.platform === "ios";
     $("oagoogle").classList.toggle("hide", !hasGoogle);
     $("oaapple").classList.toggle("hide", !hasApple);
     wrap.classList.toggle("hide", !(hasGoogle || hasApple));
-    // Apple's guidance is that its button is no less prominent than the others, and
-    // on Apple hardware that is the one people reach for first.
-    if (hasApple && isAppleDevice()) {
-      var box = $("oauthbtns");
-      box.insertBefore($("oaapple"), box.firstChild);
-    }
   }
 
   // Reads "google" / "apple" / "email" off the session for the settings sheet.
@@ -1291,6 +1103,289 @@ export const APP = String.raw`
     if (p === "apple") return "Apple";
     if (p === "email") return "Email and password";
     return p ? String(p) : null;
+  }
+
+
+  // ---------- the first minute (B.2) ----------
+  //
+  // introCheck, at the end of every boot: a workout done before there was an
+  // account lands in this one, and a new account (no workouts, no
+  // settings.intent) is asked two things once — what for, and where — and can
+  // skip both. Nothing else is asked up front: notifications, AI permission and
+  // Health are each asked at the moment they are for (Duolingo asks one
+  // motivation question and saves the rest for after the first lesson; Fitbod's
+  // first two questions are these, goal and equipment).
+  function introCheck() {
+    guestLanded();
+    introAsk();
+  }
+
+  // introLater: the question waits for the workout or the sheet on screen, and
+  // is asked as that closes (sessionChanged, closeSheet).
+  var intro = null, introLater = false;
+
+  function introAsk() {
+    var s = state.profile && (state.profile.settings || {});
+    introLater = false;
+    if (!s || s.intent || !state.libReady || state.workouts.length) return;
+    if ($("workout").classList.contains("open") || document.querySelector(".sheet.open")) { introLater = true; return; }
+    intro = {};
+    // Asked is answered: shown once, so a skip, a drag away or a killed app all
+    // leave the same {skipped} behind, and Continue writes over it.
+    introSave({ skipped: true, at: new Date().toISOString() });
+    $("introlift").value = "";
+    introPaint();
+    openSheet("introsheet");
+  }
+
+  // b: a chip just tapped. One answer a question, and a second tap on the lit
+  // one takes it back, because both questions are optional.
+  function introPaint(b) {
+    var k = b && b.parentNode.getAttribute("data-k"), f = $("introliftf");
+    if (k) { intro[k] = intro[k] === b.getAttribute("data-v") ? null : b.getAttribute("data-v"); haptic("select"); }
+    Array.prototype.forEach.call($("introsheet").querySelectorAll("[data-v]"), function (c) {
+      var on = intro[c.parentNode.getAttribute("data-k")] === c.getAttribute("data-v");
+      c.classList.toggle("active", on);
+      c.setAttribute("aria-checked", on);
+    });
+    if (intro.aim === "strength" && f.classList.contains("hide")) viewIn(f);
+    f.classList.toggle("hide", intro.aim !== "strength");
+    $("introgo").disabled = !intro.aim && !intro.where;
+  }
+
+  function introDone() {
+    introSave({ aim: intro.aim || null, where: intro.where || null, at: new Date().toISOString(),
+      lift: intro.aim === "strength" ? parseLiftText($("introlift").value, state.unit) : null });
+    closeSheet("introsheet");
+    // Train's first card offers the starter that matches where they train.
+    daySig = "";
+    drawDay();
+  }
+
+  // Merged into the column and written whole, as every setting is.
+  function introSave(v) {
+    state.profile.settings = Object.assign({}, state.profile.settings, { intent: v });
+    saveSettings();
+  }
+
+  // Pumpy's empty chat is drawn from the answers (goalStarters), and warmPages
+  // drew it at boot, while the question was still open: without this, "Lose
+  // fat" and "Home" would open Pumpy on "Get my bench to a new best". Continue,
+  // Skip and a drag away all close the sheet, so closeSheet calls this.
+  function introPumpy() {
+    if (pumpy.loaded && !pumpy.thread && !pumpy.messages.length && !pumpy.busy) renderPumpy();
+  }
+
+  // ---------- a workout before an account ----------
+  //
+  // "Try a workout first" runs a Spotter Starter with nobody signed in (Apple:
+  // put sign-in off until it is needed; 5.1.1(v): a sample workout is not an
+  // account feature). Nothing in it asks the server anything as anybody. The
+  // finished session waits on this phone, and the first sign-in here puts it in
+  // that account as the ordinary log row it would have been.
+  // Every session done before an account waits, not only the last: two
+  // starters tried before signing up are two sessions in the history.
+  var GUEST_KEY = "spotter.guest.session", GUEST_MAX = 5;
+
+  // The waiting sessions, newest last. A build before this one kept a single
+  // session as the object itself, which reads as a list of one.
+  function guestList() {
+    var g = null;
+    try { g = JSON.parse(localStorage.getItem(GUEST_KEY)); } catch (e) { /* none */ }
+    return Array.isArray(g) ? g.filter(Boolean) : g ? [g] : [];
+  }
+
+  function guestPut(list) {
+    try {
+      if (list.length) localStorage.setItem(GUEST_KEY, JSON.stringify(list));
+      else localStorage.removeItem(GUEST_KEY);
+    } catch (e) { /* private mode: kept for this visit only */ }
+  }
+
+  // One session, one entry: by its id, or by when it started where this
+  // WebView had no randomUUID to give it one.
+  function guestSame(a, b) { return a.id || b.id ? a.id === b.id : a.started_at === b.started_at; }
+
+  // A recap's correction replaces its session's entry; a new session joins the
+  // end, and past five the oldest goes.
+  function guestKeep(p) {
+    // An id of its own, so a retry after a lost answer is refused as a
+    // duplicate rather than saved twice.
+    if (!p.id && window.crypto && crypto.randomUUID) p.id = crypto.randomUUID();
+    var list = guestList(), i = 0;
+    while (i < list.length && !guestSame(list[i], p)) i++;
+    list[i] = p;
+    guestPut(list.slice(-GUEST_MAX));
+  }
+
+  // Each waiting session goes in as the ordinary log row it would have been,
+  // oldest first. A copy already there (landed before its answer was lost) is
+  // refused as a duplicate id, 23505, and counts as landed. Only what landed
+  // leaves this phone; the rest waits for the next sign-in to try again.
+  function guestLanded() {
+    var list = guestList(), epoch = accountEpoch, uid = state.user && state.user.id, landed = [];
+    // The sheet that asked them to keep it has been answered.
+    if (askKeep) closeSheet("asksheet");
+    if (!list.length || !uid) return;
+    list.reduce(function (before, g) {
+      return before.then(function () {
+        if (!accountNow(epoch, uid)) return;
+        return sb.from("workout_logs").insert(Object.assign({}, g, { user_id: uid })).then(function (r) {
+          if (!r.error || r.error.code === "23505") landed.push(g);
+        }, function () { /* no connection: it waits */ });
+      });
+    }, Promise.resolve()).then(function () {
+      if (!accountNow(epoch, uid) || !landed.length) return;
+      guestPut(guestList().filter(function (x) { return !landed.some(function (g) { return guestSame(g, x); }); }));
+      invalidateLogs();
+      quietly(loadLogs().then(function (logs) {
+        toast(landed.length > 1 ? "Saved your " + landed.length + " workouts"
+          : logs.length > 1 ? "Saved your workout" : "Saved your first workout");
+        publishSummary();
+        if (drawn.train) renderTrain();
+      }));
+    });
+  }
+
+  // ---------- Spotter Starters: the picker, running one, keeping one ----------
+  //
+  // A row says how long and what it takes, which is what choosing a first
+  // workout turns on; the art is Pumpy's own, one drawing a starter.
+  var STARTER_NEED = { bodyweight: "No equipment", dumbbells: "One pair of dumbbells", gym: "Barbell, bench and machines" };
+  var STARTER_ART = { bodyweight: "bear-crawl", dumbbells: "dumbbell-lunge", gym: "barbell-squat" };
+
+  // The picker row's shape: something to recognise, a name, one line.
+  function rowBtn(lead, title, line, fn) {
+    var b = el("button", "pickrow"), t = el("span", "pt");
+    b.appendChild(lead);
+    t.appendChild(el("b", null, title));
+    t.appendChild(el("span", null, line));
+    b.appendChild(t);
+    b.onclick = fn;
+    return b;
+  }
+
+  function openStarters() {
+    loadStarters().then(function (list) {
+      var box = el("div", "mlist");
+      if (!list.length) { toast("Could not open the starters. Try again in a moment."); return; }
+      list.forEach(function (s) {
+        var row = box.appendChild(el("div", "strow")), img = el("img"), k;
+        img.alt = "";
+        img.src = cardArt({ kind: "starter", starter: s.key });
+        // Workout Mode opens first and the sheet closes behind it, on the one
+        // history entry, as every sheet hands over (askPaused).
+        row.appendChild(rowBtn(img, s.title, s.minutes + " min · " + STARTER_NEED[s.key], function () {
+          runStarter(s);
+          closeSheet("asksheet");
+        }));
+        if (!state.user) return;
+        k = row.appendChild(el("button", "chip", starterKept(s.key) ? "Kept" : "Keep"));
+        k.disabled = !!starterKept(s.key);
+        k.setAttribute("aria-label", "Keep " + s.title + " in Workouts");
+        k.onclick = function () { keepStarter(s, k); };
+      });
+      askSheet(null, "Try a workout", state.user ? "Three to do now, no video needed. Keep one and it stays in Workouts."
+        : "No account needed. Pick one and go.", box);
+    });
+  }
+
+  // A starter kept to Workouts is a workout like any other from then on, so it
+  // runs as that card and its sessions count on it.
+  function starterKept(key) {
+    return state.workouts.filter(function (w) { return w.shortcode === "starter-" + key; })[0] || null;
+  }
+
+  function runStarter(s) { startWorkout(starterKept(s.key) || starterCard(s)); }
+
+  function keepStarter(s, b) {
+    var epoch = accountEpoch, uid = state.user.id, was = b.textContent;
+    b.disabled = true;
+    b.textContent = "Keeping…";
+    api("starters/keep", { method: "POST", body: JSON.stringify({ key: s.key }) }).then(function (r) {
+      if (!r || !r.workout) throw r;
+      if (!accountNow(epoch, uid)) return;
+      if (!srcById(r.workout.id)) { libraryRev++; state.workouts.unshift(r.workout); render(); }
+      b.textContent = "Kept";
+      haptic("success");
+      toast(s.title + " is in Workouts.");
+    }).catch(function (e) {
+      b.disabled = false;
+      b.textContent = was;
+      toast((e && e.message) || "Could not keep it just now. Try again in a moment.");
+    });
+  }
+
+  // The recap after a starter, signed in: keep it for next time. (A guest is
+  // asked to keep the session itself, keepAsk.)
+  function sumKeep(w) {
+    if (w.kind !== "starter" || w.id || !state.user || starterKept(w.starter)) return null;
+    var box = el("div", "reader-offer"), b;
+    box.appendChild(el("b", null, "Do it again anytime"));
+    box.appendChild(el("p", null, "Keep " + w.title + " in Workouts, with the videos you save."));
+    b = box.appendChild(el("button", "btn ghost", "Keep in Workouts"));
+    b.onclick = function () { keepStarter({ key: w.starter, title: w.title }, b); };
+    return box;
+  }
+
+  // ---------- one question, one answer ----------
+  //
+  // askSheet: maybe a drawing, a question, what to press, and Not now. The
+  // guest's copy borrows the landing's own three buttons (keepAsk), so there is
+  // one set of doors, and closeSheet gives them back (doorsHome).
+  var askKeep = false;
+
+  function askSheet(art, title, lede, body) {
+    doorsHome();
+    $("askart").innerHTML = "";
+    if (art) $("askart").appendChild(pumpyArt(art, false));
+    $("asktitle").textContent = title;
+    $("asklede").textContent = lede;
+    $("askbody").innerHTML = "";
+    $("askbody").appendChild(body);
+    openSheet("asksheet");
+  }
+
+  function keepAsk() {
+    askSheet("proud", "Keep this workout?", "Continue with Apple, Google or email and it goes in your history. Until then it’s on this phone.", $("doorbtns"));
+    askKeep = true;
+  }
+
+  function doorsHome() {
+    askKeep = false;
+    if ($("doorbtns").parentNode !== $("doors")) $("doors").insertBefore($("doorbtns"), $("doors").querySelector(".legal"));
+  }
+
+  // The first plan anybody makes is when a reminder means something: offered
+  // once, on a button that does not say Allow, and only then the phone's own
+  // ask (HIG: ask in context, once the value is plain), through Settings ›
+  // Reminders' own switch. The rest-end ask stays where it is.
+  // A program's first days are a first plan too, but its card is followed by an
+  // Undo toast and, on Basic, the Plus offer: the reminder waits for the next
+  // arrival on Train, where the days it would remind about are (arrive).
+  var remindOnTrain = false;
+
+  function firstPlanMoment() {
+    var s = state.profile && state.profile.settings, epoch = accountEpoch, uid = state.user && state.user.id;
+    if (!s || s.remindAsked || remind.plan || !native) return;
+    Promise.all([pushKey(), native.push.status()]).then(function (both) {
+      fromPlugin(both[1]);
+      if (!pushable() || denied() || remind.plan) return;
+      setTimeout(function () {
+        if (accountNow(epoch, uid) && !document.querySelector(".sheet.open") && !$("workout").classList.contains("open")) remindAsk();
+      }, 700);
+    }, function () { /* no answer from the phone: nothing is offered */ });
+  }
+
+  function remindAsk() {
+    var go = el("button", "btn", "Remind me on training days");
+    state.profile.settings = Object.assign({}, state.profile.settings, { remindAsked: new Date().toISOString() });
+    saveSettings();
+    // Inside the tap: iOS gives an app one chance at its permission sheet, and
+    // only from a gesture.
+    go.onclick = function () { closeSheet("asksheet"); toggleRemind("plan"); };
+    askSheet("plan", "A nudge on training days?", "On a day with a workout planned, one reminder at " +
+      new Date(2026, 0, 1, 0, remind.at).toLocaleTimeString([], { timeStyle: "short" }) + ". Change the time in Settings.", go);
   }
 
   function showLanding() {
@@ -1338,7 +1433,7 @@ export const APP = String.raw`
     booting = null; earlyUid = null; reconnecting = false; state.profile = null; state.workouts = []; state.logs = null;
     state.logsLite = false; state.libReady = false; clearTimeout(trainCacheTimer); trainWantMonth = false;
     trainCacheGoal = null;
-    state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
+    state.plan = null; state.awards = null; state.goal = null; state.goals = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
     expCache = {}; expWaiting = {}; vidCache = {}; expKey = ""; capWaiting = {};
@@ -1428,6 +1523,7 @@ export const APP = String.raw`
     drawn.train = true;
     quietly(prepareTrain());
     var profileReady = loadProfile();
+    quietly(loadGoals());
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
@@ -1445,6 +1541,9 @@ export const APP = String.raw`
       .then(function () {
         if (!accountNow(epoch, uid)) return;
         welcomeMaybe();
+        // A new account's one question screen (B.2), once the profile and the
+        // library have both said what this account has.
+        introCheck();
       });
     return booting;
   }
@@ -1629,6 +1728,8 @@ export const APP = String.raw`
         // to be wrong here is to show a paywall to somebody who has just paid.
         if (billing.said) state.profile.plan = billing.said;
         renderLibCount();
+        // A fat-loss goal reads its weigh-ins off this row (B.2).
+        goalCard.sync();
       }
     });
     // Parked links are handed over only to the account the native side has been
@@ -2689,6 +2790,8 @@ export const APP = String.raw`
   }
 
   function cardArt(w) {
+    // A Spotter Starter, kept or not, wears the drawing its picker row wears.
+    if (w.kind === "starter") return pumpyAsset("covers/" + STARTER_ART[w.starter || String(w.shortcode).slice(8)] + ".webp");
     return w.platform === "pumpy" ? pumpyAsset("covers/" + pumpyCover(w) + ".webp") : w.thumb_url;
   }
 
@@ -3190,7 +3293,8 @@ export const APP = String.raw`
   // sentence for that.
 
   function srcById(id) {
-    return state.workouts.filter(function (x) { return x.id === id; })[0] || null;
+    var k = /^starter:/.test(id) && starters && starters.filter(function (x) { return "starter:" + x.key === id; })[0];
+    return k ? starterCard(k) : state.workouts.filter(function (x) { return x.id === id; })[0] || null;
   }
 
   function sourceOf(ex) {
@@ -3389,8 +3493,9 @@ export const APP = String.raw`
 
     var dead = isPending(w) || isFailed(w), art = cardArt(w);
     // A coach's card has no video, and an upload's file is gone by the time its
-    // card exists: neither has an original to go back to.
-    var canWatch = !isUpload(w) && w.platform !== "pumpy";
+    // card exists: neither has an original to go back to. Nor has a Spotter
+    // Starter, whose "link" is spotter://starter/gym, the app's own name for it.
+    var canWatch = !isUpload(w) && w.platform !== "pumpy" && w.kind !== "starter";
 
     // The original in the clip sheet with its caption under it: what the folded
     // "Watch original" row used to hold, now a tap on the picture. The player
@@ -3786,8 +3891,10 @@ export const APP = String.raw`
     // What used to stand between a new user and Start — the Basic/Plus read offer —
     // with the repairs for a card that came out thin: one fold under the list.
     // Built when it opens, because its Plus count is a request and most cards are
-    // never asked about.
-    if (w.platform !== "pumpy") {
+    // never asked about. A starter was written by hand, not read: there is
+    // nothing to read again and no caption to paste (a re-read would spend a
+    // Basic extract on fetching spotter://starter/gym).
+    if (w.platform !== "pumpy" && w.kind !== "starter") {
       var imp = disclosure("Improve this read"), ib = imp.lastChild;
       imp._prepareDisclosure = function () {
         if (ib.firstChild) return;
@@ -4737,9 +4844,12 @@ export const APP = String.raw`
     } else if (live && src && (src.thumb_url || (src.shortcode && /^(instagram|tiktok|youtube)$/.test(src.platform)))) {
       row("play", "Watch original", src.author ? "@" + src.author : null, function () { openWatch(src, ex); });
     }
-    row("help", "Demo and how-to", null, function () { explain(ex, w); });
+    // A demo, a swap and the exercise bank ask the server as somebody, so a
+    // guest's session goes without them rather than failing at them — all but a
+    // starter exercise's own clip, which asks nobody (starterDemo).
+    if (state.user || starterDemo(ex)) row("help", "Demo and how-to", null, function () { explain(ex, w); });
     if (!live) row("pencil", "Edit exercise", null, function () { openExEdit(w, ctx.bi, ctx.ei, ex); });
-    row("swap", "Swap exercise", null, function () {
+    if (state.user) row("swap", "Swap exercise", null, function () {
       openSwap(ex.name, w.title, live ? swapTarget(w, ex) : { w: w, bi: ctx.bi, ei: ctx.ei, ex: ex });
     });
     if (!live && ordCan(w)) row("reorder", "Reorder", null, function () { openOrder(w, "e" + ctx.bi + "." + ctx.ei); });
@@ -4751,7 +4861,7 @@ export const APP = String.raw`
           else openSetSheet(entry.sets.length);
         });
       }
-      row("plus", "Add an exercise", null, openWorkoutAdd);
+      if (state.user) row("plus", "Add an exercise", null, openWorkoutAdd);
     }
     if (!live) {
       list.appendChild(group = el("div", "mlist"));
@@ -5582,7 +5692,7 @@ export const APP = String.raw`
     $("dren").hidden = isPending(w);
     $("dcoln").textContent = n ? String(n) : "";
     $("dorder").hidden = dead || !ordCan(w);
-    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
+    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy" || w.kind === "starter";
     syncRereadButton(w);
   }
 
@@ -6842,6 +6952,18 @@ export const APP = String.raw`
     return box;
   }
 
+  // A starter exercise's own clip, when starters.json carries one as demo:
+  // { id, title, channel, secs } — row zero of exercise_demo_videos, the clip
+  // /api/demo-video answers with — made into that route's answer, so the sheet
+  // draws it the same. A guest is shown it without the server being asked
+  // anything; an account asks the route as ever, which adds the alternates.
+  function starterDemo(ex) {
+    var d = ex && ex.demo;
+    return d && d.id ? { status: "ok", alternates: [], search_url: null, video: { id: d.id, title: d.title || "",
+      channel: d.channel || "", secs: d.secs || null, url: "https://www.youtube.com/watch?v=" + d.id, curated: true,
+      relation: { kind: "same", differs: null, shared: [] } } } : null;
+  }
+
   // The slot grows from nothing to whatever it turned out to need, so the
   // explanation below it glides down rather than jumping when the answer lands
   // late. One frame between filling it and opening it, or the browser has nothing
@@ -6966,9 +7088,13 @@ export const APP = String.raw`
     if (pn) perf.appendChild(pn);
     // Spotter's pending vocabulary is reading, listening, watching. "Thinking" is
     // a chatbot's word for the same wait and belongs to a different app.
+    // A guest's sheet is the clip alone: explaining and swapping ask the server
+    // as somebody (and the thumbs only follow an explanation).
+    var guest = !state.user;
     $("explaintext").textContent = "";
     $("explaintext").classList.add("hide");
-    $("explainask").classList.remove("hide");
+    $("explainask").classList.toggle("hide", guest);
+    $("swapgo").parentNode.classList.toggle("hide", guest);
     $("explainvotes").classList.add("hide");
     var voteId = ex.canonical_id || name;
     paintVotes(voteId);
@@ -6997,7 +7123,9 @@ export const APP = String.raw`
     // questions with two very different latencies — a cached clip is one round trip
     // and a completion is several seconds — and neither should wait for the other.
     var vk = vidKey(ex), who = authorOf(ex, w);
-    if (vidCache[vk]) {
+    if (guest) {
+      if (starterDemo(ex)) vidFill(starterDemo(ex), who);
+    } else if (vidCache[vk]) {
       vidFill(vidCache[vk], who);
     } else {
       api("demo-video", {
@@ -7266,7 +7394,9 @@ export const APP = String.raw`
   // ended with the process, and that moment is when its pause began.
   function draftOf() {
     return {
-      workoutId: wo.workout.id, title: wo.workout.title,
+      // A starter has no id until it is kept, so its draft is keyed by the
+      // starter: paused, it comes back from the paused bar like any card.
+      workoutId: wo.workout.id || (wo.workout.starter ? "starter:" + wo.workout.starter : null), title: wo.workout.title,
       entries: wo.entries, blocks: wo.workout.blocks, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds,
       amrap: wo.amrap,
       rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null,
@@ -7458,7 +7588,8 @@ export const APP = String.raw`
     });
   }
 
-  function startWorkout(w, resume) {
+  // row: the plan row it was started from, when a door knows it (rxStart).
+  function startWorkout(w, resume, row) {
     // Start on a card whose session is waiting is Resume: nobody starting the
     // workout they paused an hour ago wants a second copy of it. Every Start
     // door comes through here — the card's dock, the day card, Up next, the
@@ -7467,13 +7598,16 @@ export const APP = String.raw`
     // resumed first (askPaused); with none, there was nothing in it to keep.
     if (!resume) {
       var waiting = pausedDraft();
-      if (waiting && waiting.workoutId === w.id) { resumeWorkout(); return; }
+      if (waiting && waiting.workoutId === (w.id || "starter:" + w.starter)) { resumeWorkout(); return; }
       if (waiting && draftSets(waiting)) { askPaused(waiting); return; }
       if (waiting) toast("Closed " + (waiting.title || "the paused workout") + " — nothing was logged.");
     }
     guideClear(); guideStill();
     // The session owns its exercise list, including additions recovered from a draft.
     w = Object.assign({}, w, { blocks: JSON.parse(JSON.stringify((resume && resume.blocks) || w.blocks || [])) });
+    // A program day (B.2): the goal lift takes that day's numbers, on this copy
+    // only. A resumed session's blocks already carry the ones it began with.
+    if (!resume) rxApply(w.blocks, row || rxToday(w.id));
     var screens = flatten(w);
     wo = {
       workout: w, screens: screens, i: (resume && resume.i) || 0,
@@ -7487,7 +7621,10 @@ export const APP = String.raw`
       // prs: what fell today, keyed by movement. rounds: the lap of each circuit.
       // amrap: the clock, the round count and the partial round of each complex.
       wake: null, prs: {}, rounds: (resume && resume.rounds) || {},
-      amrap: (resume && resume.amrap) || {}, finished: false
+      amrap: (resume && resume.amrap) || {}, finished: false,
+      // Nobody signed in and nobody on the way back (earlyUid): a guest trying a
+      // starter from the landing, whose finish stays on this phone.
+      guest: !state.user && !earlyUid
     };
     woPhase = "idle";
     // A draft saved before this wave — or one whose block has since stopped being
@@ -7528,7 +7665,8 @@ export const APP = String.raw`
     publishSummary();
     sessionChanged();
     history.pushState({ workout: 1 }, "");
-    lastWeights();
+    // Last time's numbers are an account's; a guest has none to ask for.
+    if (state.user) lastWeights();
   }
 
   // Start on one card while another's session waits with sets in it. Apple's
@@ -8410,12 +8548,15 @@ export const APP = String.raw`
   // off when it is not known: "Goal 2 × 6-8 · last time 8 × 90 lb". A goal met
   // says so in the same voice. Unfinished is where every set starts, not an
   // error, so nothing here is ever red.
+  // A program day's lift says whose numbers these are, first: "W5 Heavy · Goal
+  // 5 × 3 @ 250 lb · last time …" (rxApply put them on the exercise).
   function goalText(s, e) {
-    var h = histReady && hist[exKey(e)], ask = doseText(s.ex), bits = [];
+    var h = histReady && hist[exKey(e)], ask = doseText(s.ex), bits = [], rx = s.ex.rx;
     if (e.sets.filter(Boolean).length >= targetOf(s)) return "Goal reached · extras welcome";
+    if (rx && (rx.week || rx.label)) bits.push([rx.week && "W" + rx.week, rx.label].filter(Boolean).join(" "));
     // In a circuit the lap outranks the dose: the reps do not change between rounds.
     if (isCircuit(s.block)) bits.push("Round " + roundOf(s.bi) + " of " + roundsOf(s.block) + (ask ? " · " + ask : ""));
-    else if (ask) bits.push("Goal " + ask);
+    else if (ask) bits.push("Goal " + ask + (rx && rx.weight ? " @ " + wtText(rx.weight, rx.unit) + " " + state.unit : ""));
     if (h && h.date) bits.push("last time " + (h.reps ? h.reps + (h.weight ? " × " + wtText(h.weight, h.unit) + " " +
       state.unit + (h.pair ? " each" : "") : " reps") : timeText(h.secs || 0)));
     return bits.join(" · ");
@@ -8481,6 +8622,8 @@ export const APP = String.raw`
       main.appendChild(el("h2", "wname", s.ex.name));
       main.appendChild(el("div", "wgoal", goalText(s, entry))).id = "wgoal";
       if (s.ex.recommendation) main.appendChild(el("div", "wnote", s.ex.recommendation.note));
+      // The program's word for the day, when it has one ("Work up to a new max").
+      if (s.ex.rx && s.ex.rx.note) main.appendChild(el("div", "wnote", s.ex.rx.note));
 
       if (isTimed(s.ex)) {
         timedBody(main, s, entry);
@@ -8499,7 +8642,7 @@ export const APP = String.raw`
     // Fitbod puts "+ Add Exercise" at the FOOT of the exercise list, which is
     // where somebody looks when the card has run out and they are not done. A
     // pager has no foot, so its last stop is one.
-    if (wo.i >= endStop()) {
+    if (wo.i >= endStop() && state.user) {
       var tile = icon(el("button", "pickrow waddcard"), "plus");
       var tt = el("div", "pt");
       tt.appendChild(el("b", null, "Add an exercise"));
@@ -8725,17 +8868,21 @@ export const APP = String.raw`
       var m = String(s.ex.reps).match(/\d+/);
       if (m) targetReps = parseInt(m[0], 10);
     }
-    var h = hist[exKey(entry)], prev = null, k;
+    var h = hist[exKey(entry)], prev = null, k, rx = s && s.ex && s.ex.rx;
     // The weight just lifted outranks last session's: set 2 opens on set 1's
     // load, the way Strong and Hevy carry it down the table. Found in the
     // superset panels, where the steppers never close and a load dialled for
     // set 1 went back to zero for set 2 — the sheet had always done the same.
     for (k = idx - 1; k >= 0 && !prev; k--) if (entry.sets[k] && entry.sets[k].weight) prev = entry.sets[k];
+    // A program day's load (B.2) comes next, ahead of last time: it is this
+    // week's number, and a set already lifted heavier or lighter still carries
+    // down, as above. The reps are already the day's (rxApply set ex.reps). So
+    // the big button, the set sheet and the Lock Screen's dose all say 250 × 3.
     return {
       idx: idx,
       reps: existing ? existing.reps : targetReps,
       weight: existing ? toUnit(existing.weight, existing.unit)
-        : prev ? toUnit(prev.weight, prev.unit) : (h ? toUnit(h.weight, h.unit) : 0)
+        : prev ? toUnit(prev.weight, prev.unit) : rx && rx.weight ? toUnit(rx.weight, rx.unit) : (h ? toUnit(h.weight, h.unit) : 0)
     };
   }
 
@@ -8848,8 +8995,9 @@ export const APP = String.raw`
   // Half a second first, so a tap is never read as a hold; the click that ends a
   // hold is dropped, the repeats having counted it. A click with no pointer
   // before it is a keyboard, and steps once, as it always did.
+  // id may be the button itself: the ask card's steppers are built off the page.
   function wireStep(id, step) {
-    var btn = $(id), t = 0, n = 0;
+    var btn = id.nodeType ? id : $(id), t = 0, n = 0;
     function tick() {
       n++;
       if (!step()) { stop(); return; }
@@ -10286,13 +10434,13 @@ export const APP = String.raw`
     if (!logged.length) { leaveWorkout(); toast("Workout closed — nothing logged."); return; }
     // Painted before the account came back (offline with an hour-old token): the
     // session stays open and on disk, and Save works once the account is back.
-    if (!state.user) {
+    if (!state.user && !wo.guest) {
       saveDraft();
       toast("Reconnecting… This workout is kept on this phone. Save it once you're back online.");
       return;
     }
     var payload = {
-      user_id: state.user.id,
+      user_id: wo.guest ? null : state.user.id,
       workout_id: wo.workout.id,
       workout_title: wo.workout.title,
       started_at: wo.startedAt,
@@ -10300,9 +10448,16 @@ export const APP = String.raw`
       duration_seconds: Math.round((Date.now() - new Date(wo.startedAt).getTime()) / 1000),
       entries: logged
     };
+    // A guest's session waits on this phone for the first sign-in (guestLanded),
+    // and the sheet that offers the account follows the recap up.
+    if (wo.guest) {
+      guestKeep(payload);
+      // Only while its recap is still up: Done may already have taken it away.
+      setTimeout(function () { if (wo && wo.finished) keepAsk(); }, 900);
+    }
     // Insert first, draw from memory: the one moment of payoff in the whole loop
     // should never wait on a gym's signal.
-    sb.from("workout_logs").insert(payload).select("id").single().then(function (r) {
+    else sb.from("workout_logs").insert(payload).select("id").single().then(function (r) {
       if (r.error) { toast("Could not save that session — check your connection."); return; }
       // The summary is already on screen, and Send to Strava needs a log id to
       // push. The insert is the only moment that id exists, and the summary holds
@@ -10330,10 +10485,13 @@ export const APP = String.raw`
   // entry is spent here in the same go() so two navigations are never in flight
   // at once (Chrome resolves each against the entry current when it is called,
   // and two back-to-back land on the same one). extra is that entry, or nothing.
+  // extra: how many more history entries go with it — a number or nothing. Handed a
+  // click event instead (the recap's Done was wired straight to this), history.go got
+  // NaN and the whole page reloaded on the first workout's last tap (QA F2, since build 9).
   function leaveWorkout(extra, pause) {
     var openedFromDetail = $("detail").classList.contains("open");
     exitWorkout(pause);
-    history.go(-((extra || 0) + (openedFromDetail ? 2 : 1)));
+    history.go(-((typeof extra === "number" ? extra : 0) + (openedFromDetail ? 2 : 1)));
     sessionChanged();
   }
 
@@ -10356,13 +10514,16 @@ export const APP = String.raw`
   // The X asks how to leave. The Finish pill asks only when planned sets are
   // left (left: how many), and leads with the answer it was asked for. Neither
   // door has a Discard: finishing saves what was logged, pausing keeps it all.
+  // A guest has no history and no tabs yet (QA F10): their sets wait on this
+  // phone for an account (guestKeep), and a paused starter comes back from Try
+  // a workout first, on this phone, until then.
   function openLeave(left) {
-    var n = loggedSets(), fin = $("wend"), pause = $("wpause");
+    var n = loggedSets(), fin = $("wend"), pause = $("wpause"), guest = !!(wo && wo.guest), sets = n + (n === 1 ? " set" : " sets");
     $("wleavetitle").textContent = left ? left + (left === 1 ? " set" : " sets") + " not logged" : "Leave this workout?";
     fin.parentNode.insertBefore(left ? fin : pause, left ? pause : fin);
-    $("wendsub").textContent = n
-      ? "Saves " + n + (n === 1 ? " set" : " sets") + " to your history."
-      : "Nothing logged yet — closes without saving.";
+    $("wendsub").textContent = !n ? "Nothing logged yet — closes without saving."
+      : guest ? "Keeps " + sets + " on this phone until you sign in." : "Saves " + sets + " to your history.";
+    $("wpausesub").textContent = guest ? "Pick it up later on this phone. The clock stops." : "Pick it up later from any tab. The clock stops.";
     openSheet("wleavesheet");
   }
 
@@ -10408,6 +10569,8 @@ export const APP = String.raw`
 
   function draftCheck(d, then) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
+    // A starter's card ships with the app: it only has to be read in.
+    if (/^starter:/.test(d.workoutId)) { loadStarters().then(function () { if (srcById(d.workoutId) && then) then(); }); return; }
     if (!uid || draftAsked === d.workoutId) return;
     draftAsked = d.workoutId;
     sb.from("workouts").select(CARD_COLS).eq("user_id", uid).eq("id", d.workoutId).maybeSingle().then(function (r) {
@@ -10448,6 +10611,9 @@ export const APP = String.raw`
     pausedBar.sync();
     if (drawn.train && trainLean) drawDay();
     if (current) paintDock(current);
+    // Once the leaving has finished moving history: a sheet opened under a
+    // traversal still in flight would land on the wrong entry.
+    if (introLater) setTimeout(introAsk, 400);
   }
 
   // A session paused and walked away from waits in one bar above the tab bar, on
@@ -10612,8 +10778,10 @@ export const APP = String.raw`
     sumBests(prs);
 
     // What next (sumNext), then the one thing that sells, and only under it — a
-    // live session's, since a past one's next step is long gone.
-    if (!past) [sumNext(w), sumOffer(w)].forEach(function (n) { if (n) main.appendChild(n); });
+    // live session's, since a past one's next step is long gone. A session that
+    // closes a program week says so first (sumCheck, B.2), and a starter not yet
+    // kept offers Keep last (sumKeep).
+    if (!past) [sumCheck(payload), sumNext(w), sumOffer(w), sumKeep(w)].forEach(function (n) { if (n) main.appendChild(n); });
 
     // The card, and every way off this phone with it.
     main.appendChild(shareRow(payload, logged, past));
@@ -10624,7 +10792,7 @@ export const APP = String.raw`
     if (logged.length) main.appendChild(sumLog(logged));
 
     var done = el("button", "btn sumdone", past ? "Back" : "Done");
-    done.onclick = past ? function () { history.back(); } : leaveWorkout;
+    done.onclick = past ? function () { history.back(); } : function () { leaveWorkout(); };
     main.appendChild(done);
     viewIn(main);
     // Last, so the awards are evaluated against a screen that is already drawn.
@@ -10909,6 +11077,8 @@ export const APP = String.raw`
   // truth whatever order the taps came in. One at a time, and never before the
   // row exists: in the live moment the insert may still be in the air.
   function sumWrite(c) {
+    // A guest's recap corrects the copy waiting on this phone (guestKeep).
+    if (!state.user) { guestKeep(c.payload); return; }
     if (!c.payload.id) { if (sumQueue.indexOf(c) < 0) sumQueue.push(c); return; }
     if (c.busy) { c.again = true; return; }
     var entries = c.logged.filter(function (e) { return e.sets.length; }), body = JSON.stringify(entries);
@@ -12161,7 +12331,8 @@ export const APP = String.raw`
       trainSeg, state.logs && state.logs.length, state.workouts.length]);
   }
 
-  function loadPlan(silent) {
+  // retry: the second try after a failed read, as loadLogs has.
+  function loadPlan(silent, retry) {
     if (!state.user) return Promise.resolve();
     if (!state.weekStart) state.weekStart = mondayOf(new Date());
     if (!monthStart) monthStart = monthOfWeek(state.weekStart);
@@ -12171,12 +12342,17 @@ export const APP = String.raw`
     // for the ticks, which meant the strip, the grid and the ring could each hold
     // a different opinion about the same Tuesday. state.logs is the one answer
     // now, and isSession is the one rule — the ring's rule.
-    return readOnce("plan:" + from + ":" + to + ":" + rev, function () {
+    return readOnce("plan:" + from + ":" + to + ":" + rev + ":" + !!retry, function () {
       return sb.from("plan").select("*").eq("user_id", uid).gte("day", from).lte("day", to)
         .then(function (r0) {
-        if (!accountNow(epoch, uid) || rev !== planRev) return;
+        if (!accountNow(epoch, uid)) return;
+        // Overtaken by a local edit (planRev) or by a move to another range, the
+        // answer is dropped: what is on screen is newer, and whatever moved it
+        // asks again. Not when nothing is on screen yet, though: that drop left
+        // Up next on its skeleton for good, with nobody left to ask. The first
+        // answer is asked for again, as load() and loadLogs() do.
         var nowRange = fetchRange();
-        if (from !== ymd(nowRange.from) || to !== ymd(nowRange.to)) return;
+        if (rev !== planRev || from !== ymd(nowRange.from) || to !== ymd(nowRange.to)) return state.plan ? undefined : loadPlan(silent);
         if (r0.error) throw new Error("Plan unavailable");
         // A row whose Remove is still offering Undo stays off everything that
         // reads the plan — widgets, the cache, card statuses — not just Train.
@@ -12188,7 +12364,11 @@ export const APP = String.raw`
         if (silent && shape === planSig) return;
         planSig = shape; renderTrain();
       }).catch(function () {
-        if (accountNow(epoch, uid)) toast("Could not refresh your plan. Try opening Train again.");
+        if (!accountNow(epoch, uid)) return;
+        if (!retry) return new Promise(function (resolve) {
+          setTimeout(function () { resolve(accountNow(epoch, uid) ? loadPlan(silent, true) : undefined); }, 900);
+        });
+        toast("Could not refresh your plan. Try opening Train again.");
       });
     });
   }
@@ -12345,7 +12525,7 @@ export const APP = String.raw`
       '</div></div><div class="cdow" aria-hidden="true"><span>M</span><span>T</span><span>W</span><span>T</span>' +
       '<span>F</span><span>S</span><span>S</span></div><div class="crows" id="tcalrows"><div class="cblock"></div></div></div>' +
       '<div class="tbelow"><button class="thandle" aria-controls="tcalrows" data-noswipe></button><div></div>' +
-      '<div class="tshelf hide"></div><div class="trainseg"><div class="seg" role="tablist" ' +
+      '<div class="tgoal"></div><div class="tshelf hide"></div><div class="trainseg"><div class="seg" role="tablist" ' +
       'aria-label="What to show for this week"><span class="segpill"></span></div></div><div class="trainbody"></div></div>';
     var q = function (s) { return v.querySelector(s); };
     trainLean = q(".tbelow");
@@ -12877,6 +13057,9 @@ export const APP = String.raw`
     planHide();
     drawShelf();
     var k = selKey(), u = k === ymd(new Date()) ? upNext() : dayState(k), sig = k + JSON.stringify(u), h = cardBox.offsetHeight;
+    // S6 changes its words once today has a session (firstCard), which its
+    // state does not carry: a guest's sessions landing after sign-in, say.
+    if (u.s === 6) sig += "|" + daySessions(state.logs, k).length;
     if (sig === daySig) return;
     var card = u.key ? dayCard(u) : upCard(u);
     cardBox.innerHTML = "";
@@ -12965,8 +13148,11 @@ export const APP = String.raw`
         [["btn", "Resume", woForward], ["btn ghost tmove", "Finish workout", function () { woForward(); woFinish(); }]]);
     }
     if (u.s < 3) {
+      // A program day starts on its own row, so Workout Mode takes that row's
+      // numbers (rxStart), and says them here first: "W5 · Heavy · 5×3 @ 250 lb".
       card = tcard("act", "Planned today", w, wMeta(w, u.more && "+" + u.more + " more today"),
-        [["btn", "Start workout", startWorkout, w]]);
+        [["btn", "Start workout", rxStart, u]]);
+      if (u.rx) card.insertBefore(rxLine(u.rx), card.lastChild);
       if (u.done.length) {
         card.insertBefore(el("div", "tdose", "Also done today: " +
           u.done.map(function (l) { return l.workout_title || "Workout"; }).join(", ")), card.lastChild);
@@ -13005,15 +13191,384 @@ export const APP = String.raw`
       [["btn", "Start workout", startWorkout, w], ["btn ghost tmove", "Plan it", openPlanSheet, { w: w, from: "upnext" }]]);
   }
 
+
+  // ---------- train · the goal card (B.2) ----------
+  //
+  // Under Up next, while a goal is active: what it is and where it stands. The
+  // shape is Runna's plan header and Apple Fitness's trends (RESEARCH-DESIGN §4):
+  // line one the goal and a status pill that pairs an icon with a word, never
+  // colour alone (HIG, WCAG 1.4.1); line two the numbers and the week, "week 2
+  // of 8" and never "2/8"; line three a bullet bar, filled to where you are with a
+  // tick where the plan expects you this week — one comparison a glance can read,
+  // where a sparkline that small cannot be. Behind is amber and never red: in
+  // TrainingPeaks red means a missed session, and a slow week is information,
+  // not an error. A fat-loss goal never celebrates a scale moving faster than its
+  // plan, so its two off-plan states wear the neutral grey. The whole card is one
+  // button with one label that says all of it, and opens the goal sheet, which
+  // is drawn from the same three lines (GCARD, gPaint).
+  //
+  // sync() is cheap and idempotent — goalsChanged, every Train render and the
+  // profile's arrival (a weigh-in lives there) all call it — and redraws only
+  // what changed, in place: the bar slides, the pill crossfades. Arriving, the
+  // slot grows under a card that rises in; leaving, the card fades while the slot
+  // closes, so the shelf under it glides rather than jumps (sizeMotion). Reduced
+  // motion keeps the fades and nothing else.
+  var GCARD = '<span class="gtop"><b></b><span></span></span><span class="gline"> </span><span class="gbar"><i></i><s></s></span>';
+
+  var goalCard = { sync: function () {
+    var box = trainLean && trainLean.querySelector(".tgoal"), g = activeGoal(), v = g && goalView(g), c = box && box.firstChild, s;
+    s = v ? JSON.stringify([g.title, v.line, v.pill, v.f, v.t]) : "";
+    if (!box || s === (box._sig || "")) return;
+    box._sig = s;
+    s = box.offsetHeight;
+    if (!v) {
+      if (c) {
+        c.classList.add("gout");
+        v = function () { if (c.parentNode) box.removeChild(c); };
+        if (lessMotion()) setTimeout(v, 220); else sizeMotion(box, s, 0, v);
+      }
+      return;
+    }
+    // A card still leaving is replaced, not revived: a new goal is a new card.
+    if (!c || c.classList.contains("gout")) {
+      box.innerHTML = '<button class="daycard gcard gin">' + GCARD + "</button>";
+      c = box.firstChild;
+      c.onclick = openGoalSheet;
+      c.querySelector(".gline").appendChild(ic("chev"));
+      // Measured with the bar still empty, so it fills as the card rises.
+      sizeMotion(box, s, box.offsetHeight);
+    }
+    gPaint(c, g, v);
+    c.setAttribute("aria-label", g.title + ". " + v.line + ". " + v.pill[2]);
+  } };
+
+  // The three lines, into the card or the sheet: the title, the pill (its class,
+  // its mark, its word, crossfading when the word changes), the numbers, the bar.
+  function gPaint(c, g, v) {
+    var n = c.querySelector(".gtop span"), was = n.textContent, bar = c.querySelector(".gbar").children;
+    c.querySelector("b").textContent = g.title;
+    n.className = "gpill " + v.pill[0];
+    n.innerHTML = "";
+    icon(n, v.pill[1], v.pill[2]);
+    if (was && was !== v.pill[2]) { void n.offsetWidth; n.classList.add("planswap"); }
+    c.querySelector(".gline").firstChild.nodeValue = v.line;
+    bar[0].style.transform = "scaleX(" + v.f + ")";
+    bar[1].style.left = v.t * 100 + "%";
+  }
+
+  // Where a goal stands, in the words and fractions every surface prints.
+  // goalStatusOf decides; this only says it. A lift reads its estimated max (the
+  // baseline until a set says more), a fat-loss goal its last weigh-in, anything
+  // else its sessions against the plan's pace. f is how far the bar fills and t
+  // where the plan's tick stands: along the line from the start weight to the
+  // target for fat loss, and through the block's sessions for everything else — a
+  // lift's estimate barely moves until the test week, so a bar of it would sit
+  // empty while the person does every session. Ahead on a lift says by how much
+  // ("Ahead · +6 lb"), behind by how many sessions. logs: the recap hands in the
+  // session it has not saved yet.
+  function goalView(g, logs) {
+    var s = state.profile && state.profile.settings, st = goalStatusOf(g, { logs: logs || state.logs, body: s && s.body });
+    var k = g.kind, fat = k === "fat", w = fat || k === "lift", b = +g.baseline || 0, t = +g.target || 0, u = w ? " " + g.unit : "";
+    var at = k === "lift" ? st.latest || b : st.latest, n = ((g.program && g.program.days_per_week) || t || 3) * st.weeks, short = st.due - st.sessions;
+    var d = k !== "lift" ? "" : st.status === "ahead" ? " · +" + (at - st.expected) + u
+      : st.status === "behind" ? " · " + short + (short === 1 ? " session" : " sessions") : "";
+    // Past the target (a lift over it, a weight under it) the arrow would point back:
+    // "est. 309 lb · 295 reached".
+    var past = at !== null && w && (fat ? at <= t : at >= t);
+    var nums = w ? (at === null ? "Weigh in to track it" : (fat ? "" : "est. ") + at + (past ? u + " · " + t + " reached" : " → " + t + u))
+      : at + " of ~" + st.expected + " sessions";
+    function f(x, y) { return fat ? (x === null ? 0 : clamp((x - b) / (t - b || 1), 0, 1)) : clamp(y / (n || 1), 0, 1); }
+    // Before its first day a program is on no line yet, so it is neither ahead
+    // nor behind: the pill says when it starts and the line how long it runs.
+    return { st: st, nums: nums, line: nums + " · " + (st.started ? "week " + st.week + " of " + st.weeks : st.weeks + " weeks"),
+      f: f(at, st.sessions), t: f(st.expected, st.due), pill: !st.started ? ["", "calendar", "Starts " + pdWord(g.start_day)]
+        : fat && st.status === "ahead" ? ["", "arrow-up-right", "Ahead of plan"]
+        : fat && st.status === "behind" ? ["", "hourglass", "Slower than plan"]
+        : { "on track": ["ok", "check", "On track"], ahead: ["ok", "arrow-up-right", "Ahead" + d], behind: ["low", "hourglass", "Behind" + d],
+          reached: ["ok", "flag", "Reached"], done: ["", "flag", "Done"], "no data": ["", "plus", "Weigh in"] }[st.status] };
+  }
+
+  // "W5 · Heavy · 5×3 @ 250 lb" under a planned workout, with the trend mark
+  // Hevy Trainer puts on the exercises it progressed: Up next and a day's rows.
+  function rxLine(p) {
+    return icon(el("div", "trx"), "trend", [p.text, p.note].filter(Boolean).join(" · "));
+  }
+
+  // A plan row's prescription as this account reads it, through the one rule.
+  function rxOf(row) { return prescriptionFor(row, { goals: state.goals, logs: state.logs, unit: state.unit }); }
+
+  // ---------- the goal sheet ----------
+  //
+  // The card, opened: where it started and where it ends, and by when; the line
+  // it is on; the honest part of the plan (the dream a too-fast goal was clamped
+  // from, and the note that said why); this program week's days with their
+  // numbers, each a way to that day on the calendar; and for fat loss the daily
+  // target, a weigh-in, the sources and the not-medical-advice line. Adjust with
+  // Pumpy and End goal are the sheet's own buttons (markup.ts). Refilled in
+  // place after a weigh-in, so it stays where it is.
+  function openGoalSheet() { gsFill(); openSheet("goalsheet"); }
+
+  function gsFill() {
+    var g = activeGoal(), b = $("gsbody"), v, p, x, ws, to, rows, le, fp = freeProgram();
+    if (!g) return;
+    // Basic's one free plan, ever (decisions §1): an ended program still counts,
+    // so the sheet says so beside End goal — for the goal that plan built only.
+    $("gsfree").classList.toggle("hide", !(isFree() && fp && fp.thread_id && g.thread_id === fp.thread_id));
+    v = goalView(g); p = g.program || {}; x = goalLift(g.exercise);
+    b.innerHTML = GCARD;
+    gPaint(b, g, v);
+    b.querySelector("b").id = "gstitle";
+    le = b.insertBefore(el("p", "lede", capWord((x ? x.name + " · " : "") + (g.baseline && g.target ? "from " + g.baseline + " to " +
+      g.target + " " + g.unit + " by " : "until ") + shortDate(dayDate(g.end_day)))), b.children[1]);
+    // A max read from the sets is an Epley estimate, and the spec asks that it
+    // be called one; a number the person typed, with no sets behind it, is not.
+    // Asked of liftMax itself, the one rule, rather than of the status (which
+    // reads the baseline where no set says more). One unbroken phrase, so a
+    // narrow phone never leaves "est." at a line's end.
+    if (g.kind === "lift" && liftMax(state.logs, g.exercise, addDays(dayDate(ymd(new Date())), 1), g.unit)) {
+      le.appendChild(document.createTextNode(" · "));
+      le.appendChild(el("span", "nobr", "est. from your sets, ±10%"));
+    }
+    if (g.dream && g.dream !== g.target) b.appendChild(el("p", "lede", g.dream + " is the goal; this block aims for " + g.target + "."));
+    if (p.verdict_note) b.appendChild(el("p", "setnote", p.verdict_note));
+    // The program week the card's "week 2 of 8" names: seven days from the day
+    // the program started on, whatever weekday that was.
+    ws = rxWeekStart(g, v.st.week); to = ymd(addDays(ws, 6)); ws = ymd(ws);
+    rows = (state.plan || []).filter(function (r) {
+      return r.prescription && r.prescription.goal_id === g.id && r.day >= ws && r.day <= to && planWorkout(r.workout_id);
+    }).sort(function (a, c) { return a.day < c.day ? -1 : 1; });
+    x = (p.weeks || [])[v.st.week - 1];
+    if (rows.length) b.appendChild(el("p", "readylabel", "This week" + (x && x.label ? " · " + x.label : "")));
+    rows.forEach(function (r) {
+      var y = rxOf(r);
+      b.appendChild(histRow(capWord(pdWord(r.day)) + " · " + (planWorkout(r.workout_id).title || "Workout"),
+        [y.text, y.note, sessionFor(daySessions(state.logs, r.day), r.workout_id) && "done ✓"].filter(Boolean).join(" · "), gsDay, r.day));
+    });
+    if (g.kind === "fat") {
+      x = p.daily || {};
+      if (x.steps || x.cardio_minutes) {
+        b.appendChild(el("p", "lede", "Every day: " + (x.steps ? x.steps.toLocaleString() + " steps" : x.cardio_minutes + " min of cardio")));
+      }
+      b.appendChild(tbtn("btn ghost", "Log today’s weight", openWeighIn));
+      (p.sources || []).forEach(function (s) {
+        var a = b.appendChild(icon(el("a", "linkbtn gsrc"), "arrow-up-right", s.title));
+        a.href = s.url; a.target = "_blank"; a.rel = "noopener";
+      });
+      b.appendChild(el("p", "setnote", "Not medical advice. If you have a health condition, check with your doctor first."));
+    }
+  }
+
+  // A day of this week, on the calendar: the sheet goes and Train shows that day.
+  function gsDay(k) { closeSheet("goalsheet"); pickDay(k); }
+
+  wireSheet("goalsheet");
+
+  // Opened first, then the sheet closes behind it, as Train's ⋯ rows hand over:
+  // a Basic account's Plus page (openGoalChat decides) keeps the history entry.
+  $("gsadjust").onclick = function () {
+    var g = activeGoal();
+    if (g) openGoalChat({ adjust: g, message: "Let’s adjust my plan: " + goalView(g).st.text + "." });
+    closeSheet("goalsheet");
+  };
+  $("gsend").onclick = endGoal;
+
+  // End goal, on the delayed commit this file uses for everything it takes away
+  // (clearWeek's): the goal leaves the card and its days from today leave the
+  // calendar on the tap, and the writes go when the toast offering Undo does, so
+  // one Undo restores both and nothing can half-fail. A day already trained
+  // today stays: that session happened. The rows are read again at the commit
+  // rather than taken from the screen, because a program runs past the weeks the
+  // strip has read. The goal first: if it will not end, nothing else goes.
+  function endGoal() {
+    var g = activeGoal(), day = ymd(new Date()), at = new Date().toISOString(), hid = [];
+    if (!g) return;
+    function gone(r) {
+      return r.prescription && r.prescription.goal_id === g.id && r.day >= day &&
+        !(r.day === day && sessionFor(daySessions(state.logs, day), r.workout_id));
+    }
+    function back(on) {
+      if (on) g.status = "active";
+      hid.forEach(function (id) { delete planGone[id]; });
+      loadPlan(true);
+      goalsChanged();
+    }
+    closeSheet("goalsheet");
+    g.status = "ended";
+    (state.plan || []).forEach(function (r) { if (gone(r)) { planGone[r.id] = 1; hid.push(r.id); } });
+    planHide();
+    repaintPlan();
+    goalsChanged();
+    offerUndo("Ended " + g.title, function () {
+      sb.from("goals").update({ status: "ended", ended_at: at }).eq("id", g.id).then(function (r) {
+        if (r.error) { toast("That goal did not end. Try again in a moment."); return back(1); }
+        return sb.from("plan").select("id,day,workout_id,prescription").eq("user_id", state.user.id).gte("day", day).then(function (x) {
+          var ids = (x.data || []).filter(gone).map(function (q) { return q.id; });
+          return ids.length && sb.from("plan").delete().in("id", ids);
+        }).then(function () { back(); loadGoals(); });
+      });
+    }, function () { back(1); });
+  }
+
+  // ---------- a program day, carried ----------
+  //
+  // Where a day's prescription goes when the day does. Move and Do it today keep
+  // the workout, so its numbers go with it. Swap puts another workout on the day:
+  // the numbers go too when that workout has the lift they are for, or when they
+  // are for no lift at all (a fat-loss day's steps) — but a leg day wearing
+  // "5×3 @ 250" would be a bench number on a card with no bench, so there the
+  // day becomes the person's own and drops them. (SHARED §3 keeps a swapped day's
+  // prescription and the brief drops it on a different workout: this is both,
+  // by what the numbers are for.) Copy week never comes here: a copy is the
+  // person's own plan, not the program's (doCopy writes day and workout only).
+  function rxKeep(old, w) {
+    var p = old && old.prescription;
+    return p && (old.workout_id === w.id || !p.exercise || (w.blocks || []).some(function (b) {
+      return (b.exercises || []).some(function (ex) { return ex.canonical_id === p.exercise; });
+    })) ? p : null;
+  }
+
+  // Start on a planned row (Up next, a day's Start now): the session takes that
+  // row's numbers, whichever day it is on.
+  function rxStart(it) { startWorkout(it.w, null, it.row); }
+
+  // Any other door to a workout (the card, a link, the ready sheet) on a day the
+  // program has it: today's row for it that carries a prescription.
+  function rxToday(id) {
+    var k = ymd(new Date());
+    return (state.plan || []).filter(function (p) { return p.day === k && p.workout_id === id && p.prescription; })[0];
+  }
+
+  // The day's numbers onto the session's own copy of the card (startWorkout's):
+  // the goal lift takes the sets and reps, and carries the rest as ex.rx — the
+  // load, the week and its label — which setPrefill and goalText read, and so the
+  // big button, the set sheet and the Lock Screen's dose. The draft saves the
+  // blocks, so a paused session keeps them. The lift's first appearance outside
+  // a warm-up takes them: a warm-up at 5×3 @ 250 would be no warm-up. Every other
+  // movement progresses as it always has.
+  function rxApply(blocks, row) {
+    var p = row && rxOf(row), hit = null;
+    if (!p || !p.exercise) return;
+    blocks.forEach(function (b) {
+      (b.exercises || []).forEach(function (ex) {
+        if (ex.canonical_id === p.exercise && (!hit || hit.w && b.type !== "warmup")) hit = { ex: ex, w: b.type === "warmup" };
+      });
+    });
+    if (!hit) return;
+    hit = hit.ex;
+    if (p.sets) hit.sets = p.sets;
+    if (p.reps) hit.reps = p.reps;
+    hit.rx = p;
+  }
+
+  // ---------- the weekly check-in ----------
+  //
+  // The recap of the session that closes a program week: the week, done, and
+  // what it did to the number the goal is about — "week 2 of 8 done · est. max
+  // 291 (+4)", the change on the estimate that week's loads were set from.
+  // Runna and Hevy Trainer close a week with a line like this, and neither
+  // pushes one; nor does this. The session is today's program row for this
+  // workout, and the week is closed when no later day of the goal falls in the
+  // same program week. Adjust with Pumpy opens the chat with those facts once
+  // Workout Mode has gone: drawn under the recap it would be a door nobody could
+  // see, and a sheet opened before the overlay's history entry is spent would be
+  // closed by it.
+  function sumCheck(l) {
+    var g = activeGoal(), day = ymd(new Date()), p, end, v, was, nx, rows, done, line;
+    function mine(r) { return r.prescription && r.prescription.goal_id === g.id; }
+    p = g && (state.plan || []).filter(function (r) { return r.day === day && r.workout_id === l.workout_id && mine(r); })[0];
+    p = p && p.prescription;
+    if (!p || !p.week) return null;
+    end = ymd(addDays(rxWeekStart(g, p.week), 6));
+    if ((state.plan || []).some(function (r) { return r.day > day && r.day <= end && mine(r); })) return null;
+    // This session is not in the logs yet (its insert is still in the air), so it is handed in.
+    v = goalView(g, [l].concat(state.logs || []));
+    line = v.nums;
+    // A lift's week, told the way its loads move (rxBasis): a set that says the
+    // lifter is stronger raises next week, and says so with the new estimate;
+    // otherwise the week is its sessions, because a sub-maximal set's estimate
+    // under the baseline means nothing and must never read as a loss.
+    if (g.kind === "lift") {
+      was = Math.round(rxBasis(g, p.week, state.logs));
+      nx = Math.round(rxBasis(g, p.week + 1, [l].concat(state.logs || [])));
+      rows = (state.plan || []).filter(function (r) { return mine(r) && r.day >= ymd(rxWeekStart(g, p.week)) && r.day <= end; });
+      done = rows.filter(function (r) {
+        return (r.day === day && r.workout_id === l.workout_id) || sessionFor(daySessions(state.logs, r.day), r.workout_id);
+      }).length;
+      line = nx > was ? "est. max " + nx + " " + g.unit + " (+" + (nx - was) + "), so next week goes up"
+        : done + " of " + rows.length + (rows.length === 1 ? " session" : " sessions") + " done";
+    }
+    return tcard("good sumnext", "week " + p.week + " of " + g.weeks + " done", { title: g.title }, line, [["btn ghost", "Adjust with Pumpy",
+      function (m) { leaveWorkout(); setTimeout(function () { openGoalChat({ adjust: g, message: m }); }, 300); },
+      "I finished week " + p.week + " of " + g.weeks + " of my " + g.title + " plan: " + line + ". What should change next week?"]]);
+  }
+
+  // ---------- body weight ----------
+  //
+  // One optional number in the person's unit, typed by the person: Settings ›
+  // Body weight and a fat-loss goal's Log today's weight are one weigh-in.
+  // settings.body = { weight, unit, at, log: [{ d, v, u }] } — the latest and the
+  // last 52, newest last, one a day — so a goal draws its line from it and the
+  // snapshot the server gives Pumpy has it. Nothing reads Health yet. Clearing
+  // the field takes all of it off: it is theirs to remove. The account sheet is
+  // the one Settings already types a name into, and it opens over this one.
+  function bodyNow() {
+    var b = state.profile && state.profile.settings && state.profile.settings.body;
+    return b && b.weight ? unitTo(b.weight, b.unit, state.unit) : "";
+  }
+
+  function paintBody() { var w = bodyNow(); $("setbody").textContent = w ? w + " " + state.unit : "Not set"; }
+
+  function openWeighIn() {
+    var u = state.unit;
+    if (!state.profile) return;
+    accSheet({ title: "Body weight", lede: "Optional. Pumpy plans with it, and a weight-loss goal draws its line from it. Clear it to remove it.",
+      fields: [{ name: "wt", label: "Today, in " + u, value: bodyNow() }], go: "Save",
+      run: function (done) {
+        var s = state.profile.settings || (state.profile.settings = {}), t = accVal("wt").trim(), day = ymd(new Date()),
+          v = Math.round(parseFloat(t.replace(",", ".")) * 10) / 10;
+        if (t && !(v >= (u === "kg" ? 20 : 44) && v <= (u === "kg" ? 450 : 990))) return done("That does not look like a body weight.");
+        s.body = t ? { weight: v, unit: u, at: day, log: ((s.body && s.body.log) || []).filter(function (x) { return x.d !== day; })
+          .concat([{ d: day, v: v, u: u }]).slice(-52) } : undefined;
+        // The column is written whole, from state.profile.settings: body rides along.
+        saveSettings();
+        paintBody();
+        goalCard.sync();
+        if ($("goalsheet").classList.contains("open")) gsFill();
+        toast(t ? "Weigh-in saved." : "Body weight removed.");
+        done(null);
+      } });
+    $("acc_wt").inputMode = "decimal";
+  }
+  $("setbodyrow").onclick = openWeighIn;
+
   // S6: nothing on the shelf to do yet. The lesson is the add sheet's own share
-  // row, the one used every day after this, as the empty library shows it.
+  // row, the one used every day after this, as the empty library shows it. Two
+  // more doors under it (B.2), for a first day with no video to hand: a Spotter
+  // Starter to do now, the one that matches "Where do you train?" with the other
+  // two a tap away, and a goal for Pumpy to plan. A starter done today changes
+  // the words, so the card does not read as if nothing happened.
   function firstCard(n) {
-    var card = el("div", "daycard tcard empty");
-    card.appendChild(pumpyArt("coach", false));
-    card.appendChild(el("h2", null, n ? "Spotter is reading " + n + (n > 1 ? " videos" : " video") : "Save your first workout video"));
-    card.appendChild(el("p", null, n ? "It lands here the moment it is ready." : "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+    var card = el("div", "daycard tcard empty"), done = !n && daySessions(state.logs, ymd(new Date())).length;
+    var s = starters && starterFor(state.profile && state.profile.settings && state.profile.settings.intent, starters), box, b;
+    card.appendChild(pumpyArt(done ? "proud" : "coach", false));
+    card.appendChild(el("h2", null, n ? "Spotter is reading " + n + (n > 1 ? " videos" : " video")
+      : done ? "Nice work — that’s one done" : "Save your first workout video"));
+    card.appendChild(el("p", null, n ? "It lands here the moment it is ready." : done
+      ? "Now save a workout video you want to do next. Found one? Share it to Spotter."
+      : "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
     if (!n) paintSaveOn(card.appendChild($("addsheet").querySelector(".shareflow").cloneNode(true)));
     card.appendChild(tbtn("btn firstsave", "Add video", function () { $("addbtn").click(); }));
+    if (n) return card;
+    // Read in the first time this card is drawn; the card is drawn again with it.
+    if (!starters) loadStarters().then(function (l) { if (l.length) { daySig = ""; drawDay(); } });
+    box = card.appendChild(el("div", "mlist firstdoors"));
+    if (s) {
+      b = box.appendChild(el("div", "strow"));
+      b.appendChild(rowBtn(ic("play"), (done ? "Another: " : "Try one now: ") + s.title, s.minutes + " min · " + STARTER_NEED[s.key],
+        function () { runStarter(s); }));
+      b.appendChild(tbtn("chip", "2 more", openStarters));
+    }
+    box.appendChild(rowBtn(ic("chats"), "Set a goal with Pumpy", "A plan on your calendar, week by week", function () { openGoalChat({}); }));
     return card;
   }
 
@@ -13038,10 +13593,13 @@ export const APP = String.raw`
       if (cardArt(w)) { var img = head.appendChild(el("img")); img.alt = ""; img.src = cardArt(w); }
       t.appendChild(el("b", null, w.title || "Workout"));
       t.appendChild(el("span", null, [wait ? "Saving…" : miss ? "Missed" : "Planned", fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
+      // A program day says what it asks of the lift (dayState worked it out).
+      if (it.rx) t.appendChild(rxLine(it.rx));
       head.appendChild(t);
-      [miss ? ["btn ghost", "Do it today", doToday, it] : ["btn ghost", "Start now", startWorkout, w],
+      // Start now on a day ahead is that day's session done early, on that day's numbers.
+      [miss ? ["btn ghost", "Do it today", doToday, it] : ["btn ghost", "Start now", rxStart, it],
         ["linkbtn", "Move", openPlanSheet, { w: w, row: it.row, from: "day" }], ["linkbtn", "Remove", planRemove, it.row]]
-        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])).disabled = wait && a[2] !== startWorkout; });
+        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])).disabled = wait && a[2] !== rxStart; });
     });
     if (d.empty) card.appendChild(el("div", "tdose", d.when === "past" ? "Nothing logged or planned." : "Nothing planned yet."));
     // A day already gone takes no plan: it would only be a missed day at once.
@@ -13116,7 +13674,17 @@ export const APP = String.raw`
   // Both reads, one page. Either may land first and either may repaint; the quiet
   // planSig check is what stops a tab swipe re-rendering an unchanged page and
   // throwing away where it was scrolled to.
+  // Train's two reads, and a net under them: if Up next is still loading eight
+  // seconds on, whatever is missing is asked for again and Train is drawn — and
+  // drawn anyway if another path brought it in without a render (the logs that
+  // arrived by the library's render, in Phase 0's first run).
   function prepareTrain() {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    setTimeout(function () {
+      if (!uid || !accountNow(epoch, uid) || upNext().s !== 0 || !trainLean) return;
+      Promise.all([state.plan ? null : (planRev++, loadPlan(true)), state.logs ? null : loadLogs(),
+        state.libReady ? null : load(true)]).then(function () { if (accountNow(epoch, uid)) renderTrain(); });
+    }, 8000);
     return Promise.all([loadPlan(true), loadLogs().then(function () { renderTrain(); })]);
   }
 
@@ -13139,6 +13707,9 @@ export const APP = String.raw`
       else { calOpen = true; drawCal(); }
     }
     drawDay();
+    // The goal's numbers move with the logs, the unit and the plan, and every one
+    // of those ends in this render.
+    goalCard.sync();
     paintSeg();
     planSlide = 0;
     // Whatever a swipe left on the rows, taken back without animating the way
@@ -13178,10 +13749,14 @@ export const APP = String.raw`
   // optimistic and can have them here. day may be a list: the Plan sheet puts one
   // workout on several days in one request. The ids come back so an Undo can take
   // exactly those rows off again.
-  function planAdd(day, workoutId) {
+  // rx: a program day's prescription, which goes where the day goes (rxKeep says
+  // when). Written only when there is one, so every other row is the row it was.
+  function planAdd(day, workoutId, rx) {
     planRev++;
     return sb.from("plan").insert([].concat(day).map(function (k) {
-      return { user_id: state.user.id, day: k, workout_id: workoutId };
+      var r = { user_id: state.user.id, day: k, workout_id: workoutId };
+      if (rx) r.prescription = rx;
+      return r;
     })).select("id").then(function (r) { planRev++; return r; });
   }
 
@@ -13406,6 +13981,9 @@ export const APP = String.raw`
           // A second copy of the same week must be worth nothing, not double.
           if (have[sig]) continue;
           have[sig] = true;
+          // Day and workout, and never a program day's prescription (B.2): a copied
+          // week is the person's own plan, not the program's, and its numbers would
+          // otherwise claim a week of the program that is not there.
           rows.push({ user_id: state.user.id, day: to, workout_id: srcRows[j].workout_id });
         }
       }
@@ -13633,6 +14211,8 @@ export const APP = String.raw`
   // would vanish under any plan read that landed meanwhile — arriving on Train is one.
   function planWrite(w, days, old, msg) {
     var epoch = accountEpoch, uid = state.user.id, tag = "tmp-" + Date.now() + "-", ids = [], off = false, undone = false;
+    // A program day moved or swapped keeps its numbers where they still mean something (rxKeep).
+    var rx = rxKeep(old, w);
     function show(plan) { state.plan = plan; repaintPlan(); render(); }
     // The screen as it was: this write's rows gone, the moved one back (once).
     function unshow() {
@@ -13640,11 +14220,11 @@ export const APP = String.raw`
       show(old && !plan.filter(function (p) { return p.id === old.id; }).length ? plan.concat([old]) : plan);
     }
     show((state.plan || []).filter(function (p) { return !old || p.id !== old.id; }).concat(days.map(function (k, i) {
-      return { id: tag + i, day: k, workout_id: w.id, user_id: uid };
+      return { id: tag + i, day: k, workout_id: w.id, user_id: uid, prescription: rx };
     })));
     // What was written is noted before anything else, Undo or not, so an Undo that
     // lands while a request is out still knows what to take back.
-    var put = planAdd(days, w.id).then(function (r) {
+    var put = planAdd(days, w.id, rx).then(function (r) {
       if (!accountNow(epoch, uid)) return;
       if (r.error) {
         if (!undone) { unshow(); toast("Could not plan that. Try again in a moment."); }
@@ -13652,7 +14232,7 @@ export const APP = String.raw`
       }
       ids = (r.data || []).map(function (x) { return x.id; });
       if (undone) return;
-      if (!old) { loadPlan(true); return; }
+      if (!old) { loadPlan(true); firstPlanMoment(); return; }
       return sb.from("plan").delete().eq("id", old.id).then(function (x) {
         if (!accountNow(epoch, uid)) return;
         off = !x.error;
@@ -13668,7 +14248,8 @@ export const APP = String.raw`
         if (!accountNow(epoch, uid)) return;
         var back = [];
         if (ids.length) back.push(sb.from("plan").delete().in("id", ids));
-        if (off) back.push(planAdd(old.day, old.workout_id));
+        // Put back as it was, numbers and all.
+        if (off) back.push(planAdd(old.day, old.workout_id, old.prescription));
         Promise.all(back).then(function () { loadPlan(true); });
       });
     });
@@ -13676,11 +14257,12 @@ export const APP = String.raw`
 
   // ---------- logs, progress, history ----------
 
-  function loadLogs() {
+  // retry: the second try after a failed read (below).
+  function loadLogs(retry) {
     if (state.logs && !state.logsLite) return Promise.resolve(state.logs);
     if (!state.user) return Promise.resolve([]);
     var uid = state.user.id, epoch = accountEpoch, rev = logsRev;
-    return readOnce("logs:" + rev, function () {
+    return readOnce("logs:" + rev + ":" + !!retry, function () {
       return sb.from("workout_logs").select("*").eq("user_id", uid)
         .order("started_at", { ascending: false }).limit(400).then(function (r) {
           if (!accountNow(epoch, uid)) return [];
@@ -13693,7 +14275,15 @@ export const APP = String.raw`
           libStatusesChanged();
           return state.logs;
         }).catch(function () {
-          if (accountNow(epoch, uid)) toast("Could not load your history. Open Train to try again.");
+          if (!accountNow(epoch, uid)) return [];
+          // One more try before saying so, as the library's read does. A token minted a
+          // moment ago can be refused once — PostgREST's 401 PGRST303 on a new account's
+          // first read, in the logs of Phase 0's first-run bug — and this is the answer
+          // Train is waiting on: with no second try, Up next sat on its skeleton for good.
+          if (!retry) return new Promise(function (resolve) {
+            setTimeout(function () { resolve(accountNow(epoch, uid) ? loadLogs(true) : []); }, 900);
+          });
+          toast("Could not load your history. Open Train to try again.");
           return [];
         });
     });
@@ -13835,7 +14425,9 @@ export const APP = String.raw`
   // trained instead of the plan leaves the plan standing, and says so (done).
   //
   // d: { now, draft (pausedDraft), running (wo while live), workouts, logs, plan,
-  //      libReady, planReady }
+  //      libReady, planReady, goals, unit }
+  // S2 carries the planned row's prescription (B.2), worked out by the one rule
+  // every reader goes through (prescriptionFor), or null for a row without one.
   function upNextOf(d) {
     var key = ymd(d.now), ws = d.workouts || [], byId = {}, i;
     for (i = 0; i < ws.length; i++) byId[ws[i].id] = ws[i];
@@ -13852,7 +14444,8 @@ export const APP = String.raw`
     var done = daySessions(d.logs, key), left = [];
     dayRows(d.plan, key, byId).forEach(function (r) { if (!sessionFor(done, r.workout_id)) left.push(r); });
     if (left.length) {
-      return { s: 2, kind: "planned", w: byId[left[0].workout_id], row: left[0], more: left.length - 1, done: done };
+      return { s: 2, kind: "planned", w: byId[left[0].workout_id], row: left[0], more: left.length - 1, done: done,
+        rx: prescriptionFor(left[0], { goals: d.goals, logs: d.logs, unit: d.unit }) };
     }
     var next = nextPlanned(d.plan, key, byId);
     if (done.length) {
@@ -13873,7 +14466,7 @@ export const APP = String.raw`
   function upNext() {
     return upNextOf({ now: new Date(), draft: pausedDraft(), running: wo && !wo.finished ? wo : null,
       workouts: state.workouts, logs: state.logs, plan: state.plan,
-      libReady: !!state.libReady, planReady: !!state.plan });
+      libReady: !!state.libReady, planReady: !!state.plan, goals: state.goals, unit: state.unit });
   }
 
   // Any day but today, as the card under the strip shows it: what happened on
@@ -13896,8 +14489,12 @@ export const APP = String.raw`
       empty: !done.length && !planned.length && !missed.length };
   }
 
+  // With each program row's numbers worked out (B.2): drawDay's signature is this
+  // object, so a goal or a log landing that moves a load redraws the card.
   function dayState(key) {
-    return dayOf(key, { now: new Date(), workouts: state.workouts, logs: state.logs, plan: state.plan });
+    var d = dayOf(key, { now: new Date(), workouts: state.workouts, logs: state.logs, plan: state.plan });
+    d.missed.concat(d.planned).forEach(function (it) { it.rx = rxOf(it.row); });
+    return d;
   }
 
   function setsIn(entries) {
@@ -13963,6 +14560,411 @@ export const APP = String.raw`
   }
 
   function readyToTry() { return readyList(state.workouts, state.logs); }
+
+  // ---------- goals and programs (seams, B.2) ----------
+  //
+  // "Get my bench to 305" becomes weeks on the calendar, and the calendar then
+  // has to speak in that week's numbers wherever a set is offered: Up next, the
+  // big button, the Lock Screen's dial. What follows is the rule underneath all of
+  // those, pure and handed everything it reads, so tools/goals-harness.mjs can
+  // hold it to its truth tables the way simplify-b-harness holds Up next. The
+  // screens that draw it (the goal card, the ask card, the program card, the
+  // intent screen) are built on top and never work a number out for themselves.
+  //
+  // Two words that sound alike and are not: state.goal is the week ring's number
+  // ("Workouts per week"), a setting since the ring was built. A training goal is
+  // a row of the goals table, and lives in state.goals.
+
+  // The lifts a goal can be about, in the words people type them. Front squat
+  // comes before squat, or "front squat 100" would read as a back squat.
+  var GOAL_LIFTS = [
+    { id: "bench-press", word: "bench", name: "bench press", re: /\bbench(\s*press)?\b(?!\s*dip)/ },
+    { id: "front-squat", word: "front squat", name: "front squat", re: /\bfront\s*squats?\b/ },
+    { id: "back-squat", word: "squat", name: "squat", re: /\b(back\s*)?squats?\b/ },
+    { id: "deadlift", word: "deadlift", name: "deadlift", re: /\bdead\s*lifts?\b|\bdl\b/ },
+    { id: "overhead-press", word: "overhead press", name: "overhead press", re: /\b(overhead|military|shoulder)\s*press\b|\bohp\b/ },
+    { id: "hip-thrust", word: "hip thrust", name: "hip thrust", re: /\bhip\s*thrusts?\b/ }
+  ];
+
+  function goalLift(id) {
+    for (var i = 0; i < GOAL_LIFTS.length; i++) if (GOAL_LIFTS[i].id === id) return GOAL_LIFTS[i];
+    return null;
+  }
+
+  // "bench 305", "Squat 140kg", "305": the optional lift on the intent screen,
+  // read the way a person wrote it. The number has to be a plausible load in its
+  // unit; a lift with no number, or a number with no lift, is still an answer.
+  function parseLiftText(text, unit) {
+    var s = String(text || "").toLowerCase(), lift = null, i, m, n = null, u = unit === "kg" ? "kg" : "lb";
+    if (!s.replace(/\s+/g, "")) return null;
+    for (i = 0; i < GOAL_LIFTS.length && !lift; i++) if (GOAL_LIFTS[i].re.test(s)) lift = GOAL_LIFTS[i];
+    m = s.match(/(\d{2,4}(?:[.,]\d)?)\s*(kgs?|kilos?|lbs?|pounds?)?/);
+    if (m) {
+      n = parseFloat(m[1].replace(",", "."));
+      if (m[2]) u = m[2].charAt(0) === "k" ? "kg" : "lb";
+      if (!(n >= (u === "kg" ? 10 : 20) && n <= (u === "kg" ? 700 : 1500))) n = null;
+    }
+    if (!lift && n === null) return null;
+    return { exercise: lift ? lift.id : null, word: lift ? lift.word : null, target: n, unit: u };
+  }
+
+  // A weight in another unit, the way toUnit converts for the screen, but to any
+  // unit rather than to the account's — a goal keeps the unit it was set in.
+  function unitTo(w, from, to) {
+    w = Number(w) || 0;
+    if (!w || !from || !to || from === to) return w;
+    return Math.round((to === "kg" ? w / LB_PER_KG : w * LB_PER_KG) * 10) / 10;
+  }
+
+  // The smallest jump a loaded bar makes: a pair of 2.5 lb plates, or of 1.25 kg.
+  function plateOf(unit) { return unit === "kg" ? 2.5 : 5; }
+  function toPlate(x, unit) { var p = plateOf(unit); return Math.round(x / p) * p; }
+
+  // Epley, as Records and the best-set check already use it: an estimate, never a
+  // lift anybody did, and every screen that prints it says "est.".
+  function e1rm(weight, reps) { return weight * (1 + reps / 30); }
+
+  // One lift's estimated max as it stood at a moment: sets of ten reps or fewer
+  // from the eight weeks before it (the moment itself excluded). Heavy, low-rep
+  // sets predict a max best, so when any set of five or fewer is in the window
+  // only those count. In the unit asked for, whatever each set was logged in;
+  // null when nothing qualifies.
+  var MAX_WINDOW = 56 * 86400000;
+
+  function liftMax(logs, exercise, before, unit) {
+    var end = before ? new Date(before).getTime() : Date.now(), from = end - MAX_WINDOW, best = null, low = null;
+    (logs || []).forEach(function (l) {
+      var t = l && l.started_at ? new Date(l.started_at).getTime() : NaN;
+      if (!(t >= from && t < end)) return;
+      (l.entries || []).forEach(function (e) {
+        if (!e || !exercise || e.canonical_id !== exercise) return;
+        (e.sets || []).forEach(function (s) {
+          if (!s || !(s.weight > 0) || !(s.reps >= 1 && s.reps <= 10)) return;
+          var w = unitTo(s.weight, s.unit || unit, unit), hit = { est: e1rm(w, s.reps), weight: w, reps: s.reps, at: l.started_at };
+          if (!best || hit.est > best.est) best = hit;
+          if (s.reps <= 5 && (!low || hit.est > low.est)) low = hit;
+        });
+      });
+    });
+    return low || best;
+  }
+
+  // Of the lifts a goal can name, the one the last eight weeks of logs hold most
+  // loaded sets of: the lift somebody is already training is the one they have
+  // a number for.
+  function topLift(logs, now) {
+    var n = {}, end = now.getTime(), from = end - MAX_WINDOW, best = null, i, id;
+    (logs || []).forEach(function (l) {
+      var t = l && l.started_at ? new Date(l.started_at).getTime() : NaN;
+      if (!(t >= from && t <= end)) return;
+      (l.entries || []).forEach(function (e) {
+        if (!e || !e.canonical_id) return;
+        (e.sets || []).forEach(function (s) { if (s && s.weight > 0) n[e.canonical_id] = (n[e.canonical_id] || 0) + 1; });
+      });
+    });
+    for (i = 0; i < GOAL_LIFTS.length; i++) {
+      id = GOAL_LIFTS[i].id;
+      if (n[id] && (!best || n[id] > n[best.id])) best = GOAL_LIFTS[i];
+    }
+    return best;
+  }
+
+  // ---------- goal starters (seam) ----------
+  //
+  // Pumpy's empty chat opens on outcomes, not features: four goal chips and two
+  // quiet links, made from what the person told us (settings.intent) and what
+  // they have done (logs, saves). Pure, so the harness can hold every branch:
+  //   d = { intent, logs, workouts, now, unit, perWeek, free, freeState }
+  // freeState is the server's word on Basic's one free program ("available",
+  // "open", "used"). Numbers are rounded the way people say them, and no chip ever
+  // promises a pace: "about 10 weeks" is a length, not a rate.
+  var GOAL_CATS = { "Legs": "leg", "Push": "push", "Pull": "pull", "Upper Body": "upper-body",
+    "Full Body": "full-body", "Core": "core", "Cardio": "cardio", "HIIT": "HIIT", "Mobility": "mobility", "Yoga": "yoga" };
+
+  function goalStarters(d) {
+    d = d || {};
+    var unit = d.unit === "kg" ? "kg" : "lb", intent = d.intent || {}, now = d.now || new Date();
+    var chips = [gsLift(d, unit, intent, now), gsFat(unit), gsCat(d.workouts, intent), gsKeep(d.perWeek)];
+    var order = { strength: ["lift", "cat", "keep", "fat"], muscle: ["cat", "lift", "keep", "fat"],
+      fat: ["fat", "keep", "cat", "lift"], consistency: ["keep", "cat", "lift", "fat"] }[intent.aim] ||
+      ["lift", "fat", "cat", "keep"];
+    chips.sort(function (a, b) { return order.indexOf(a.id) - order.indexOf(b.id); });
+    // Basic's one real program is why a Basic account sees these chips at all, and
+    // the chip says so until it has been spent.
+    if (d.free && d.freeState !== "used") chips.forEach(function (c) { c.badge = "1 free plan"; });
+    return { chips: chips, links: [
+      { id: "week", label: "Plan my week from what I’ve saved", message: "Plan my week from what I’ve saved." },
+      { id: "sore", label: "Work around a sore shoulder", message: "My shoulder is sore. How do I train around it this week?" }
+    ] };
+  }
+
+  function gsLift(d, unit, intent, now) {
+    var want = intent.lift || null, lift = goalLift(want && want.exercise) || topLift(d.logs, now), est = null, target = null, m;
+    if (!lift) {
+      if (intent.where === "home") {
+        return { id: "lift", label: "Get stronger with what you have", sub: "4 weeks at home",
+          message: "Build me a 4-week strength plan I can do at home.", goal: { type: "muscle" } };
+      }
+      lift = GOAL_LIFTS[0];
+    }
+    m = liftMax(d.logs, lift.id, new Date(now.getTime() + 1), unit);
+    if (m) est = Math.round(m.est);
+    // What was asked for, when it is ahead of where they are; else the next number
+    // worth saying out loud: about five per cent up, rounded up to a plate.
+    if (want && want.exercise === lift.id && want.target) target = toPlate(unitTo(want.target, want.unit || unit, unit), unit);
+    if (est && (!target || target <= est)) target = Math.ceil(est * 1.05 / plateOf(unit)) * plateOf(unit);
+    if (!target) {
+      return { id: "lift", label: "Get my " + lift.word + " to a new best", sub: "I’ll ask where you’re at",
+        message: "Help me get my " + lift.name + " to a new best.",
+        goal: { type: "lift", exercise: lift.id, target: null, unit: unit, baseline: null } };
+    }
+    return { id: "lift", label: "Get my " + lift.word + " to " + target + (unit === "kg" ? " kg" : ""),
+      sub: est ? "your best ~" + est : "start from where you are",
+      message: "Get my " + lift.name + " to " + target + " " + unit + "." +
+        (est ? " My estimated max is about " + est + " " + unit + "." : ""),
+      goal: { type: "lift", exercise: lift.id, target: target, unit: unit, baseline: est } };
+  }
+
+  function gsFat(unit) {
+    var n = unit === "kg" ? 5 : 10;
+    return { id: "fat", label: "Lose " + n + " " + unit + ", keep my strength", sub: "about 10 weeks",
+      message: "Help me lose " + n + " " + unit + " and keep my strength.", goal: { type: "fat", loss: n, unit: unit } };
+  }
+
+  // The kind of workout saved most often, counted over saved videos only: a
+  // Pumpy card or a starter is not a video anybody chose.
+  function gsCat(ws, intent) {
+    var n = {}, best = null, word, where = intent && intent.where;
+    (ws || []).forEach(function (w) {
+      if (!w || w.platform === "pumpy" || w.kind === "starter" || isPending(w) || isFailed(w) || !GOAL_CATS[w.category]) return;
+      n[w.category] = (n[w.category] || 0) + 1;
+      if (!best || n[w.category] > n[best]) best = w.category;
+    });
+    if (best && n[best] >= 2) {
+      word = GOAL_CATS[best];
+      return { id: "cat", label: "4-week " + word + " program", sub: "from your " + n[best] + " " + word + " videos",
+        message: "Build me a 4-week " + word + " program from my saved " + word + " workouts.",
+        goal: { type: "muscle", category: best } };
+    }
+    return { id: "cat", label: "4-week full-body program",
+      sub: where === "home" ? "no equipment" : where === "gym" ? "gym basics" : "from what you have",
+      message: "Build me a 4-week full-body program" + (where === "home" ? " with no equipment." : "."), goal: { type: "muscle" } };
+  }
+
+  function gsKeep(perWeek) {
+    var n = Math.max(2, Math.min(6, perWeek || 3));
+    return { id: "keep", label: "Train " + n + "× a week this month", sub: "I’ll plan the days",
+      message: "Help me train " + n + " times a week this month.", goal: { type: "consistency", target: n } };
+  }
+
+  // ---------- a planned day's prescription (seam) ----------
+  //
+  // A program's plan row carries what that day asks of the goal lift
+  // (plan.prescription: week, label, exercise, sets, reps, pct, the weight the
+  // server worked out, rpe, note, goal_id). The server wrote the weight from the
+  // baseline when the program was made; here it is worked out again, so week
+  // three is lifted off what weeks one and two actually logged. That is the
+  // adaptation rule, the same for Basic and Plus, and no model is involved.
+  // d = { goals, logs, unit }.
+
+  // Where week w of a goal's program starts: its first day, plus seven a week.
+  function rxWeekStart(g, week) { return addDays(dayDate(g.start_day), 7 * (Math.max(1, week) - 1)); }
+
+  // The max a week's loads come from: the baseline the program was built on,
+  // raised when a set logged before that week began says the lifter is stronger,
+  // and never lowered by one that does not. A program's own sets are sub-maximal
+  // on purpose — five at 75 % is about a ten-rep weight — and Epley on them reads
+  // a max well under the real one: followed to the letter, the program would
+  // drift lighter every week (the review's bug 1). So an estimate under the
+  // baseline is evidence of nothing, and a week gone badly is the person's to
+  // tell Pumpy, or to answer by ending the goal. Capped at a tenth over the
+  // larger of the baseline and the target, so one mistyped set cannot throw a week.
+  function rxBasis(g, week, logs) {
+    var base = Number(g.baseline) || 0, top = Math.max(base, Number(g.target) || 0), m;
+    if (!base) return 0;
+    if (week <= 1) return base;
+    m = liftMax(logs, g.exercise, rxWeekStart(g, week), g.unit);
+    return m && m.est > base ? Math.min(m.est, top * 1.1) : base;
+  }
+
+  function prescriptionFor(row, d) {
+    var rx = row && row.prescription, goals = (d && d.goals) || [], unit = (d && d.unit) || "lb", g = null, i, w = null, out;
+    if (!rx || typeof rx !== "object") return null;
+    for (i = 0; i < goals.length; i++) if (goals[i].id === rx.goal_id) g = goals[i];
+    if (rx.pct && g && g.kind === "lift" && g.exercise && rx.exercise === g.exercise && g.baseline) {
+      // Rounded to a plate in the goal's unit, then again in the reader's: a
+      // program set in kg and read in lb still lands on a bar somebody can load.
+      w = toPlate(unitTo(toPlate(rx.pct * rxBasis(g, rx.week || 1, d && d.logs), g.unit), g.unit, unit), unit);
+    } else if (rx.weight) {
+      w = toPlate(unitTo(rx.weight, rx.unit || unit, unit), unit);
+    }
+    out = { goal_id: rx.goal_id || null, week: rx.week || null, label: rx.label || null, exercise: rx.exercise || null,
+      sets: rx.sets || null, reps: rx.reps ? String(rx.reps) : null, pct: rx.pct || null, rpe: rx.rpe || null,
+      note: rx.note || null, weight: w || null, unit: unit };
+    out.text = rxText(out);
+    return out;
+  }
+
+  // "W5 · Heavy · 5×3 @ 250 lb": the line Up next and a day's card print.
+  function rxText(p) {
+    var dose = p.sets && p.reps ? p.sets + "×" + p.reps : p.reps ? p.reps + " reps" : "";
+    return [p.week ? "W" + p.week : "", p.label || "", dose + (p.weight ? " @ " + p.weight + " " + p.unit : "")]
+      .filter(Boolean).join(" · ");
+  }
+
+  // ---------- where a goal stands (seam) ----------
+  //
+  // A fat-loss goal: the latest weigh-in against the straight line from where it
+  // started to where it is going, inside a pound (half a kilo) "on track"; no
+  // weigh-in after its first week says so ("no data") rather than guessing. A
+  // lift: the estimate never reads under the baseline, for the reason the loads
+  // never drop (rxBasis), and "ahead" is an estimate over the line by more than a
+  // plate (or one per cent); "behind" is about the plan, not the estimate —
+  // sessions due by now and not done, two or more and under three in four. Any
+  // other goal: sessions against the plan's pace. Past its last day a goal is
+  // "reached" or "done", and before its first it is "upcoming". sessions and due
+  // are for every kind (the lift card's bar is how far through the block).
+  // d = { logs, body (settings.body), now }.
+  function goalStatusOf(g, d) {
+    d = d || {};
+    var now = d.now || new Date(), today = dayDate(ymd(now)), start = dayDate(g.start_day), end = dayDate(g.end_day);
+    var span = Math.max(1, Math.round((end - start) / 86400000)), day = Math.round((today - start) / 86400000);
+    var weeks = g.weeks || Math.max(1, Math.ceil((span + 1) / 7));
+    var base = Number(g.baseline) || 0, target = Number(g.target) || 0, frac = clamp(day / span, 0, 1), tol, got, m, per;
+    var out = { kind: g.kind, week: clamp(Math.floor(day / 7) + 1, 1, weeks), weeks: weeks, status: "on track",
+      latest: null, expected: null, started: day >= 0, over: day > span, unit: g.unit || null, sessions: 0, due: 0 };
+    // Sessions since the start against the program's pace, pro rata.
+    per = (g.program && g.program.days_per_week) || (g.kind === "consistency" && target) || 3;
+    (d.logs || []).forEach(function (l) {
+      if (isSession(l) && l.started_at && ymd(new Date(l.started_at)) >= g.start_day && ymd(new Date(l.started_at)) <= ymd(now)) out.sessions++;
+    });
+    out.due = Math.round(per * Math.max(0, Math.min(day, span + 1)) / 7);
+    if (g.kind === "lift" && base && target) {
+      m = liftMax(d.logs, g.exercise, addDays(today, 1), g.unit);
+      got = out.latest = Math.max(base, m ? Math.round(m.est) : 0);
+      out.expected = Math.round(base + (target - base) * frac);
+      tol = Math.max(plateOf(g.unit), target * 0.01);
+      out.status = out.over ? (got >= target ? "reached" : "done")
+        : got > base && got >= out.expected + tol ? "ahead"
+        : out.due >= 2 && out.sessions < out.due * 0.75 ? "behind" : "on track";
+    } else if (g.kind === "fat" && base && target) {
+      out.latest = lastWeighIn(d.body, g.start_day, g.unit);
+      out.expected = Math.round((base - (base - target) * frac) * 10) / 10;
+      tol = g.unit === "kg" ? 0.5 : 1;
+      m = out.latest;
+      out.status = m === null ? (day >= 7 ? "no data" : "on track")
+        : out.over ? (m <= target ? "reached" : "done")
+        : m <= out.expected - tol ? "ahead" : m > out.expected + tol ? "behind" : "on track";
+    } else {
+      out.latest = out.sessions;
+      out.expected = out.due;
+      out.status = out.over ? "done" : out.latest > out.expected ? "ahead"
+        : out.expected && out.latest < out.expected * 0.75 ? "behind" : "on track";
+    }
+    // Before its first day a program is on no line yet: neither ahead nor behind.
+    if (!out.started) out.status = "upcoming";
+    out.text = goalLine(g, out);
+    return out;
+  }
+
+  // The newest weigh-in on or after a day, in a unit. settings.body.log is
+  // [{ d: "YYYY-MM-DD", v: number, u: "lb"|"kg" }], newest last.
+  function lastWeighIn(body, since, unit) {
+    var log = (body && body.log) || [], i;
+    for (i = log.length - 1; i >= 0; i--) {
+      if (log[i] && log[i].d >= since && log[i].v > 0) return unitTo(log[i].v, log[i].u || unit, unit);
+    }
+    return null;
+  }
+
+  // "Bench 305 · est. 287 → 295 · week 2 of 8 · on track": the goal card's one line.
+  function goalLine(g, st) {
+    var tail = "week " + st.week + " of " + st.weeks + " · " + st.status;
+    if (st.status === "upcoming") return g.title + " · starts " + shortDate(dayDate(g.start_day)) + " · " + st.weeks + " weeks";
+    if (g.kind === "lift") return g.title + " · est. " + (st.latest || g.baseline) + " → " + g.target + " · " + tail;
+    if (g.kind === "fat") {
+      return g.title + " · " + (st.latest !== null ? st.latest + " → " + g.target + " " + g.unit : "weigh in to track it") + " · " + tail;
+    }
+    return g.title + " · " + st.latest + " of ~" + st.expected + " sessions · " + tail;
+  }
+
+  // The goal a person is working toward: v1 holds one active goal at a time
+  // (the table's unique index says so too).
+  function activeGoal() {
+    var gs = state.goals || [];
+    for (var i = 0; i < gs.length; i++) if (gs[i].status === "active") return gs[i];
+    return null;
+  }
+
+  // Read once a boot, and again after a program is confirmed or undone or a goal
+  // ended. A read that fails — a build ahead of its migration, a blip — leaves
+  // the last answer, and null reads as no goals everywhere.
+  function loadGoals() {
+    if (!state.user) return Promise.resolve([]);
+    var uid = state.user.id, epoch = accountEpoch;
+    return sb.from("goals").select("*").eq("user_id", uid).order("created_at", { ascending: false }).limit(20)
+      .then(function (r) {
+        if (!accountNow(epoch, uid)) return [];
+        if (!r.error) { state.goals = r.data || []; goalsChanged(); }
+        return state.goals || [];
+      }).catch(function () { return state.goals || []; });
+  }
+
+  // Everything that prints a goal's numbers, told at once. Workout Mode reads a
+  // prescription when a session starts, so a session under way keeps the numbers
+  // it began with.
+  function goalsChanged() {
+    goalCard.sync();
+    sessionChanged();
+  }
+
+  // ---------- Spotter Starters (seam) ----------
+  //
+  // Three workouts that ship inside the app, so a first session needs no video,
+  // no AI and no account: bodyweight (~20 min, nothing needed), one pair of
+  // dumbbells (~25), and a gym with machines and a barbell (~35). Every movement
+  // is a catalog id with a demo clip. The server holds the same three
+  // (supabase/functions/spotter/starters.ts) and writes a kept copy from ITS
+  // list, never from the client's; tools/goals-harness.mjs holds the two equal.
+  // starterFor(intent, list) and starterCard(s) take what loadStarters() gave.
+  // A kept copy is a workouts row of kind "starter", which the library cap does
+  // not count.
+  // Kept out of the page and read the first time something shows a starter:
+  // three workouts are data, not code, and the page is parsed on every launch.
+  // docs/assets/starters.json ships in both native bundles (tools/ios/build.mjs
+  // copies docs/assets), so it is there offline and before any account exists.
+  var starters = null, startersLoad = null;
+
+  function loadStarters() {
+    if (starters) return Promise.resolve(starters);
+    if (startersLoad) return startersLoad;
+    var base = location.hostname.endsWith("supabase.co") ? "https://simeonrinkenberger.github.io/spotter/" : "./";
+    startersLoad = fetch(base + "assets/starters.json?v=1").then(function (r) { return r.json(); }).then(function (j) {
+      starters = (j && j.starters) || [];
+      startersLoad = null;
+      return starters;
+    }).catch(function () { startersLoad = null; return []; });
+    return startersLoad;
+  }
+
+  // Which starter a person sees first, from "Where do you train?": home is
+  // bodyweight, a gym is the gym, both is a pair of dumbbells. Nobody has said
+  // yet: bodyweight, which needs nothing.
+  function starterFor(intent, list) {
+    var where = intent && intent.where, key = where === "gym" ? "gym" : where === "both" ? "dumbbells" : "bodyweight";
+    list = list || [];
+    for (var i = 0; i < list.length; i++) if (list[i].key === key) return list[i];
+    return list[0] || null;
+  }
+
+  // A starter in the shape every card has, for Workout Mode and the card view.
+  // It has no id until it is kept: a session on it logs with no workout_id,
+  // which still counts (isSession asks for a finish and a set, not a card).
+  function starterCard(s) {
+    return { id: null, starter: s.key, title: s.title, author: "Spotter", platform: "spotter", kind: "starter",
+      category: s.category, duration_minutes: s.minutes, equipment: s.equipment.slice(), muscle_groups: s.muscle_groups.slice(),
+      blocks: JSON.parse(JSON.stringify(s.blocks)), has_full_workout: true, ingest_status: "ready" };
+  }
 
   // ---------- one status per card (seam) ----------
   //
@@ -14800,14 +15802,6 @@ export const APP = String.raw`
   // carries the library index and the transcript.
   var MAX_REFS = 6;
 
-  // Short enough to wrap into a chip on a phone, long enough to still be a real ask.
-  var QUICK_ASKS = [
-    "Build a 25-min kettlebell shoulders + core",
-    "Plan my week from what I’ve saved",
-    "Edit one of my workouts",
-    "Shoulder pain — what should I strengthen?"
-  ];
-
   // A keyboard sends on Enter; a phone keyboard's return key must still make a
   // new line, so only ask for that where there is no touch screen.
   var NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
@@ -14847,10 +15841,13 @@ export const APP = String.raw`
     return t;
   }
 
-  // What a new chat never takes off the page: an answer still arriving, or a
-  // change Pumpy is waiting on a yes or no for.
+  // What a new chat never takes off the page: an answer still arriving, a
+  // change Pumpy is waiting on a yes or no for, or an ask card still waiting on
+  // its answers (the last word in the chat) — stepping out to look up a max
+  // must not bury the form in Chats.
   function pumpyHolds(msgs) {
-    if (pumpy.busy || pumpy.live) return true;
+    var last = msgs[msgs.length - 1];
+    if (pumpy.busy || pumpy.live || (last && last.meta && last.meta.ask && !last.meta.ask.answered)) return true;
     return msgs.some(function (m) {
       return m.role === "assistant" && m.meta && m.meta.proposal && m.meta.status === "pending";
     });
@@ -14960,7 +15957,7 @@ export const APP = String.raw`
     pumpy = Object.assign({}, pumpy, { thread: null, messages: [], refs: [],
       refsRev: pumpy.refsRev + 1, openSeq: (pumpy.openSeq || 0) + 1,
       loaded: true, loading: false, busy: false, live: null, nodes: {}, shownCount: 0, stick: true,
-      lastAt: 0, ctxAt: 0 });
+      lastAt: 0, ctxAt: 0, goal: null });
   }
 
   function newPumpyThread() {
@@ -15156,9 +16153,12 @@ export const APP = String.raw`
   // same free cover, so the swap happens BEHIND it and the close starts after.
   // Tapping used to empty the log in the same frame: the hello card stood 208ms and
   // the page went 1858 to 576 to 1170px, scrollTop 1282 to 0 to 594, mid-slide.
+  //
+  // Answers whether that thread is the one on screen now, for a caller with
+  // something to do in it next (openGoalChat).
   function openThread(t, row) {
     if (pumpyReset) renderPumpy();
-    if (threadId() === t.id) { closeSheet("pumpysheet"); return; }   // already reading it
+    if (threadId() === t.id) { closeSheet("pumpysheet"); return Promise.resolve(true); }   // already reading it
     var seq = (pumpy.openSeq = (pumpy.openSeq || 0) + 1);
     var refsRev = pumpy.refsRev;
     var log = $("pumpylog"), swapped = false, closed = false;
@@ -15176,9 +16176,9 @@ export const APP = String.raw`
       $("pumpysend").disabled = true;
       closeSheet("pumpysheet");
     }, OPEN_WAIT);
-    sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
+    return sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
       .then(function (m) {
-        if (seq !== pumpy.openSeq) return;   // switched again while loading
+        if (seq !== pumpy.openSeq) return false;   // switched again while loading
         if (m.error) throw m.error;
         clearTimeout(timer);
         swapped = true;
@@ -15194,14 +16194,16 @@ export const APP = String.raw`
         log.classList.remove("waiting");
         renderPumpy();          // one fragment, one swap, one scrollTop
         if (!closed) closeSheet("pumpysheet");
+        return true;
       })
       .catch(function () {
-        if (seq !== pumpy.openSeq) return;
+        if (seq !== pumpy.openSeq) return false;
         clearTimeout(timer);
         log.classList.remove("waiting");
         $("pumpysend").disabled = !!pumpy.busy;
         closeSheet("pumpysheet");
         toast("That chat did not open — try again in a moment.");
+        return false;
       });
   }
 
@@ -15343,14 +16345,6 @@ export const APP = String.raw`
     // is noise: for the one moment of valid layout it leaves, which is what lets
     // the single scrollTop at the foot of this function land on the right pixel.
     var frag = document.createDocumentFragment();
-    if (isFree()) {
-      var offer = el("div", "reader-offer");
-      offer.appendChild(el("b", null, "Pumpy · Included with Spotter Plus"));
-      offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises."));
-      var upgrade = el("button", "btn", "Explore Spotter Plus");
-      upgrade.onclick = function () { openPlans({ kind: "pumpy" }); };
-      offer.appendChild(upgrade); frag.appendChild(offer);
-    }
     var shown = pumpy.messages.filter(function (m) { return m.role === "user" || m.role === "assistant"; });
     // With nothing said yet the log is empty space, so the greeting sits in the
     // middle of it rather than clinging to the top.
@@ -15360,22 +16354,7 @@ export const APP = String.raw`
     $("pumpybar").classList.toggle("labelled", !!pumpy.loaded && !shown.length && !pumpy.busy);
     // And only once we KNOW there is nothing: before the first fetch lands it is a
     // final state that has to be taken away again, which reads as a flash.
-    if (!shown.length && pumpy.loaded) {
-      var hello = el("div", "pumpyhello");
-      hello.appendChild(pumpyArt("hello", true));
-      hello.appendChild(el("h2", null, "Hey, I’m Pumpy"));
-      hello.appendChild(el("p", null,
-        "I know what you’ve saved. Ask me to build a workout from it, add to one, or plan your week. " +
-        "I’ll show you before I change anything."));
-      var q = el("div", "quick");
-      QUICK_ASKS.forEach(function (t) {
-        var c = el("button", "chip", t);
-        c.onclick = function () { sendPumpy(t); };
-        q.appendChild(c);
-      });
-      hello.appendChild(q);
-      frag.appendChild(hello);
-    }
+    if (!shown.length && pumpy.loaded) frag.appendChild(pumpyHello());
     // The thread is rebuilt every render; animating every bubble would replay it.
     var before = pumpy.shownCount || 0;
     var previous = pumpy.nodes || {}, next = {};
@@ -15421,16 +16400,30 @@ export const APP = String.raw`
     row.appendChild(pumpyMark("pmark"));
     var col = el("div", "msgcol");
     if (m.content) col.appendChild(el("div", "msg pumpy", m.content));
-    if (m.meta && m.meta.limit) {
-      var see = el("button", "chip", "See " + planWord(m.meta.limit.next_plan || "plus"));
-      see.onclick = function () { openPlans(m.meta.limit); };
-      col.appendChild(see);
-    }
-    var p = m.meta && m.meta.proposal;
-    if (p) col.appendChild(renderProposal(m, p));
-    appendResponseReport(col, m);
+    msgCards(row, col, m);
     row.appendChild(col);
     return row;
+  }
+
+  // What rides under Pumpy's words, drawn the same whether the answer streamed in
+  // or was loaded with the thread (the live path used to draw a proposal and
+  // nothing else, so an ask card arriving live would have been missing until a
+  // reload): the Plus chip on a refusal, an ask card, a proposal, a preview,
+  // then Report. A form or a program is given the chat's whole width (research
+  // §3, as ChatGPT's inline cards): at 92% beside the avatar a five-way
+  // segmented control has no room for its numbers on a small phone.
+  function msgCards(row, col, m) {
+    var x = m.meta || {}, ak = x.ask && renderAskCard(m, x.ask);
+    if (x.limit) {
+      var see = el("button", "chip", "See " + planWord(x.limit.next_plan || "plus"));
+      see.onclick = function () { openPlans(x.limit); };
+      col.appendChild(see);
+    }
+    if (ak) col.appendChild(ak);
+    if (x.proposal) col.appendChild(renderProposal(m, x.proposal));
+    if (x.preview) col.appendChild(previewCard(x.preview));
+    row.classList.toggle("wide", !!(ak || x.preview || (x.proposal && x.proposal.kind === "program")));
+    appendResponseReport(col, m);
   }
 
   function appendResponseReport(col, m) {
@@ -15473,7 +16466,557 @@ export const APP = String.raw`
     card.appendChild(line);
   }
 
+
+  // ---------- Pumpy · goals, asks and programs (B.2) ----------
+  //
+  // "Get my bench to 305" in one exchange: a goal chip, one ask card for what
+  // the coach cannot infer, one program card, one yes. Every number is the
+  // seams' (goalStarters, liftMax, rxText, goalStatusOf); what is here is how
+  // they are drawn, and which door opens for whom.
+  //
+  // What this build can draw, sent with every turn. The server emits an ask card
+  // or a program only to a build that declared it.
+  var PUMPY_CAPS = ["ask", "program"];
+
+  // Per-message screen state that is not the message: an ask card sent, a
+  // program's weeks unfolded, the workouts a program made. Kept off the message
+  // because renderPumpy reuses a node while its message's JSON is unchanged, and
+  // a card that has just been sent has to fold in place, not be drawn again.
+  function pumpyUI(id) {
+    var u = pumpy.ui || (pumpy.ui = {});
+    return u[id] || (u[id] = {});
+  }
+
+  // Basic's one free program as the server last said it (/api/limits, or the
+  // 403 that refused a turn) — { state: "available"|"open"|"used", thread_id } —
+  // else what this session saw happen since: a first goal turn opened the free
+  // thread, a confirm spent it, an Undo gave it back. null when nothing is
+  // known, and on Plus. The next limits read replaces all of it with the
+  // server's word; pumpy.free covers a session whose limits read failed.
+  function freeProgram() { return (billing.limits && billing.limits.free_program) || pumpy.free || null; }
+
+  // built: whether a program was ever confirmed there (the server says, beside
+  // the state), so "used" can be told apart from eight turns spent talking.
+  function setFree(st, id, built) {
+    if (!isFree()) return;
+    pumpy.free = { state: st, thread_id: id || null, built: built };
+    if (billing.limits) billing.limits.free_program = pumpy.free;
+  }
+
+  // A spent free plan that was built is "yours to keep"; one whose turns ran out
+  // before any plan was confirmed has nothing to keep, so the words say the
+  // chat is used up. A server from before the field says nothing: built, the
+  // case its words were written for.
+  function freeBuilt(fp) { return !fp || fp.built !== false; }
+
+  // The empty chat opens on outcomes: four goal chips and two quiet links from
+  // goalStarters, and the promise that nothing changes until you say so. Basic's
+  // Plus card used to stand on top of it all and push the starters under the
+  // fold (evidence/before/06). It is gone from here: the "1 free plan" badge
+  // tells a Basic account what a chip costs, a "Plus" tag marks the two links
+  // that are Plus, and the offer itself waits for a moment it can point at —
+  // under the free plan just built (decisions §1: trials start on day 0), or
+  // beside the preview once that plan is spent. One call to action at a time.
+  function pumpyHello() {
+    var hello = el("div", "pumpyhello"), free = isFree(), fp = freeProgram();
+    var s = (state.profile && state.profile.settings) || {}, list = el("div", "gchips"), links = el("div", "glinks");
+    var st = goalStarters({ intent: s.intent, logs: state.logs, workouts: state.workouts, now: new Date(),
+      unit: state.unit, perWeek: goalSetting(), free: free && !!fp, freeState: fp && fp.state });
+    hello.appendChild(pumpyArt("hello", true));
+    hello.appendChild(el("h2", null, "What are we working toward?"));
+    hello.appendChild(el("p", null, "Give me a goal and I’ll put a plan on your calendar. Nothing changes until you say so."));
+    st.chips.forEach(function (c) {
+      var b = list.appendChild(el("button", "gchip")), t = b.appendChild(el("span"));
+      t.appendChild(el("b", null, c.label));
+      t.appendChild(el("small", null, c.sub));
+      if (c.badge) b.appendChild(el("i", null, c.badge));
+      b.onclick = function () { openGoalChat({ message: c.message, goal: c.goal }); };
+    });
+    // A quiet link is never a goal door, even in a chat one opened: on Basic it
+    // is the Plus page, and nowhere may it claim the free plan.
+    st.links.forEach(function (l) {
+      var b = links.appendChild(el("button", null, l.label));
+      if (free) b.appendChild(el("i", null, "Plus"));
+      b.onclick = function () { pumpy.goal = null; sendPumpy(l.message); };
+    });
+    hello.appendChild(list);
+    hello.appendChild(links);
+    // The chips are made of the logs and, on Basic, of whether the free plan is
+    // spent. A chat drawn before either answer landed asks once and draws again,
+    // so "Get my bench to a new best" becomes "to 305 · your best ~287".
+    if (!pumpy.helloAsked && (!state.logs || (free && !fp))) {
+      pumpy.helloAsked = true;
+      var again = function () { if (pumpy.loaded && !pumpy.messages.length && !pumpy.busy) renderPumpy(); };
+      Promise.all([loadLogs(), free ? recentLimits() : null]).then(again, again);
+    }
+    return hello;
+  }
+
+  // Pumpy opened on a goal: a goal chip, "Set a goal with Pumpy" (Train's empty
+  // state), "Adjust with Pumpy" (the goal sheet, the weekly check-in).
+  // ctx = { message, goal (a chip's hint), adjust (a goal row), send }. Always a
+  // new chat, marked a goal chat so its first turn says goal: true. A chip sends
+  // at once; an adjustment's facts (its caller writes them) wait in the composer,
+  // focused, so the person says what should change and a model turn is their
+  // tap; send overrides either. With no message it is Pumpy's chat on the chips.
+  // Basic's first goal turn needs no word from the client about its free plan:
+  // the server claims it, or carries the turn on in the thread already claimed,
+  // or refuses a spent one with the 403 sendPumpy turns into the preview. Known
+  // to be spent here, the preview comes without a request at all.
+  // The exception to "a new chat": Basic's free thread while it is still open.
+  // The server carries every goal turn on in that one, so a blank chat would be
+  // a conversation the model can read and the person cannot. The door opens it
+  // instead, as Chats opens a thread, and the turn goes on there.
+  function openGoalChat(ctx) {
+    ctx = ctx || {};
+    var fp = freeProgram(), own = isFree() && fp && fp.state === "open" && fp.thread_id;
+    // Decisions §1: once the free plan is built, adjusting it is Plus. (A free
+    // plan still open — undone, say — is still Basic's to talk over.)
+    if (isFree() && ctx.adjust && !own) { openPlans({ kind: "goal" }); return; }
+    if (!own && (pumpy.thread || pumpy.messages.length || pumpy.busy)) { pumpyBlank(); renderPumpy(); }
+    // Arrived first: arriving is where a chat gone quiet is swapped for a new
+    // one (freshenPumpy), which must not happen to the thread opened next.
+    setView("pumpy");
+    if (own && threadId() !== own) {
+      // A turn still in the air belongs to another chat: retired, as New chat does.
+      if (pumpy.busy) pumpyBlank();
+      openThread((pumpy.threads || []).filter(function (t) { return t.id === own; })[0] || { id: own })
+        .then(function (ok) { if (ok && threadId() === own) goalTurn(ctx); });
+      return;
+    }
+    goalTurn(ctx);
+  }
+
+  // The goal door's turn, in whichever chat openGoalChat left on screen.
+  function goalTurn(ctx) {
+    var free = isFree(), fp = freeProgram(), box = $("pumpyinput"), text = ctx.message || "";
+    pumpy.goal = ctx.goal || {};
+    if (!text) return;
+    // A chip's goal can be previewed; a door with words and no goal cannot.
+    if (free && fp && fp.state === "used") {
+      if (pumpy.goal.type) goalPreview(text, pumpy.goal); else openPlans({ kind: "goal" });
+      return;
+    }
+    if (ctx.send === false || (ctx.send === undefined && ctx.adjust)) {
+      box.value = text;
+      box.style.height = "auto";
+      box.style.height = Math.min(box.scrollHeight, 138) + "px";
+      // Inside the tap that asked, this is the one call iOS answers with a keyboard.
+      box.focus({ preventScroll: true });
+      return;
+    }
+    sendPumpy(text);
+  }
+
+  // Basic with the free plan spent: no request, no AI. What Pumpy would build,
+  // made here from the chip's goal, the intent and the logs, and called exactly
+  // that — a preview, not a plan — beside the Plus offer. It lives only on this
+  // screen: never sent, and gone with the next new chat.
+  function goalPreview(text, goal) {
+    var t = pumpy.lastAt = Date.now();
+    pumpy.messages.push({ id: "local-q" + t, role: "user", content: text },
+      { id: "local-pv" + t, role: "assistant", meta: { preview: goal } });
+    renderPumpy();
+  }
+
+  // Per goal type: the title, then the plan's facts. A lift adds its numbers:
+  // what an eight-week block honestly reaches from the estimated max — about
+  // 3%, never more than two plates (intermediates add a few pounds a month,
+  // Latella 2022) and never past what the chip asked for.
+  function previewCard(g) {
+    var out = document.createDocumentFragment(), card = out.appendChild(el("div", "proposal pview"));
+    var u = g.unit || state.unit, n = goalSetting() || 3, lift = g.type === "lift" && goalLift(g.exercise), est = g.baseline, m;
+    var P = { lift: ["A " + (lift ? lift.word : "strength") + " plan for you", "8 weeks", n + " days a week", "Build, Deload, Heavy, Peak, Test"],
+      fat: ["A fat-loss plan for you", "10 weeks", n + " training days a week", "daily steps and a weekly weigh-in"],
+      consistency: ["Train " + (g.target || n) + "× a week this month", "4 weeks", "the days picked for you"] }[g.type] ||
+      ["A 4-week " + (GOAL_CATS[g.category] || "full-body") + " program for you", "4 weeks", n + " days a week", "from your saved workouts"];
+    m = lift && !est ? liftMax(state.logs, lift.id, null, u) : null;
+    if (m) est = Math.round(m.est);
+    if (lift && est) {
+      P.splice(3, 0, "est. " + est + " → " + Math.min(g.target || Infinity, Math.max(toPlate(est + Math.min(est * 0.03, 2 * plateOf(u)), u),
+        Math.ceil((est + 1) / plateOf(u)) * plateOf(u))));
+    }
+    card.appendChild(el("h4", null, "What Pumpy would build with Plus"));
+    card.appendChild(el("div", "ptitle", P[0]));
+    card.appendChild(el("div", "pmeta", P.slice(1).join(" · ")));
+    card.appendChild(el("p", "pnote", "A preview, not a plan: nothing goes on your calendar."));
+    out.appendChild(freeBuilt(freeProgram())
+      ? plusOffer("You’ve used your free plan", "With Plus, Pumpy builds this around your week and adjusts it as you go.")
+      : plusOffer("Your free goal chat is used up", "With Plus, Pumpy builds plans for any goal."));
+    return out;
+  }
+
+  // Plus, offered in the thread when it has something to point at — under the
+  // free plan just built, or beside the preview of one — and never as a sheet
+  // thrown over it. The button promises a trial only when the store has one
+  // to give; the Plus page says the rest.
+  function plusOffer(head, line) {
+    var box = el("div", "reader-offer"), p = billing.prices, y = p && p.plans && p.plans.plus && p.plans.plus.year;
+    var trial = (y && num(y.trial_days)) || num(p && p.trial_days);
+    box.appendChild(el("b", null, head));
+    box.appendChild(el("p", null, line));
+    box.appendChild(el("button", "btn", trial > 0 ? "Start free trial" : "See Spotter Plus")).onclick = function () {
+      openPlans({ kind: "goal" });
+    };
+    return box;
+  }
+
+  // ---------- Pumpy · the ask card ----------
+  //
+  // One compact form for what the coach cannot infer (meta.ask), after research
+  // §3: the chat's full width, a label above every control, one Build my plan.
+  // Up to five short answers are a segmented control (Apple's, Train's own); a
+  // longer choice wraps as chips; a number is the set sheet's own stepper, held
+  // to repeat and tapped to type; a date is Today, Tomorrow, next Monday or the
+  // phone's own picker. A pre-filled answer is a real answer, shown selected,
+  // and a number the server filled in says where it came from. A choice left
+  // empty — are you 18 or older? — is never pre-selected, and the button waits
+  // for it. Sent, the card folds to one line: the answers are the bubble under
+  // it, and a live form left in the history would invite a second go.
+  function renderAskCard(m, ask) {
+    var ui = pumpyUI(m.id), fields = (ask.fields || []).slice(0, 6), vals = {}, card = el("div", "askcard"), go;
+    if (ask.answered || ui.sent) return askFold(card);
+    // Answered by typing instead (the composer is the card's escape hatch): the
+    // chat has moved on, and a live form left above it would invite a second go.
+    if (!ui.back && pumpy.messages.slice(pumpy.messages.indexOf(m) + 1).some(function (x) { return x.role === "user"; })) return null;
+    fields.forEach(function (f) {
+      var box = card.appendChild(el("div"));
+      box.appendChild(el("div", "askl", f.label + (f.unit && f.type === "choice" ? " (" + f.unit + ")" : "")));
+      vals[f.id] = f.value === undefined || f.value === "" ? null : f.value;
+      box.appendChild((f.type === "number" ? askNum : askChoice)(f, vals, ready));
+      // Where a pre-filled number came from, when the field says so: a max is the
+      // logs', a body weight the one typed in Settings; any other is just the answer.
+      // A max read from the logs is an Epley estimate, and the spec asks that it
+      // be called one: plus or minus a tenth, said once, where the number is.
+      var said = f.id + " " + f.label, from = f.type === "number" && vals[f.id] !== null &&
+        (/body|weigh/i.test(said) ? "From Settings" : /max|best|1rm/i.test(said) ? "From your history · ±10%" : "");
+      if (from) box.appendChild(el("small", "askfrom", from));
+    });
+    go = card.appendChild(el("button", "btn", ask.submit || "Build my plan"));
+    function ready() { go.disabled = fields.some(function (f) { return vals[f.id] === null; }); }
+    go.onclick = function () {
+      endEdit();
+      // One sentence a person can read in the history, beside the answers the
+      // server reads by field id.
+      var said = fields.map(function (f) {
+        var v = vals[f.id];
+        return f.label + (/\?$/.test(f.label) ? " " : ": ") + (f.type === "date" ? dayMon(v) : v) + (f.unit ? " " + f.unit : "");
+      }).join(" · ");
+      if (!go.disabled && sendPumpy(said, { answers: vals, ask_id: m.id })) { ui.sent = true; askFold(card); }
+    };
+    ready();
+    return card;
+  }
+
+  // The sent card: one quiet line where the form stood, its height folding to
+  // the line's as the form goes; under reduced motion only the crossfade.
+  function askFold(card) {
+    var h = card.offsetHeight;
+    card.innerHTML = "";
+    card.className = "askcard sent";
+    card.appendChild(icon(el("div"), "check", "Answers sent"));
+    if (h && card.animate) {
+      card.animate(lessMotion() ? [{ opacity: 0.4 }, { opacity: 1 }]
+        : [{ height: h + "px", opacity: 0.6 }, { height: card.offsetHeight + "px", opacity: 1 }],
+        { duration: 220, easing: "cubic-bezier(.22,.9,.3,1)" });
+    }
+    return card;
+  }
+
+  // A send that never arrived leaves the answers unsent, so the form comes back,
+  // live, even though the failed answers now stand under it as a bubble.
+  function askBack(id) {
+    var u = pumpyUI(id);
+    if (u.sent && pumpy.nodes) { u.sent = false; u.back = true; delete pumpy.nodes[id]; }
+  }
+
+  // A choice of up to five short answers is a segmented control; a longer one,
+  // and a date, wrap as chips. A date's chips are Today, Tomorrow and next
+  // Monday, then one over the phone's own date picker, which afterwards says the
+  // date it chose. Its input lies over the chip, unseen, so the tap is the
+  // input's own: the one way WebKit opens its picker without a script asking.
+  function askChoice(f, vals, ready) {
+    var date = f.type === "date", now = new Date(), btns, pick, inp;
+    var opts = date ? [ymd(now), ymd(addDays(now, 1)), ymd(addDays(mondayOf(now), 7))] : (f.options || []).map(String);
+    var words = date ? ["Today", "Tomorrow", dayMon(opts[2])] : opts;
+    var seg = !date && opts.length <= 5 && opts.every(function (o) { return o.length <= 6; });
+    var box = el("div", seg ? "seg none" : "askchips");
+    // On a Sunday, next Monday is tomorrow.
+    if (date && opts[2] === opts[1]) { opts.pop(); words.pop(); }
+    box.setAttribute("role", "radiogroup");
+    box.setAttribute("aria-label", f.label);
+    if (seg) {
+      box.appendChild(el("div", "segpill"));
+      box.style.setProperty("--n", opts.length);
+    }
+    btns = opts.map(function (o, i) {
+      var b = box.appendChild(el("button", seg ? "segbtn" : "chip", words[i]));
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.onclick = function () { haptic("select"); put(o); ready(); };
+      return b;
+    });
+    if (date) {
+      pick = box.appendChild(el("label", "chip askpick", "Pick a date…"));
+      inp = pick.appendChild(el("input"));
+      inp.type = "date";
+      inp.min = opts[0];
+      // The server's window, not a guess: expandProgram (goals.ts) refuses a
+      // start more than 28 days after today, and a refused start is quietly moved
+      // by the model or ends the turn without a plan.
+      inp.max = ymd(addDays(now, 28));
+      inp.setAttribute("aria-label", f.label);
+      // iOS's calendar does not grey out what min and max forbid, so a day before
+      // today (a start the server refuses) is held to the window here.
+      inp.onchange = function () {
+        var v = inp.value;
+        if (v) { put(v < inp.min ? inp.min : v > inp.max ? inp.max : v); ready(); }
+      };
+    }
+    // The first answer to an empty segmented control puts the thumb down where
+    // it lands rather than sliding it in from the first seat: placed while
+    // .none still holds its transition off, then shown.
+    function put(v) {
+      var i = opts.indexOf(String(v));
+      vals[f.id] = v = v != null && (date || i >= 0) ? String(v) : null;
+      btns.forEach(function (b, j) {
+        b.setAttribute("aria-checked", String(i === j));
+        if (!seg) b.classList.toggle("active", i === j);
+      });
+      if (pick) {
+        pick.classList.toggle("active", !!v && i < 0);
+        pick.firstChild.data = v && i < 0 ? dayMon(v) : "Pick a date…";
+      }
+      if (!seg || i < 0) return;
+      box.style.setProperty("--s", i);
+      if (box.classList.contains("none")) { void box.offsetWidth; box.classList.remove("none"); }
+    }
+    put(vals[f.id]);
+    return box;
+  }
+
+  // The set sheet's stepper, reused whole: wireStep repeats while held, wireNum
+  // types on a tap. A barbell load steps by a plate (5 lb or 2.5 kg, a pair of
+  // the smallest plates) and body weight, told by the field's id or label, by a
+  // fifth of one (1 lb, 0.5 kg); anything without a weight unit by one.
+  // Clamped to what a person could mean.
+  function askNum(f, vals, ready) {
+    var row = el("div", "stepper"), val = el("div", "val"), inp = el("input", "numin"), u = f.unit || "";
+    var num = el("button", "num", vals[f.id] === null ? "–" : String(vals[f.id]));
+    var kg = u === "kg", load = kg || u === "lb", says = f.id + " " + f.label;
+    var step = load ? plateOf(u) / (/body|weigh/i.test(says) && !/max|lift/i.test(says) ? 5 : 1) : 1;
+    var lo = step, hi = load ? (kg ? 700 : 1500) : 9999;
+    function set(v) {
+      v = clamp(Math.round(v * 10) / 10, lo, hi);
+      if (v === vals[f.id]) return false;
+      vals[f.id] = v;
+      animateNumber(num, String(v), true);
+      ready();
+      return true;
+    }
+    [-1, 1].forEach(function (d) {
+      var b = row.appendChild(icon(el("button"), d < 0 ? "minus" : "plus"));
+      b.type = "button";
+      b.setAttribute("aria-label", (d < 0 ? "Less" : "More") + " — " + f.label);
+      wireStep(b, function () { return set(vals[f.id] === null ? lo : vals[f.id] + d * step); });
+      if (d < 0) row.appendChild(val);
+    });
+    num.type = "button";
+    num.setAttribute("aria-label", f.label + " — tap to type a number");
+    inp.type = "text";
+    inp.inputMode = "decimal";
+    inp.autocomplete = "off";
+    inp.setAttribute("enterkeyhint", "done");
+    inp.setAttribute("aria-label", f.label);
+    val.appendChild(num);
+    val.appendChild(inp);
+    val.appendChild(el("small", null, u));
+    wireNum(val, num, inp, set);
+    return row;
+  }
+
+  // Typing into the ask card: where the frame follows the keyboard (Android, a
+  // browser), the field can land behind Pumpy's own composer, which rides the
+  // keys; once they have settled it is brought up above it. The iOS shell's
+  // keyboard section already does this for any field (kbPlain).
+  $("pumpylog").addEventListener("focusin", function (e) {
+    var f = e.target;
+    if (kbOver() || !f.closest(".askcard")) return;
+    setTimeout(function () {
+      var d = f.getBoundingClientRect().bottom + 12 - $("pumpycomposer").getBoundingClientRect().top;
+      if (d > 0 && document.activeElement === f) $("pumpyview").scrollTop += d;
+    }, 450);
+  });
+
+  // "Mon, Sep 28": a day the way the plan proposal already writes one.
+  function dayMon(k) { return dayDate(k).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); }
+
+  // ---------- Pumpy · the program card ----------
+  //
+  // A program as the server expanded it: what it is for and its numbers; what it
+  // replaces; the verdict as a labelled pill (a mark and a word, never colour
+  // alone) with its honest note in full; a fat-loss plan's medical line and its
+  // sources, always shown and never folded (Apple has turned down health advice
+  // that cites nothing); the weeks, each day with its numbers, two weeks shown
+  // and the rest a tap away so the card never becomes a wall; the workouts it
+  // uses or makes; then Build my plan or Not now. "W1", never "Week 1": the
+  // wording table keeps Week-and-a-number for dates, and W5 is how Up next
+  // writes a program week (rxText).
+  var VERDICTS = { realistic: ["check", "Realistic"], stretch: ["trend", "Stretch"], too_fast: ["alert", "Too fast"] };
+
+  function renderProgramProposal(m, p) {
+    var out = document.createDocumentFragment(), card = out.appendChild(el("div", "proposal")), g = p.goal || {};
+    var ui = pumpyUI(m.id), u = p.unit || g.unit || "", v = VERDICTS[p.verdict], ws = p.weeks || [], st = m.meta.status;
+    card.appendChild(el("h4", null, p.free ? "Your free plan" : "Program"));
+    card.appendChild(el("div", "ptitle", g.title || "Your plan"));
+    // A fat-loss plan is training plus a daily target and a weekly weigh-in:
+    // all three are what it asks of the person, so all three are on the card.
+    card.appendChild(el("div", "pmeta", [g.target ? (g.baseline ? (g.type === "lift" ? "est. " : "") + g.baseline + " → " : "") +
+      g.target + " " + u : "", g.weeks ? g.weeks + " weeks" : "", g.days_per_week ? g.days_per_week + " days a week" : "",
+      g.daily ? (g.daily.steps ? g.daily.steps.toLocaleString() + " steps" : g.daily.cardio_minutes + " min cardio") + " a day" : "",
+      g.weigh_in_dow ? "weigh in " + addDays(mondayOf(new Date()), g.weigh_in_dow - 1)
+        .toLocaleDateString(undefined, { weekday: "long" }) + "s" : ""].filter(Boolean).join(" · ")));
+    if (p.replaces) card.appendChild(icon(el("div", "pswap"), "swap", "Replaces " + p.replaces.title));
+    if (v) card.appendChild(icon(el("span", "verdict " + p.verdict), v[0], v[1]));
+    [p.verdict_note, p.medical_note].forEach(function (t) { if (t) card.appendChild(el("p", "pnote", t)); });
+    (p.sources || []).forEach(function (s) {
+      var a = card.appendChild(icon(el("a", "pill accent olink", s.title), "arrow-up-right"));
+      a.href = s.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+    });
+    ws.forEach(function (w, i) {
+      var wk = card.appendChild(el("div", i > 1 && !ui.all ? "pwk hide" : "pwk"));
+      wk.appendChild(el("div", "pblock", "W" + w.week + " · " + w.label +
+        (p.start ? " · " + weekLabel(addDays(dayDate(p.start), 7 * (w.week - 1))) : "")));
+      (w.days || []).forEach(function (d) {
+        var line = wk.appendChild(el("div", "pline"));
+        line.appendChild(el("b", null, dayDate(d.day).toLocaleDateString(undefined, { weekday: "short" })));
+        line.appendChild(el("span", null, d.title || ""));
+        if (d.rx) line.appendChild(el("em", null, rxText(d.rx)));
+      });
+    });
+    if (ws.length > 2 && !ui.all) {
+      var more = card.appendChild(el("button", "linkbtn", "Show all " + ws.length + " weeks"));
+      more.onclick = function () {
+        ui.all = true;
+        card.querySelectorAll(".pwk.hide").forEach(function (n) { n.classList.remove("hide"); n.classList.add("msgin"); });
+        more.remove();
+      };
+    }
+    var ts = (p.templates || []).map(function (t) { return t.title + (t.new ? " (new)" : ""); });
+    if (ts.length) card.appendChild(el("div", "pmeta", "Uses " + ts.join(", ")));
+    if (st === "pending") {
+      var row = card.appendChild(el("div", "btnrow")), no = row.appendChild(el("button", "btn ghost", "Not now"));
+      var yes = row.appendChild(el("button", "btn", "Build my plan"));
+      no.onclick = function () { confirmPumpy(m, false, no, yes); };
+      yes.onclick = function () { confirmPumpy(m, true, no, yes); };
+    } else {
+      var fin = card.appendChild(st === "done" ? icon(el("div", "done"), "check", "On your calendar")
+        : el("div", "declined", st === "undone" ? "Undone" : "Skipped"));
+      // Undo for as long as the server keeps it (fifteen minutes), not only
+      // while the toast stands: an Undo is how Basic gets its one free plan back.
+      var left = st === "done" ? undoUntil(m) - Date.now() : 0;
+      if (left > 0) {
+        var ub = fin.appendChild(el("button", "linkbtn pundo", "Undo"));
+        ub.setAttribute("aria-label", "Undo this plan");
+        ub.onclick = function () {
+          ub.disabled = true;
+          undoProgram(m).then(function (s) { if (s === "offline") ub.disabled = false; else if (s !== "ok") undoGone(ub); });
+        };
+        setTimeout(function () { undoGone(ub); }, Math.min(left, 2e9));
+      }
+    }
+    // Decisions §1: the trial is offered right under the free plan, on day 0.
+    if (st === "done" && p.free && isFree()) {
+      out.appendChild(plusOffer("Pumpy can keep coaching this plan",
+        "With Plus, Pumpy adjusts it week to week and builds anything else you want."));
+    }
+    return out;
+  }
+
+  // A program lands with its head in view. Its verdict and the honest note (and a
+  // fat-loss plan's medical line and sources) come before its weeks, and
+  // following the answer to its foot left them above the fold beside Build my
+  // plan (QA F9). From where the reader was, gliding as the library's section
+  // jumps do, and under reduced motion there at once; a card that fits whole
+  // is shown whole, the glide stopping at the foot. An ask card still folding
+  // above it (askFold, when the answer was quick) moves it up as it goes, so
+  // the glide waits for the fold.
+  function programTop(m, from) {
+    var pg = $("pumpyview"), fold = $("pumpylog").querySelector(".askcard.sent");
+    var run = fold && fold.getAnimations ? fold.getAnimations() : [];
+    pg.scrollTop = from;
+    if (run.length) run[0].finished.then(go, go); else go();
+    function go() {
+      var e = pumpy.nodes && pumpy.nodes[m.id], card = e && e.node.isConnected && e.node.querySelector(".proposal"), top;
+      if (!card) return;
+      top = Math.max(0, pg.scrollTop + card.getBoundingClientRect().top - $("pumpybar").getBoundingClientRect().bottom - 10);
+      if (lessMotion() || !pg.scrollTo) pg.scrollTop = top;
+      else pg.scrollTo({ top: top, behavior: "smooth" });
+    }
+  }
+
+  // The card's Undo, when its window has closed: it fades where it stands.
+  function undoGone(b) {
+    if (!b.isConnected || b.classList.contains("gone")) return;
+    b.classList.add("gone");
+    setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 260);
+  }
+
+  // A program on the calendar: its new workouts join the list, Basic's free plan
+  // is spent, Train and Up next learn at once (loadGoals tells goalsChanged,
+  // loadPlan brings the days), and Undo stands for as long as its toast. The
+  // server keeps fifteen minutes; after that, End goal on Train is the way out.
+  function programIn(m, r) {
+    var made = (r.program && r.program.workouts) || [];
+    pumpyUI(m.id).made = made.map(function (w) { return w.id; });
+    made.forEach(function (w) {
+      if (!state.workouts.some(function (x) { return x.id === w.id; })) state.workouts.unshift(w);
+    });
+    if (made.length) render();
+    if (m.meta.proposal.free) setFree("used", m.thread_id || (pumpy.thread && pumpy.thread.id), true);
+    // The server's window for Undo, kept with the card so its Undo lasts as long.
+    if (r.undo) m.meta.undo = r.undo;
+    remindOnTrain = true;
+    goalsReload();
+    offerUndo("Plan on your calendar", function () {}, function () { undoProgram(m); });
+  }
+
+  function goalsReload() { loadGoals(); planRev++; loadPlan(true); }
+
+  // When a confirmed program stops being undoable: what the server said at the
+  // confirm (undo.until), or, for a card read back with its thread, fifteen
+  // minutes after the confirm it recorded (result.at). 0 when neither is known.
+  function undoUntil(m) {
+    var x = m.meta || {}, t = x.undo && Date.parse(x.undo.until);
+    if (!t && x.result && x.result.at) t = Date.parse(x.result.at) + 15 * 60000;
+    return t || 0;
+  }
+
+  // Answers the server's status ("ok", or why not) or "offline", so the card's
+  // Undo knows whether to go or to stay for another try.
+  function undoProgram(m) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    var made = pumpyUI(m.id).made || (m.meta.result && m.meta.result.workout_ids) || [];
+    return api("pumpy/undo", { method: "POST", body: JSON.stringify({ message_id: m.id }) }).then(function (r) {
+      if (!accountNow(epoch, uid)) return "gone";
+      // Past the server's fifteen minutes this is a 409 that says so.
+      if (r.status !== "ok") { toast(r.message || "That plan can’t be undone now. End the goal from Train instead."); return r.status || "error"; }
+      m.meta.status = "undone";
+      if (pumpy.messages.indexOf(m) >= 0) (r.messages || []).forEach(function (x) { pumpy.messages.push(x); });
+      state.workouts = state.workouts.filter(function (w) { return made.indexOf(w.id) < 0; });
+      // An Undo inside the window gives Basic its free thread back (SHARED §3).
+      if (m.meta.proposal.free) setFree("open", m.thread_id || (pumpy.thread && pumpy.thread.id));
+      goalsReload();
+      render();
+      renderPumpy();
+      return "ok";
+    }).catch(function () { toast("Could not reach Spotter — check your connection."); return "offline"; });
+  }
+
   function renderProposal(m, p) {
+    if (p.kind === "program") return renderProgramProposal(m, p);
     var card = el("div", "proposal");
     card.appendChild(el("h4", null, p.kind === "create_workout" ? "New workout"
       : (p.kind === "append_exercises" ? "Add to a workout" : "Plan")));
@@ -15698,10 +17241,22 @@ export const APP = String.raw`
     haptic("stream");
   }
 
-  function sendPumpy(text) {
+  // extra: { answers, ask_id } from a sent ask card. True when a turn went out.
+  function sendPumpy(text, extra) {
     text = String(text || $("pumpyinput").value || "").trim();
-    if (!text || pumpy.busy) return;
-    if (isFree()) { openPlans({ kind: "pumpy" }); return; }
+    if (!text || pumpy.busy) return false;
+    extra = extra || {};
+    var fp = freeProgram(), fresh = !pumpy.thread, goal = fresh && !!pumpy.goal;
+    // Pumpy is Plus, with one door for Basic (decisions §1): its free goal plan —
+    // a goal door (the server claims the plan, or carries on in the thread that
+    // already has it), or that thread itself. The server draws the same line;
+    // anything else opens the Plus page and sends nothing, as it always did.
+    // With the free plan's state not yet read, an older thread may try, and the
+    // server's refusal is drawn like any other.
+    if (isFree() && (fp && fp.state === "used" || (fresh ? !goal : fp && fp.thread_id !== pumpy.thread.id))) {
+      openPlans({ kind: goal ? "goal" : "pumpy" });
+      return false;
+    }
     var owner = pumpy;
     $("pumpyannounce").textContent = "";
     if (pumpy.refs.length) guideLearn("refs");
@@ -15715,6 +17270,11 @@ export const APP = String.raw`
     pumpy.lastAt = Date.now();
     var asked = { id: "local-" + Date.now(), role: "user", content: text };
     pumpy.messages.push(asked);
+    // Typed rather than sent from the card: an open ask card above is answered
+    // now, so it is drawn again, and draws nothing (renderAskCard).
+    if (!extra.answers && pumpy.nodes) {
+      pumpy.messages.forEach(function (x) { if (x.meta && x.meta.ask) { delete pumpy.nodes[x.id]; pumpyUI(x.id).back = false; } });
+    }
     renderPumpy();
     var ids = pumpy.refs.slice(0, MAX_REFS);
     var payload = {
@@ -15723,8 +17283,15 @@ export const APP = String.raw`
       // Both shapes: workout_id is what every deployed function already reads, so
       // the chips still do something during the minutes between the two deploys.
       workout_id: ids[0] || null,
-      workout_ids: ids
+      workout_ids: ids,
+      // What this build can draw (B.2): the server sends an ask card or a program
+      // only to a build that said it can, so TestFlight 5-10 never meet either.
+      caps: PUMPY_CAPS
     };
+    // The first turn of a chat a goal door opened; and a sent ask card's answers,
+    // by field id, beside the sentence that reads them out for the history.
+    if (goal) payload.goal = true;
+    if (extra.answers) { payload.answers = extra.answers; payload.ask_id = extra.ask_id; }
     apiStream("pumpy/chat", payload, function (r) {
       if (pumpy !== owner) return;
       pumpy.lastAt = Date.now();
@@ -15735,11 +17302,17 @@ export const APP = String.raw`
       pumpy.live = null;
       // renderPumpy() ends at the bottom, which is right for a reader who was
       // following along and rude to one who had scrolled up to re-read.
-      var keep = pumpy.stick ? -1 : $("pumpyview").scrollTop;
+      var keep = pumpy.stick ? -1 : $("pumpyview").scrollTop, from = $("pumpyview").scrollTop;
       // Every answer carries the meter, the refusal at the cap most of all.
       absorbMeter(r && r.pumpy);
       pumpy.messages = pumpy.messages.filter(function (m) { return String(m.id).indexOf("local-") !== 0; });
       if (r.status !== "ok") {
+        if (extra.ask_id) askBack(extra.ask_id);
+        // Basic's free plan already built (or its turns spent): what Plus would
+        // build instead, beside the offer, rather than a refusal.
+        var fr = r.kind === "goal" && r.free_program;
+        if (fr) setFree(fr.state, fr.thread_id, fr.built);
+        if (fr && fr.state === "used" && pumpy.goal && pumpy.goal.type) { goalPreview(text, pumpy.goal); return; }
         // The ceiling and the outage both come back as something Pumpy says.
         pumpy.messages.push({ id: "local-err-" + Date.now(), role: "user", content: text });
         pumpy.messages.push({
@@ -15753,19 +17326,21 @@ export const APP = String.raw`
         return;
       }
       if (!pumpy.thread || pumpy.thread.id !== r.thread_id) pumpy.thread = { id: r.thread_id };
+      // A first goal turn on Basic has just claimed the free thread.
+      if (!fp || fp.state === "available") setFree("open", r.thread_id);
       if (r.user_message) pumpy.messages.push(r.user_message);
       (r.messages || []).forEach(function (m) { pumpy.messages.push(m); });
       var last = (r.messages || []).slice(-1)[0];
       if (live && last && last.role === "assistant" && last.content) {
         live.st.classList.add("hide"); live.bub.classList.remove("live", "hide");
         live.tn.data = last.content;
-        if (last.meta && last.meta.proposal) live.bub.parentNode.appendChild(renderProposal(last, last.meta.proposal));
-        appendResponseReport(live.bub.parentNode, last);
+        msgCards(live.row, live.bub.parentNode, last);
         pumpy.nodes = pumpy.nodes || {};
         pumpy.nodes[last.id] = {sig:JSON.stringify(last),node:live.row};
       }
       renderPumpy();
       if (keep >= 0) $("pumpyview").scrollTop = keep;
+      else if (last && last.meta && last.meta.proposal && last.meta.proposal.kind === "program") programTop(last, from);
     }).then(function () {
       // Still busy means the body ended with no final line — a dead isolate or a
       // dropped connection. Same recovery as a throw, one handler below.
@@ -15773,12 +17348,14 @@ export const APP = String.raw`
     }).catch(function (e) {
       if (pumpy !== owner || !pumpy.busy) return;
       pumpy.busy = false;
+      if (extra.ask_id) askBack(extra.ask_id);
       if (aiDeclined(e)) {
         // "Not now" on the permission sheet: nothing was sent and nothing broke.
-        // The question comes off the log and goes back in the box, unsent.
+        // The question comes off the log and goes back in the box, unsent — an
+        // ask card's answers go back to its form instead.
         pumpy.live = null;
         pumpy.messages = pumpy.messages.filter(function (m) { return m !== asked; });
-        if (!box.value) {
+        if (!box.value && !extra.answers) {
           box.value = text;
           box.style.height = "auto";
           box.style.height = Math.min(box.scrollHeight, 138) + "px";
@@ -15797,30 +17374,44 @@ export const APP = String.raw`
       if (keep >= 0) $("pumpyview").scrollTop = keep;
       toast("The connection ended. Your partial answer is kept; reopen the chat before sending again.", 5200);
     });
+    return true;
   }
 
   function confirmPumpy(m, accept, noBtn, yesBtn) {
+    var said = yesBtn.textContent, prog = m.meta.proposal.kind === "program";
     noBtn.disabled = true;
     yesBtn.disabled = true;
-    if (accept) yesBtn.textContent = "Saving…";
+    if (accept) yesBtn.textContent = prog ? "Building…" : "Saving…";
+    // A refusal puts the button back as it was: "Saving…" on a button that is
+    // waiting to be pressed again reads as still saving.
+    function back() { noBtn.disabled = false; yesBtn.disabled = false; yesBtn.textContent = said; }
     api("pumpy/confirm", { method: "POST", body: JSON.stringify({ thread_id: pumpy.thread.id, message_id: m.id, accept: accept }) })
       .then(function (r) {
         if (r.status !== "ok") {
-          toast(r.message || "Could not apply that just now. Try again in a moment.");
-          noBtn.disabled = false; yesBtn.disabled = false;
+          // Basic's free plan spent since this card was drawn (another phone, an
+          // old card) is the Plus page on that reason, not an error.
+          limitHit(r, "Could not apply that just now. Try again in a moment.");
+          back();
           return;
         }
         m.meta.status = accept ? "done" : "declined";
+        // A yes or a no is the person acting: the five-minute rule counts it.
+        pumpy.lastAt = Date.now();
         (r.messages || []).forEach(function (x) { pumpy.messages.push(x); });
         if (r.workout) {
           if (r.created && !state.workouts.some(function (w) { return w.id === r.workout.id; })) state.workouts.unshift(r.workout);
           else absorbWorkout(r.workout);
         }
-        if (r.plan) state.plan = null;
+        if (prog && accept) programIn(m, r);
+        else if (r.plan) state.plan = null;
+        // Days Pumpy put on the calendar are a first plan too: the reminder offer
+        // waits for the next arrival on Train, where those days are, as a
+        // program's does (programIn). firstPlanMoment asks only once, ever.
+        if (accept && m.meta.proposal.kind === "plan_days") remindOnTrain = true;
         renderPumpy();
       }).catch(function () {
         toast("Could not reach Spotter — check your connection.");
-        noBtn.disabled = false; yesBtn.disabled = false;
+        back();
       });
   }
 
@@ -16006,7 +17597,7 @@ export const APP = String.raw`
   // feature is a list of the plans that have it; an older server without the
   // list gets today's truth, which is Plus has it and Basic does not.
   function planRows(c, mine) {
-    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = state.workouts.length;
+    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = shelfHeld();
     function has(k, plan) { var l = c.features && c.features[k]; return l ? l.indexOf(plan) >= 0 : plan !== "free"; }
     function month(n) { n = capNum(n); return n === null ? "No limit" : n ? n.toLocaleString() + " a month" : "—"; }
     function shelfN(n) { n = capNum(n); return n === null ? "No limit" : n.toLocaleString(); }
@@ -16123,6 +17714,15 @@ export const APP = String.raw`
       return cap !== null && num(c.used) >= cap
         ? "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up)
         : "Pumpy is part of Spotter Plus.";
+    }
+    // A goal door once Basic's one free plan is spent (B.2, decisions §1): kept
+    // when it was built, and only the chat's turns gone when it never was. A
+    // refusal carries the server's word on it; a door opened here asks this
+    // session's.
+    if (c.kind === "goal") {
+      return freeBuilt(c.free_program || freeProgram())
+        ? "Your free plan is yours to keep. With " + up + ", Pumpy adjusts it week to week and builds the next one."
+        : "Your free goal chat is used up. With " + up + ", Pumpy builds plans for any goal.";
     }
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
@@ -16805,7 +18405,8 @@ export const APP = String.raw`
   // came in on the link opens it already filled, so the person can see it took.
   function authCodeShow(on, quiet) {
     $("authcodefield").classList.toggle("hide", !on);
-    $("authcodeask").classList.toggle("hide", on);
+    // The question and its separator go together once it is answered.
+    $("authcodewrap").classList.toggle("hide", on);
     if (on && !quiet) $("authcode").focus();
   }
 
@@ -17068,7 +18669,16 @@ export const APP = String.raw`
     if (!isFree() || !billing.caps) return null;
     var cap = capNum(billing.caps.free.library);
     if (cap === null || cap <= 0) return null;
-    return { used: state.workouts.length + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
+    return { used: shelfHeld() + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
+  }
+
+  // What Basic's shelf holds, counted the way the server counts it for the cap
+  // (libraryCount, the guard_workout_library trigger): a kept Spotter Starter
+  // and a program's own workouts are not saves. Every number a Basic account
+  // reads against its cap comes from here — the meter, its four-fifths warning,
+  // the save receipts, the Plus page's row — so none of them runs early.
+  function shelfHeld() {
+    return state.workouts.filter(function (w) { return w.kind !== "starter" && w.kind !== "program"; }).length;
   }
 
   // Every app that warns well warns before the wall, once: the save receipt says
@@ -17312,7 +18922,14 @@ export const APP = String.raw`
     if (state.view !== v || guide.visit !== v || overlayShowing()) return;
     if (v === "train" && state.plan && state.plan.length) { guideLearn("train"); return; }
     if (v === "train" && trainLean) guideOffer("train", trainLean, cardBox);
-    if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length) {
+    // Not in a goal chat, and not under an ask card still waiting on its
+    // answers: at 375 x 812 the tip covered the card's Build my plan (QA F5), and
+    // attaching workouts is not what either moment is about. One already up
+    // folds away (not learnt: it can come back in an ordinary chat).
+    var last = pumpy.messages[pumpy.messages.length - 1];
+    var asking = !!pumpy.goal || !!(last && last.meta && last.meta.ask && !last.meta.ask.answered);
+    if (v === "pumpy" && asking && guide.active && guide.active.id === "refs") guideClear("dismiss");
+    else if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length && !asking) {
       var c = $("pumpycomposer"); guideOffer("refs", c, c.firstChild);
     }
   }
@@ -17460,6 +19077,9 @@ export const APP = String.raw`
     var n = $(id);
     if (!n.classList.contains("open")) return;
     if (id === "aiconsentsheet") dismissAiConsent();
+    if (id === "asksheet") doorsHome();
+    if (id === "introsheet") introPumpy();
+    if (introLater) setTimeout(introAsk, 400);
     // The steppers go back to the superset panel they were borrowed from.
     if (id === "setsheet") ssDock();
     // A tile still in hand is put down where it came from; nothing was written.
@@ -18711,6 +20331,7 @@ export const APP = String.raw`
     $("setname").textContent = displayName() || "Not set";
     $("unittoggle").textContent = state.unit;
     paintGoal();
+    paintBody();
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
     $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate);
     paintSounds();
@@ -18763,6 +20384,7 @@ export const APP = String.raw`
   // The column is written whole, so every preference goes up together: saving one
   // of them used to be enough to drop the others.
   function saveSettings() {
+    if (!state.user) return;
     var s = Object.assign({}, (state.profile && state.profile.settings) || {},
       { unit: state.unit, sounds: state.sounds, haptics: state.haptics });
     // The column is written WHOLE, so the segment has to ride along with every
@@ -18921,7 +20543,7 @@ export const APP = String.raw`
   // so this says where rather than offering a button that would be ignored.
   var REMIND_OFF = "Reminders are off in your phone's Settings.";
   var REMIND_WHAT = "Two at most and never more than one a day: today's plan at the hour nearest the " +
-    "time you pick, and one on the last day the week's goal is still reachable.";
+    "time you pick, and one on the last day your workouts per week are still in reach.";
 
   function remindNote() {
     if (native) {
@@ -19400,7 +21022,7 @@ export const APP = String.raw`
   // says whether the address has an account, which would be a membership oracle.
   function forgotPassword() {
     var email = $("email").value.trim();
-    if (!email) { authError("Type your email above first, then tap this."); return; }
+    if (!email) { authError("Type your email above first, then tap this."); $("email").focus(); return; }
     var b = $("forgotpw");
     b.disabled = true;
     capToken().then(function (tok) {
@@ -19411,7 +21033,7 @@ export const APP = String.raw`
       mailSent(email, "recovery");
     }, function () {
       b.disabled = false;
-      authError("Could not ask for a link. Check your connection.");
+      authError("Could not ask for a code. Check your connection.");
     });
   }
 
@@ -19463,8 +21085,7 @@ export const APP = String.raw`
           // built underneath an open Settings.
           closeSheet("settingssheet");
           sb.auth.signOut().then(function () {
-            setAuthMode("signin");
-            authOK("Your account is deleted. Everything in it has been erased.");
+            toast("Your account is deleted. Everything in it has been erased.", 5200);
           });
         }, function () { done("Could not delete it. Try again in a moment."); });
       }
@@ -19695,6 +21316,7 @@ export const APP = String.raw`
     guide.visit = v;
     setTimeout(function () { guidePage(v); }, 450);
     if (v === "train" && state.logs) countStats();
+    if (v === "train" && remindOnTrain) { remindOnTrain = false; firstPlanMoment(); }
     // Settled somewhere else, with Pumpy off screen: the one place a chat can be
     // swapped without anybody seeing it happen.
     if (v !== "pumpy") pumpyAway();
@@ -20676,7 +22298,7 @@ export const APP = String.raw`
 
   $("authgo").onclick = doAuth;
   $("forgotpw").onclick = forgotPassword;
-  consentFill($("consent"), "By creating an account you agree to the ");
+  consentFill($("consent"), "By continuing you agree to the ");
   $("consentok").onclick = function () { requireAiConsent(true).catch(function () {}); };
   $("setairow").onclick = function () { requireAiConsent(true).catch(function () {}); };
   $("aiconsentallow").onclick = function () { noteConsent(true); };
@@ -20691,18 +22313,64 @@ export const APP = String.raw`
   $("otp").addEventListener("input", function () {
     var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
     if (v !== this.value) this.value = v;
+    // "That code is wrong" was about the last code, not the one being typed.
+    otpError("");
     if (v.length === 6) otpGo();
   });
   $("otp").addEventListener("keydown", function (e) { if (e.key === "Enter") otpGo(); });
   $("mailresend").onclick = mailResend;
   $("mailback").onclick = mailBack;
-  $("oagoogle").onclick = googleSignIn;
-  $("oaapple").onclick = appleSignIn;
+  // Android's Back (native/bridge.js asks here before it leaves the app). The
+  // card's faces are not history entries, so Back takes the step their own
+  // controls take: the code face to the email face (Use a different email), the
+  // email face to the three doors (its arrow). The doors themselves, and any
+  // signed-in page, are left to the shell. iOS has no such button.
+  window.addEventListener("spotter:back", function (e) {
+    if (!$("landing").classList.contains("open")) return;
+    if (!$("mailsent").classList.contains("hide")) $("mailback").click();
+    else if (authMode === "email") $("authback").click();
+    else return;
+    e.preventDefault();
+  });
+  $("oagoogle").onclick = function () { if (!codeBad()) googleSignIn(); };
+  $("oaapple").onclick = function () { if (!codeBad()) appleSignIn(); };
+  // Focused inside the tap: the only focus iOS answers with a keyboard.
+  $("oamail").onclick = function () {
+    if (codeBad()) return;
+    // From the sheet a guest's recap raised, the email step is back on the
+    // landing: the sheet and the recap go in one history step, as the leave
+    // sheet's Finish does it.
+    if (askKeep) { closeSheet("asksheet", true); leaveWorkout(1); }
+    setAuthMode("email");
+    $("email").focus();
+  };
+  $("introgo").onclick = introDone;
+  $("introsheet").addEventListener("click", function (e) { var b = e.target.closest("[data-v]"); if (b) introPaint(b); });
+  $("authback").onclick = function () { authError(""); setAuthMode("signup"); };
+  $("pwswap").onclick = function () {
+    pwMode = !pwMode; pwNew = false;
+    authError(""); paintMail();
+    $(pwMode ? "pw" : "email").focus();
+  };
+  $("tryfirst").onclick = function () { openStarters(); };
   oaLabelOf("oagoogle");
   oaLabelOf("oaapple");
+  renderAuthProviders();
   loadAuthProviders();
+  $("email").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { if (pwMode) $("pw").focus(); else doAuth(); }
+  });
   $("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doAuth(); });
-  // the sign-in/sign-up toggle is rebuilt by setAuthMode, which wires its own handler
+  // A different address or password is a different question: the offer to make
+  // an account was about the pair that failed, and whatever the box says is
+  // about what was typed when it said it (QA F8: "Type your email address."
+  // stayed under a good address; the offer's sentence outlived its button).
+  ["email", "pw"].forEach(function (id) {
+    $(id).addEventListener("input", function () {
+      if (pwNew) { pwNew = false; paintMail(); }
+      authError("");
+    });
+  });
 
   $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); addMode(null); openSheet("addsheet"); };
   // Once: which lines each platform shows (the Shortcut set-up is web only, the
@@ -20907,7 +22575,9 @@ export const APP = String.raw`
         lines.push("• " + ex.name + (doseText(ex) ? " — " + doseText(ex) : ""));
       });
     });
-    lines.push(current.url);
+    // A starter's url is spotter://starter/gym, which opens nothing for whoever
+    // it is sent to: the list is the whole of it.
+    if (current.kind !== "starter") lines.push(current.url);
     var text = lines.join("\n");
     if (navigator.share) navigator.share({ title: current.title || "Workout", text: text }).catch(function () { });
     else if (navigator.clipboard) { navigator.clipboard.writeText(text); toast("Copied."); }
@@ -21318,8 +22988,6 @@ export const APP = String.raw`
   captureShare();
   captureBilling();
   captureStrava();
-  // After the three captures, because it strips the query it reads from.
-  linkProblem();
 
   // The library the person left, while the SDK is still deciding who they are.
   paintBeforeAuth();

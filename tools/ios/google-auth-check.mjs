@@ -61,11 +61,11 @@ function extract(name) {
 const nodes = Object.fromEntries(['oauthwrap', 'oagoogle', 'oaapple'].map(id => [id, { hidden: true, classList: { toggle: (_name, hide) => { nodes[id].hidden = hide; } } }]));
 let routed = [], busy = false;
 const ctx = vm.createContext({
-  $: id => nodes[id], authProviders: { google: true, apple: false }, isAppleDevice: () => false,
+  $: id => nodes[id], authProviders: { google: true, apple: false },
   native: { signInWithGoogle: async () => { routed.push('native'); } },
-  oauthBusy: false, oauthWatchdog: null, sb: {}, PUBLIC_AUTH: { google_client_id: '' },
-  setOauthBusy: id => { busy = !!id; }, authError: () => {}, clearTimeout: () => {},
-  oauthFailed: error => { throw error; }, oauthRedirect: provider => routed.push(provider)
+  oauthBusy: false, oauthWatchdog: null, sb: {}, NO_SHELL: 'no shell', toast: m => routed.push(m),
+  setOauthBusy: id => { busy = !!id; }, clearTimeout: () => {},
+  oauthFailed: error => { throw error; }
 });
 vm.runInContext(extract('renderAuthProviders') + extract('nativeGoogleSignIn') + extract('googleSignIn'), ctx);
 vm.runInContext('renderAuthProviders(); googleSignIn();', ctx);
@@ -74,10 +74,13 @@ assert.equal(nodes.oagoogle.hidden, false);
 assert.equal(nodes.oauthwrap.hidden, false);
 assert.equal(nodes.oaapple.hidden, true);
 assert.equal(busy, false);
+// No shell (B.2: the page ships only inside the app): the button says where it
+// works rather than starting a web sign-in that no longer exists.
 ctx.native = null;
 vm.runInContext('googleSignIn()', ctx);
-assert.deepEqual(routed, ['native', 'google']);
+assert.deepEqual(routed, ['native', 'no shell']);
+assert.equal(busy, false);
 ctx.authProviders.google = false;
 vm.runInContext('renderAuthProviders()', ctx);
 assert.equal(nodes.oauthwrap.hidden, true);
-console.log('PASS shared Google button: enabled/disabled visibility, native routing, web OAuth fallback, busy reset.');
+console.log('PASS shared Google button: enabled/disabled visibility, native routing, no web fallback, busy reset.');

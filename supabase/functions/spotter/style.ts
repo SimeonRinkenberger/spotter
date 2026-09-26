@@ -14,7 +14,9 @@ export const STYLE = String.raw`<style>
        ink ON it does — near-white was 3.48:1, and this is the ink dark mode
        already uses, so the schemes agree instead of inverting. */
     --ember: #E8551F; --ember-ink: #BE3F0E; --ember-soft: #FDEDE6; --on-ember: #17100C;
-    --good: #178055; --warn: #AE7400;
+    /* --warn is the goal pill's Behind: amber, never red (B.2), and #AE7400 was
+       3.96 on white — this is 6.3, and 5.6 on its own pill. */
+    --good: #178055; --warn: #8A5300;
     /* The tab bar's selection capsule: a tint read as glass, not a second
        accent. 7% is where it stops costing the lit label its AA — a tenth put
        ember-ink on 4.41 against it, under the 4.5 that 10px type needs; this
@@ -103,21 +105,50 @@ export const STYLE = String.raw`<style>
   .btn { display: flex; align-items: center; justify-content: center; gap: 7px; }
   .daydone { display: inline-flex; align-items: center; gap: 4px; }
 
-  /* ---------- landing (signed out) ---------- */
+  /* ---------- landing (signed out) ----------
+     One screen on a 6.1" phone (briefs/simplify-b2/RESEARCH-DESIGN.md §0): brand,
+     the headline in two lines, the loop, the doors. A column the height of the
+     frame, so the doors sit at its foot, under the thumb, on every phone; the
+     height left over is shared either side of the loop, which then sits in the
+     middle of the band between the headline and the buttons. */
   #landing { display: none; min-height: 100vh; min-height: var(--vvh, 100dvh); }
+  /* The shells set --vvh to 100%, which only a fixed layer resolves against the
+     frame. The landing is in the flow of an auto-height body, so there it fell
+     to its content's height and the body's grain stopped short of the screen
+     (QA F7). The frame's height directly, then. */
+  html.native #landing { min-height: 100vh; }
   #landing.open { display: block; }
-  .land { max-width: 460px; margin: 0 auto; padding: calc(38px + env(safe-area-inset-top)) 24px 60px; }
-  .brandrow { display: flex; align-items: center; gap: 11px; margin-bottom: 40px; }
-  .brandrow img { width: 40px; height: 40px; border-radius: 11px; box-shadow: var(--sh-sm); }
-  .brandrow span { font-family: var(--display); font-size: 21px; font-weight: 700; letter-spacing: -.012em; }
-  .hero { font-family: var(--display); font-size: 38px; line-height: 1.08; font-weight: 800;
-    letter-spacing: -.02em; margin: 0 0 16px; }
-  .hero em { font-style: normal; color: var(--ember); }
-  .sub { font-size: 15.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 34px; }
-  .authcard { background: var(--card); border: 1px solid var(--line); border-radius: 20px;
-    padding: 22px 20px; box-shadow: var(--sh-md); }
-  .authcard h2 { font-family: var(--display); font-size: 19px; margin: 0 0 16px; font-weight: 700;
-    letter-spacing: -.012em; }
+  .land { max-width: 460px; min-height: inherit; margin: 0 auto; display: flex; flex-direction: column;
+    padding: calc(14px + env(safe-area-inset-top)) 16px calc(6px + var(--sab)); }
+  .brandrow { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .brandrow img { width: 30px; height: 30px; border-radius: 8px; box-shadow: var(--sh-sm); }
+  .brandrow span { font-family: var(--display); font-size: 19px; font-weight: 700; letter-spacing: -.012em; }
+  .hero { font-family: var(--display); font-size: 30px; line-height: 1.12; font-weight: 800;
+    letter-spacing: -.02em; margin: 0 0 22px; }
+  .hero em { display: block; font-style: normal; color: var(--ember); }
+  .authcard, .doors { flex: 1 0 auto; display: flex; flex-direction: column; }
+  /* Three crops of the app, 3:4, a 16px gutter with a quiet chevron in it. */
+  .loop { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: auto 0; }
+  .loop figure { position: relative; margin: 0; }
+  .loop img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 14px;
+    border: 1px solid var(--line); background: var(--card); }
+  .loop figcaption { margin-top: 8px; font-size: 13px; line-height: 18px; font-weight: 600; text-align: center;
+    white-space: nowrap; letter-spacing: -.01em; }
+  .loop figure + figure::before { content: ""; position: absolute; left: -11px; top: calc(50% - 16px);
+    width: 5px; height: 5px; border: solid var(--muted); border-width: 1.6px 1.6px 0 0; transform: rotate(45deg); }
+  /* A short phone (the SE's 647pt) squares the frames and sets the headline a
+     size down, and the screen still fits. */
+  @media (max-height: 740px) {
+    .hero { font-size: 26px; margin-bottom: 16px; }
+    .brandrow { margin-bottom: 12px; }
+    .loop img { aspect-ratio: 1; }
+  }
+  .facehead { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; }
+  .facehead h2 { font-family: var(--display); font-size: 21px; font-weight: 700; margin: 0; letter-spacing: -.012em; }
+  /* A face arrives from the side it is on: forward from the right, back from
+     the left (app.ts, setAuthMode). */
+  .facein { animation: facein var(--t-3) var(--e-out); }
+  @keyframes facein { from { opacity: 0; transform: translateX(var(--fx, 24px)); } }
   .field { margin-bottom: 12px; }
   /* ---------- the small labels ----------
      Eighteen rules used to set their label in caps with a tenth of an em between
@@ -160,9 +191,10 @@ export const STYLE = String.raw`<style>
   .btn:active { transform: scale(.978); }
   .btn[disabled] { opacity: .55; }
   .btn.ghost { background: var(--sand); color: var(--ink); box-shadow: none; }
-  .authswap { text-align: center; margin-top: 14px; font-size: 13.5px; color: var(--ink-2); }
+  /* The email face's two quiet ways on: a thumb high each, one either side. */
+  .authswap { display: flex; justify-content: space-between; margin-top: 6px; }
   .authswap button { background: none; border: none; color: var(--ember-ink); font-weight: 650;
-    font-size: 13.5px; padding: 4px; }
+    font-size: 13.5px; min-height: 44px; padding: 0 2px; }
   .autherr { font-size: 13px; color: var(--ember-ink); margin-top: 12px; line-height: 1.5;
     background: var(--ember-soft); padding: 10px 12px; border-radius: 11px; display: none; }
   .autherr.show { display: block; }
@@ -208,43 +240,68 @@ export const STYLE = String.raw`<style>
   .mailmark .ic { width: 21px; height: 21px; }
   @media (prefers-reduced-motion: reduce) { .mailsent { animation: none; } }
 
-  /* ---------- provider sign-in (Google / Apple) ----------
-     Both marks sit on the same neutral button so the row reads as one control
-     type. --card is the only surface token that satisfies both brand rules at
-     once: white in light (Google light theme, Apple "white with outline") and
-     near-black in dark (Google dark theme, Apple black). On a --card authcard
-     that leaves the 1px stroke and --sh-sm doing the separating, which is how
-     Google's own light button looks on a white sheet.
-     Sizes come from Apple's HIG: minimum width 140px, minimum height 30pt, and
-     a margin of at least 1/10 of the button height around the content. 48px
-     matches the height of the ember Create-account button above, because Apple
-     asks that its button be no smaller than the other sign-in buttons. */
-  .oauth { margin-top: 18px; }
-  .oauthdiv { display: flex; align-items: center; gap: 12px; margin: 0 0 12px;
-    color: var(--muted); font-size: 11px; font-weight: 600; }
-  .oauthdiv::before, .oauthdiv::after { content: ""; flex: 1 1 0; height: 1px; background: var(--line); }
-  .oauthbtns { display: flex; flex-direction: column; gap: 10px; }
-  .oabtn { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 140px;
-    min-height: 48px; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 14px;
-    background: var(--card); color: var(--ink); box-shadow: var(--sh-sm);
-    font-size: 15.5px; font-weight: 650; letter-spacing: -.01em;
-    transition: transform var(--t-1) var(--e-out), border-color var(--t-2), opacity var(--t-2); }
+  /* ---------- the three doors ----------
+     One size for all three, 48pt, so they read as one set: Apple's rule for a
+     custom Sign in with Apple button (title 43 % of the height, logo and title one
+     colour, the black style on light and the white on dark) and Google's (its
+     light theme on light, its dark theme on dark with the G on white). Email is
+     the neutral outline beside them, never the accent. */
+  .doorbtns { padding-top: 16px; }
+  .doorbtns, .oauth, .oauthbtns { display: flex; flex-direction: column; gap: 12px; }
+  .oabtn { position: relative; display: flex; align-items: center; justify-content: center; width: 100%;
+    height: 48px; padding: 0 48px; border: 1px solid #747775; border-radius: 14px; background: #fff;
+    color: #1f1f1f; font-size: 20px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap;
+    transition: transform var(--t-1) var(--e-out), opacity var(--t-2); }
   .oabtn:active { transform: scale(.978); }
   .oabtn:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
   .oabtn[disabled] { opacity: .55; }
-  .oamark { flex: 0 0 auto; width: 20px; height: 20px; display: flex;
-    align-items: center; justify-content: center; }
+  .oabtn.apple { background: #000; border-color: #000; color: #fff; }
+  .oamark { position: absolute; left: 15px; top: 50%; width: 22px; height: 22px; margin-top: -11px;
+    display: flex; align-items: center; justify-content: center; border-radius: 50%; }
   .oamark svg { display: block; }
-  /* Mark on the leading edge, title optically centred in the whole button: the
-     padding matches the mark plus its gap so the label sits on the mid-line. */
-  .oalabel { flex: 1 1 auto; min-width: 0; text-align: center; padding-right: 30px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  @media (prefers-reduced-motion: reduce) {
-    .oabtn { transition: none; }
-    .oabtn:active { transform: none; }
+  .oamark .ic { width: 20px; height: 20px; }
+  @media (prefers-color-scheme: dark) {
+    .oabtn { background: #131314; border-color: #8e918f; color: #e3e3e3; }
+    .oabtn.apple { background: #fff; border-color: #fff; color: #000; }
+    #oagoogle .oamark { background: #fff; }
   }
-  .landfoot { text-align: center; margin-top: 30px; font-size: 12px; color: var(--muted); }
-  .landfoot a { color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .oabtn, .oabtn:active { transition: none; transform: none; } }
+  /* The legal line: 13pt at AA on both schemes, the links bold ink rather than
+     grey, each with a thumb's height to land in (Berman v. Freedom, 2022: an
+     agreement has to look like one). */
+  .legal { margin: 12px 0 0; font-size: 13px; line-height: 18px; text-align: center; }
+  .legal a { color: var(--ink); font-weight: 600; padding: 13px 0; margin: -13px 0; }
+  /* The links on the next line reach 13px up into this one, and later in the
+     paint order they won the tap on most of "Have a creator code?" (QA F4). On
+     top of them, and reaching up but not down, the button owns its own line and
+     the links keep theirs, and the room under them. */
+  .legal .codeask { display: inline; position: relative; z-index: 1; padding: 13px 0 0; margin: -13px 0 0; font-size: 13px; }
+  #authcodefield { margin: 12px 0 0; }
+  .tryfirst { display: flex; align-items: center; justify-content: center; gap: 3px; width: 100%;
+    min-height: 44px; margin-top: 8px; border: none; background: none; color: var(--ember-ink);
+    font-size: 15px; font-weight: 650; }
+  .tryfirst .ic { width: 16px; height: 16px; }
+
+  /* ---------- the first minute (B.2) ----------
+     The intent screen's answers are chips a thumb high, four in two rows and
+     three in one; lit is the app's one accent. A starter row is a picker row
+     with Keep at its end; Train's first card lists its two other doors the way
+     the ⋯ sheets list theirs. */
+  .ichips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 22px; }
+  .ichips .chip { flex: 1 1 auto; justify-content: center; min-height: 46px; padding: 0 10px; font-size: 15px; border-radius: 14px; }
+  .ichips.three .chip { flex: 1 1 0; }
+  .sheetbody .introskip { position: absolute; top: 6px; right: 12px; min-height: 44px; padding: 0 8px; font-size: 15px; }
+  #introliftf { margin: -8px 0 22px; }
+  .strow { display: flex; align-items: center; }
+  .strow .pickrow { flex: 1; min-width: 0; }
+  .strow .chip { margin-right: 12px; }
+  #askbody .pickrow { min-height: 64px; }
+  .firstdoors { margin: 12px 0 0; text-align: left; }
+  .firstdoors .pickrow { padding: 10px 14px; }
+  .firstdoors .pickrow .pt b { white-space: normal; }
+  #askart .pumpyart { width: 96px; height: 96px; border-radius: 24px; margin-bottom: 14px; }
+  #askbody { margin-bottom: 12px; }
+  #askbody .doorbtns { padding: 0; }
 
   /* ---------- app shell, and the frame everything full-screen is drawn in ----------
      #app owns the viewport instead of the document: the three pages scroll inside
@@ -1807,6 +1864,55 @@ export const STYLE = String.raw`<style>
   .tskel > * { animation: skel 1.1s var(--e-soft) infinite alternate; }
   @keyframes skel { to { opacity: .55; } }
 
+  /* ---------- train / the goal card (B.2) ----------
+     Under Up next (app.ts, goalCard): the goal and its pill, the numbers and the
+     week, and a bullet bar filled to where you are and ticked where the plan
+     expects you. The day card's frame, one button; the goal sheet draws the same
+     three lines at its own scale. Only the fill's transform and the card's
+     opacity animate; the slot's height is sizeMotion's, as the day card's is
+     (flow-root, so the card's margin is inside what it measures). */
+  .tgoal { display: flow-root; }
+  /* Above the shelf (its badges are z 2) and under the sticky segments (5), so
+     while the slot grows or closes the shelf slides from under the card rather
+     than printing across it. */
+  .gcard { position: relative; z-index: 3; display: block; width: 100%; margin-bottom: 16px; text-align: left;
+    color: var(--ink); font: inherit; }
+  .gtop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .gtop b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 700 17px/1.3 var(--display); letter-spacing: -.012em; }
+  .gline { display: flex; align-items: center; gap: 6px; margin: 2px 0 12px; font-size: 13.5px; color: var(--ink-2); }
+  .gline .ic { margin-left: auto; color: var(--muted); }
+  .gbar { position: relative; display: block; height: 6px; border-radius: 3px; background: var(--sand); }
+  .gbar i { position: absolute; inset: 0; border-radius: 3px; background: var(--ember); transform: scaleX(0);
+    transform-origin: 0 0; transition: transform var(--t-4) var(--e-out); }
+  .gbar s { position: absolute; top: -3px; width: 2px; height: 12px; margin-left: -1px; border-radius: 1px;
+    background: var(--ink); }
+  /* An icon, a word and a number, never colour alone. --good on #EFF8F3 is 4.56
+     (the Workouts pill's pair), --warn on #FFF0D6 5.6, --ink-2 on sand 5.2. */
+  .gpill { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 9px;
+    border-radius: 999px; background: var(--sand); color: var(--ink-2); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+  .gpill .ic { stroke-width: 2.6; }
+  .gpill.ok { background: #EFF8F3; color: var(--good); }
+  .gpill.low { background: #FFF0D6; color: var(--warn); }
+  @media (prefers-color-scheme: dark) { .gpill.ok { background: #173026; } .gpill.low { background: #2E2107; } }
+  .gin { animation: viewin var(--t-3) var(--e-out); }
+  .gout { opacity: 0; pointer-events: none; transition: opacity var(--t-2) var(--e-in); }
+  .gline, .gpill, .trx { font-variant-numeric: tabular-nums; }
+  /* A program day's numbers under its workout, on Up next and a day's rows. */
+  .trx { display: flex; align-items: center; gap: 6px; margin-top: -4px; font-size: 13px; font-weight: 650; color: var(--ember-ink); }
+  .pickrow .trx { margin-top: 3px; font-size: 12px; }
+  #gsbody .gtop { margin-bottom: 6px; }
+  #gsbody .gtop b { font-size: 20px; }
+  #gsbody .gbar { margin-bottom: 18px; }
+  #gsbody .nobr { white-space: nowrap; }
+  /* Under End goal and bound to it: the button's own 12px is the gap. */
+  #gsfree { text-align: center; padding-top: 0; margin-top: -4px; }
+  .gsrc { display: flex; align-items: center; gap: 5px; min-height: 40px; }
+  @media (prefers-reduced-motion: reduce) {
+    .gbar i { transition: none; }
+    .gin { animation-name: fadeonly; }
+  }
+
   /* ---------- train / ready to try ----------
      The saves never trained yet, newest first: a sideways scroller with the
      page's gutter inside it, so the row runs out to the screen's edge; at either
@@ -1848,7 +1954,7 @@ export const STYLE = String.raw`<style>
   .segbtn { position: relative; z-index: 1; flex: 1; min-width: 0; min-height: 32px; border: none;
     background: none; color: var(--ink-2); font-size: 13px; font-weight: 700; padding: 0 10px;
     letter-spacing: -.005em; transition: color var(--t-2) var(--e-soft); }
-  .segbtn[aria-selected="true"] { color: var(--ink); }
+  .segbtn[aria-selected="true"], .segbtn[aria-checked="true"] { color: var(--ink); }
   .secthead b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
   .wbnav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
   .planbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
@@ -2739,17 +2845,29 @@ export const STYLE = String.raw`<style>
     .pumpybar button { transition: none; }
     .pblabel, .pumpybar.labelled .pblabel { transition: opacity var(--t-1) var(--e-soft); }
   }
-  .pumpyhello { text-align: center; padding: 22px 12px 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
-  .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
-  .pumpyhello .pmark svg { width: 34px; height: 34px; }
-  .pumpyhello h2 { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0 0 6px; color: var(--ink);
-    letter-spacing: -.015em; }
-  .pumpyhello p { margin: 0 auto; max-width: 340px; }
-  .quick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0 4px; }
-  /* The library chips refuse to shrink; these have to, or a long ask runs off both
-     edges of the phone instead of wrapping. */
-  .quick .chip { flex: 0 1 auto; max-width: 100%; white-space: normal; text-align: left;
-    line-height: 1.3; padding: 9px 13px; }
+  /* The empty chat (app.ts pumpyHello): the question, the goal chips, two quiet
+     links. A chip is a full-width row, not a pill, because an outcome carries a
+     number and a reason ("your best ~287") that a pill has no second line for —
+     the title-and-quieter-line suggestion ChatGPT's empty chat uses. Sized so
+     all four sit above the composer on a 6.1" phone; the drawing gave up most. */
+  .pumpyhello { text-align: center; padding: 4px 0 2px; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+  .pumpyhello h2 { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0 0 5px; color: var(--ink);
+    letter-spacing: -.015em; line-height: 1.2; }
+  .pumpyhello p { margin: 0 auto; max-width: 320px; }
+  .gchips { display: grid; gap: 8px; margin: 16px 0 2px; text-align: left; }
+  .gchip { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 9px 12px 9px 15px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: var(--sh-sm);
+    color: var(--ink); font: inherit; text-align: left; transition: transform var(--t-1) var(--e-out); }
+  .gchip:active { transform: scale(.98); }
+  .gchip span { flex: 1; min-width: 0; }
+  .gchip b { display: block; font-size: 15px; font-weight: 650; line-height: 1.3; letter-spacing: -.01em; }
+  .gchip small { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+  /* "1 free plan" and "Plus": a tag, ember-ink on ember-soft (4.7:1). */
+  .gchip i, .glinks i { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: var(--ember-soft);
+    color: var(--ember-ink); font: normal 700 11px/1.2 var(--sans); white-space: nowrap; }
+  .glinks { display: flex; flex-wrap: wrap; justify-content: center; column-gap: 18px; }
+  .glinks button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0;
+    background: none; color: var(--ink-2); font: 600 13px/1.3 var(--sans); }
   .msgrow { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; }
   .msgcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .reportresponse { align-self: flex-start; min-height: 44px; padding: 8px 0;
@@ -2801,9 +2919,64 @@ export const STYLE = String.raw`<style>
     display: flex; align-items: center; gap: 5px;
     animation: donein var(--t-3) var(--e-out); }
   .proposal .done .ic { width: 15px; height: 15px; }
+  /* A program's Undo, at the line's end for the server's fifteen minutes; it
+     fades when they are up (opacity only, so reduced motion keeps it). Its
+     padding hangs outside the line, so the card is the same height without it. */
+  .proposal .done .pundo { margin: -6px 0 -6px auto; transition: opacity var(--t-2) var(--e-soft); }
+  .proposal .done .pundo.gone { opacity: 0; pointer-events: none; }
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
+  /* A form or a program takes the chat's whole width (research §3). */
+  .msgrow.wide { max-width: none; }
+  .msgrow.wide .msgcol { flex: 1; }
+  /* The ask card: a form, so a hairline rather than the proposal's ember border,
+     which stays with the card that writes. Its controls are the app's own — the
+     segmented control, the set sheet's stepper, the chip — scaled to a card. */
+  .askcard { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 18px;
+    background: var(--card); box-shadow: var(--sh-sm); }
+  .askl { margin-bottom: 7px; font-size: 13px; font-weight: 650; color: var(--ink-2); }
+  .askcard .segbtn { min-height: 36px; font-size: 15px; }
+  .askcard .segpill { transition: transform var(--t-2) var(--e-spring), opacity var(--t-2) var(--e-soft); }
+  .askcard .seg.none .segpill { opacity: 0; transition: none; }
+  .askcard .stepper { justify-content: flex-start; margin: 0; }
+  .askcard .stepper button { width: 44px; height: 44px; }
+  .askcard .stepper .val { width: 92px; font-size: 24px; }
+  .askfrom { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .askchips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .askchips .chip { position: relative; min-height: 36px; font-size: 14px; }
+  .askchips .chip::after { content: ""; position: absolute; inset: -4px 0; }
+  .askpick input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; }
+  .askcard.sent { padding: 11px 14px; overflow: hidden; }
+  .askcard.sent div { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .askcard.sent .ic { width: 15px; height: 15px; color: var(--good); }
+  /* The program card. The verdict is a mark and a word on a tint, so colour is
+     never all that says it; the stretch amber is darkened on light, where
+     --warn reads 3.9:1 on its tint. */
+  .verdict { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; padding: 5px 10px 5px 8px;
+    border-radius: 999px; font-size: 12.5px; font-weight: 700; background: #EFF8F3; color: var(--good); }
+  .verdict .ic { width: 14px; height: 14px; }
+  .verdict.stretch { background: #FBF1DE; color: #845600; }
+  .verdict.too_fast { background: var(--ember-soft); color: var(--ember-ink); }
+  .pnote { margin: 8px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+  .pswap { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; font-weight: 650;
+    color: var(--ember-ink); }
+  .proposal .olink { position: relative; margin: 10px 8px 0 0; }
+  .proposal .olink::after { content: ""; position: absolute; inset: -9px 0; }
+  .pwk .pline { display: flex; align-items: baseline; gap: 8px; }
+  .pwk .pline b { flex: 0 0 32px; }
+  .pwk .pline span { flex: 1; min-width: 0; }
+  .pwk .pline em { font-style: normal; font-weight: 650; color: var(--ink); white-space: nowrap; }
+  .proposal .linkbtn { margin-top: 8px; }
+  /* A preview writes nothing, so it does not wear the ember of a card that does. */
+  .proposal.pview { border: 1px solid var(--line); box-shadow: var(--sh-sm); }
+  @media (prefers-color-scheme: dark) {
+    .verdict { background: #173026; }
+    .verdict.stretch { background: #33270F; color: var(--warn); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .askcard .segpill { transition: opacity var(--t-2) var(--e-soft); }
+  }
   /* --pbar: the paused bar, when there is one, stands between it and the tab bar. */
   .composer { position: sticky; bottom: calc(var(--ptab, calc(78px + var(--sab))) + var(--pbar, 0px));
     margin-bottom: calc(var(--ptab, calc(78px + var(--sab))) + var(--pbar, 0px));
@@ -3031,9 +3204,6 @@ export const STYLE = String.raw`<style>
      has; --paper on it measures 5.6:1 light and 8.4:1 dark, so the word survives
      both schemes without a second colour being invented for it. */
   .btn.del { background: var(--ember-ink); color: var(--paper); box-shadow: none; }
-  /* The same box that carries an auth error, carrying good news instead: a reset
-     link on its way, or an account that is gone. */
-  .autherr.ok { color: var(--good); }
 
   /* ---------- the keyboard ring ----------
      Three controls in the whole app showed one. :focus-visible, so a thumb never
@@ -3051,11 +3221,11 @@ export const STYLE = String.raw`<style>
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planadd, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
-  .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
+  .chips .chip, .said .chip, .votes .chip, .strow .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planadd::after,
   .segbtn::after, .planbtn::after, .linkbtn::after,
   .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
-  .votes .chip::after,
+  .votes .chip::after, .strow .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
   .libcount::after { inset: -9px; }
@@ -3071,6 +3241,9 @@ export const STYLE = String.raw`<style>
   .linkbtn::after { inset: -9px -12px; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
+  /* A starter row's "2 more" and "Keep": 31px chips centred in 63px rows, so
+     7px up and down (45 tall) stays inside their own row. */
+  .strow .chip::after { inset: -7px 0; }
   /* A square control needs the inset on all four sides: 36 + 4 + 4 is 44 across as
      well as down, and -6px 0 would have left the thumbs 36 wide and 28 tall. */
   .votes .vote::after { inset: -4px; }
@@ -3084,7 +3257,7 @@ export const STYLE = String.raw`<style>
      loops stop, informative ones stay. */
   @keyframes fadeonly { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
-    .viewin, .carditem.in, .msgin, .bodyfig, .reststrip, .sumdone,
+    .viewin, .facein, .carditem.in, .msgin, .bodyfig, .reststrip, .sumdone,
     .sumfigs .setpill, .sumprs .setpill, .sharewrap, .scbtns.in, .scvid,
     .proposal .done, .proposal .declined {
       animation-name: fadeonly; animation-duration: var(--t-2); animation-delay: 0ms; }
@@ -3132,7 +3305,7 @@ export const STYLE = String.raw`<style>
     background: #F5F1E8; box-shadow: 0 0 0 1px var(--line); }
   .pumpyart img { display: block; width: 100%; height: 100%; object-fit: cover; }
   .pumpyart.artfailed { display: none; }
-  .pumpyhello .pumpyart { width: 140px; height: 140px; margin-bottom: 16px; }
+  .pumpyhello .pumpyart { width: 84px; height: 84px; border-radius: 22px; margin-bottom: 12px; }
   /* An unavailable drawing must not move the greeting halfway through its entrance. */
   .pumpyhello .pumpyart.artfailed { display: block; visibility: hidden; }
   #workout.summary .pumpyart { width: 88px; height: 88px; border-radius: 22px; margin-bottom: 12px; }
@@ -3206,7 +3379,7 @@ export const STYLE = String.raw`<style>
     .btn:active, .iconbtn:active, .addbtn:active, .chip:active, .carditem:active,
     .addex:active, .planbtn:active,
     .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scprev:active,
-    .uploadrow:active, .pumpybar button:active { transform: none; }
+    .uploadrow:active, .pumpybar button:active, .gchip:active { transform: none; }
   }
   /* Keep the workout visible; supporting detail opens in place on request. */
   .savebtn { width: auto; min-height: 44px; padding: 0 12px; gap: 5px; font-size: 12px; font-weight: 650; white-space: nowrap; }
@@ -3230,19 +3403,11 @@ export const STYLE = String.raw`<style>
      gives its delete - rather than the muted grey that reads as unavailable. */
   /* "Choose the first exercise" is a sentence, and half a row at 375px wraps
      it: Cancel takes only its own width there, the way a secondary action does. */
-  #sectionsheet .btnrow .ghost { flex: 0 0 auto; width: auto; padding: 14px 20px; }
+  #sectionsheet .btnrow .ghost, #goalsheet .btnrow .ghost { flex: 0 0 auto; width: auto; padding: 14px 20px; }
   /* The section sheet's Remove is its last word and its one red one: this one. */
   #recapopts .danger, #sectionremove { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #explainask { min-height: 44px; }
   .disclosure summary:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
-  .history-card > summary { position: relative; cursor: pointer; list-style: none; min-height: 44px; padding-right: 20px; }
-  .history-card > summary::-webkit-details-marker { display: none; }
-  .history-card > summary::after { content: "Session details"; display: block; font-size: 11px; font-weight: 600; color: var(--ember-ink); margin-top: 8px; }
-  .history-card > summary::before { content: ""; position: absolute; right: 2px; top: 8px; width: 6px; height: 6px;
-    border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2);
-    transform: rotate(-45deg); transition: transform var(--t-3) var(--e-soft); }
-  .history-card[open] > summary::before { transform: rotate(45deg); }
-  .history-card.details-closing > summary::before { transform: rotate(-45deg); }
   .progress-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
     padding: 18px 0; margin-bottom: 16px; border-bottom: 1px solid var(--line); text-align: center; }
   .progress-totals b { display: block; font-family: var(--display); font-size: clamp(20px, 5vw, 28px); overflow-wrap: anywhere; }
@@ -3275,7 +3440,7 @@ export const STYLE = String.raw`<style>
   .disclosure[open] > summary::after, .guide-topic[open] > summary::after { transform: rotate(45deg); }
   .disclosure.details-closing > summary::after, .guide-topic.details-closing > summary::after { transform: rotate(-45deg); }
   @media (prefers-reduced-motion: reduce) {
-    .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before { transition: none; }
+    .disclosure > summary::after, .guide-topic > summary::after { transition: none; }
   }
   .reader-offer { background: var(--ember-soft); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin: 16px 0; }
   .reader-offer p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin: 8px 0 12px; }

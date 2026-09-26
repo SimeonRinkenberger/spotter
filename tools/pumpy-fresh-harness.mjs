@@ -8,7 +8,7 @@
 //    on a yes or no, or Pumpy opened from a card ("Ask Pumpy") keeps it.
 // 2. The two bar buttons carry their words while the chat is empty and fold them
 //    away on the first message.
-// 3. The starter chip and the icons are the ones the owner asked for.
+// 3. The empty chat is the goal starters' (B.2), and the icons are the ones the owner asked for.
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -65,9 +65,13 @@ function setup(opts = {}) {
     state: { user: { id: 'u1' }, view: opts.view || 'pumpy' },
     $: (id) => ids[id],
     el: (tag, cls, text) => { const n = new El(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; },
-    isFree: () => false, lessMotion: () => true, NO_TOUCH: false, MAX_REFS: 6, pumpyReset: null,
+    isFree: () => false, lessMotion: () => true, NO_TOUCH: false, MAX_REFS: 6, PUMPY_CAPS: ['ask', 'program'], pumpyReset: null,
     pumpyArt: () => new El('span'), pumpyMark: () => new El('span'),
     renderPumpyCtx() {}, renderPumpyCredits() {}, guidePage() {}, guideLearn() {}, haptic() {},
+    // B.2: the empty chat's goal starters draw themselves (goals-harness holds
+    // goalStarters); Basic's free-plan state is not this harness's business.
+    pumpyHello: () => { const n = new El('div'); n.className = 'pumpyhello'; return n; },
+    freeProgram: () => null, setFree() {}, msgCards() {},
     renderMsg: (m) => { const n = new El('div'); n.className = 'msg ' + m.role; n.textContent = m.content || ''; return n; },
     setView: (v) => { ctx.state.view = v; ctx.opened = v; },
     absorbMeter() {}, liveEvent() {}, toast() {}, ensurePumpyMeter() {},
@@ -77,11 +81,9 @@ function setup(opts = {}) {
     setTimeout: (f, ms) => { const t = { f, ms, at: clock.now + ms }; timers.push(t); return t; },
     clearTimeout: (t) => { if (t) t.cancelled = true; },
   });
-  const quick = /var QUICK_ASKS = \[[\s\S]*?\];/.exec(APP);
-  assert(quick, 'QUICK_ASKS in app.ts');
   const names = ['pumpyLastAt', 'pumpyHolds', 'pumpyStale', 'freshenPumpy', 'pumpyAway', 'pumpyBack', 'pumpyBlank',
     'cancelPumpyReset', 'newPumpyThread', 'settlePumpy', 'lastRefs', 'openPumpy', 'renderPumpy', 'sendPumpy'];
-  vm.runInContext(quick[0] + '\nvar PUMPY_IDLE = ' + /var PUMPY_IDLE = ([^,;]+)/.exec(APP)[1] + ', pumpyIdleTimer = 0;\n' +
+  vm.runInContext('var PUMPY_IDLE = ' + /var PUMPY_IDLE = ([^,;]+)/.exec(APP)[1] + ', pumpyIdleTimer = 0;\n' +
     'var pumpy = { thread: null, messages: [], busy: false, refs: [], refsRev: 0, loaded: false, meter: null, live: null, stick: true, wired: true };\n' +
     names.map(fn).join('\n'), ctx);
   // Out of the vm as plain data: its arrays have their own prototype.
@@ -103,14 +105,11 @@ function thread(x, lastAgo, extra) {
   ] };
 }
 
-test('starter chips: "Edit one of my workouts" replaces the leg-day finisher', () => {
+test('the empty chat opens on the goal starters (B.2): the four fixed asks are retired', () => {
   const x = setup();
-  const asks = x.run('QUICK_ASKS');
-  assert(asks.includes('Edit one of my workouts'));
-  assert(!asks.some((a) => /finisher to my leg day/i.test(a)));
+  assert(!/QUICK_ASKS/.test(APP), 'no QUICK_ASKS left in app.ts');
   x.run('settlePumpy(null)');
-  const chips = x.log.find('chip').map((c) => c.textContent);
-  assert.deepEqual(chips, asks, 'the empty chat offers exactly these');
+  assert.equal(x.log.find('pumpyhello').length, 1, 'pumpyHello draws the empty chat');
 });
 
 test('opening Pumpy on a conversation quiet for more than five minutes shows a new chat', () => {
@@ -247,4 +246,4 @@ test('style and markup: the icons, the words, the motion', () => {
   assert.match(STYLE, /prefers-reduced-motion: reduce\) \{\s*\.pumpybar button \{ transition: none; \}\s*\.pblabel, \.pumpybar\.labelled \.pblabel \{ transition: opacity/);
 });
 
-console.log('PASS Pumpy new-chat screen: ' + checks + ' groups (five-minute rule with its three exceptions, no empty thread row, labels fold on the first message, starter chip, icons)');
+console.log('PASS Pumpy new-chat screen: ' + checks + ' groups (five-minute rule with its three exceptions, no empty thread row, labels fold on the first message, goal starters, icons)');

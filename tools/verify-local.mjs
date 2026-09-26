@@ -38,6 +38,7 @@ const steps = [
   ['Reader database', 'node', ['tools/reader-db-check.mjs']],
   ['Schema security (all migrations replayed)', 'node', ['tools/security-db-check.mjs']],
   ['Erasure outbox (account deletion at third parties)', 'node', ['tools/erasure-outbox-check.mjs']],
+  ['Goals and programs in the database: confirm, undo, the free program, RLS, the cap', 'node', ['tools/goals-db-check.mjs']],
   ['GTM launch regressions', 'npm', ['run', 'gtm:check']],
   ['Type check the edge function', 'deno', ['check', 'supabase/functions/spotter/index.ts']],
   ['AI transport accounting', 'deno', ['run', '--allow-env', 'tools/ai-guard-check.ts']],
@@ -55,6 +56,9 @@ const steps = [
   ['The web app stays retired: no client or app in docs/, the landing script, no app from the function', 'node', ['tools/retire-web-check.mjs']],
   ['sw.js is the kill switch', 'node', ['tools/sw-harness.mjs']],
   ['Tab pager: every page turns, rows/chips/week bar keep their drags', 'node', ['tools/pager-harness.mjs']],
+  // Headless Chrome against a fake Supabase on 127.0.0.1; says SKIP and passes
+  // on a machine without Chrome.
+  ['First run: a sign-up after a deleted account\'s session draws Train (real supabase-js, fake project)', 'node', ['tools/firstrun-harness.mjs']],
 ];
 
 const env = { ...process.env, PGLITE_MODULE };

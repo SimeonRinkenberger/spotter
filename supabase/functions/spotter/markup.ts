@@ -103,113 +103,97 @@ export const MARKUP_BODY = String.raw`</head>
 </svg>
 
 <!-- ---------- signed out ---------- -->
+<!-- The front door (B.2): one screen on a 6.1" phone. What Spotter does, in three
+     frames of its own screens; then three ways in, Apple, Google and email in that
+     order, each of which signs somebody in or makes the account, whichever they
+     need; the one legal sentence; and a workout to try with no account at all.
+     The card has three faces, one at a time: these doors, the email step
+     (#mailface) and the six-digit code (#mailsent). -->
 <div id="landing">
   <div class="land">
     <div class="brandrow"><img src="icon.png" alt=""><span>Spotter</span></div>
     <h1 class="hero">Save any workout video. <em>Actually do the workout.</em></h1>
-    <p class="sub">You save fitness reels you never come back to. Spotter reads the exercises,
-      sets and reps out of the video, then walks you through them one at a time and remembers
-      what you lifted.</p>
-
     <div class="authcard" id="authcard">
-      <h2 id="authtitle">Create your account</h2>
-      <div class="field">
-        <label for="email">Email</label>
-        <input id="email" type="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="you@example.com">
-      </div>
-      <div class="field">
-        <label for="pw">Password</label>
-        <div class="pwbox">
-          <input id="pw" type="password" autocomplete="current-password" placeholder="At least 8 characters">
-          <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
+      <div class="doors" id="doors">
+        <!-- Crops of the app's own screens (docs/assets/landing), rendered once
+             light and once dark, never an image inverted by CSS. The loop is one
+             element to VoiceOver, and the frames are decoration inside it. -->
+        <div class="loop" role="img" aria-label="How it works: share a reel, Spotter reads it, you do the workout.">
+          <figure><picture><source srcset="assets/landing/share-dark.webp" media="(prefers-color-scheme: dark)"><img src="assets/landing/share.webp" alt=""></picture><figcaption>Share a reel</figcaption></figure>
+          <figure><picture><source srcset="assets/landing/read-dark.webp" media="(prefers-color-scheme: dark)"><img src="assets/landing/read.webp" alt=""></picture><figcaption>Spotter reads it</figcaption></figure>
+          <figure><picture><source srcset="assets/landing/do-dark.webp" media="(prefers-color-scheme: dark)"><img src="assets/landing/do.webp" alt=""></picture><figcaption>You do it</figcaption></figure>
         </div>
-      </div>
-      <!-- Sign-up face only, and folded: an optional field most people have
-           nothing to put in is a field most people should not see. A code that
-           came in on the link opens it already filled. -->
-      <div id="authcodewrap">
-        <button type="button" class="codeask" id="authcodeask">Have a creator code?</button>
+        <!-- One set, one size: Apple first and never smaller than the others (HIG),
+             Google in Google's own colours, email the neutral third. The stack is
+             lent to the sheet that asks a guest to keep a workout (app.ts,
+             keepAsk), so both places are the same three buttons. -->
+        <div class="doorbtns" id="doorbtns">
+          <div class="oauth" id="oauthwrap"><div class="oauthbtns" id="oauthbtns">
+            <button class="oabtn apple" id="oaapple" type="button">
+              <span class="oamark" aria-hidden="true"><svg width="17" height="20" viewBox="0 0 814 1000" fill="currentColor" focusable="false"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 99.2zm-234-181.5c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"></path></svg></span>
+              <span class="oalabel">Continue with Apple</span>
+            </button>
+            <button class="oabtn" id="oagoogle" type="button">
+              <span class="oamark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 48 48" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.28-3.14.76-4.59l-7.97-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path></svg></span>
+              <span class="oalabel">Continue with Google</span>
+            </button>
+          </div></div>
+          <button class="oabtn" id="oamail" type="button"><span class="oamark" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span><span class="oalabel">Continue with email</span></button>
+        </div>
+        <!-- App Store 5.1.2(i), and the agreement: every button above starts with
+             Continue, so the sentence says pressing one is agreeing. Filled by
+             consentFill() so it and the one Settings shows cannot drift apart. The
+             creator code folds open from its head, for whichever door is next. -->
+        <p class="consent legal"><span id="authcodewrap"><button type="button" class="codeask" id="authcodeask">Have a creator code?</button> · </span><span id="consent"></span></p>
         <div class="field hide" id="authcodefield">
           <label for="authcode">Creator code</label>
           <input id="authcode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Optional" maxlength="20">
         </div>
+        <button class="tryfirst" id="tryfirst" type="button">Try a workout first<svg class="ic"><use href="#i-chev"></use></svg></button>
       </div>
-      <!-- App Store 5.1.2(i): nobody's content reaches a third-party model
-           without them having read, in so many words, that it will. The sentence
-           is on the sign-up face only, and it sits directly above the button,
-           because pressing that button IS the agreement. Filled from
-           consentFill() in app.ts so this sentence and the one Settings shows an
-           older account cannot drift apart. -->
-      <p class="consent hide" id="consent"></p>
-      <!-- Cloudflare Turnstile mounts here, and only once PUBLIC_CAPTCHA in
-           app.ts carries a site key: with none it is display:none and empty, so
-           the card is byte-for-byte the card that shipped before. The widget is
-           rendered interaction-only, which means a visitor Cloudflare can vouch
-           for never sees anything at all and a suspected bot gets a checkbox
-           here, above the button it is standing in the way of. -->
-      <div class="capgate" id="capgate"></div>
-      <button class="btn" id="authgo">Create account</button>
-      <div class="autherr" id="autherr"></div>
-      <!-- Only on the sign-in face. Offering it while somebody is creating an
-           account is offering to reset a password that does not exist yet. -->
-      <div class="authswap hide" id="forgotwrap"><button id="forgotpw" type="button">Forgot your password?</button></div>
-      <!-- Provider sign-in. Both buttons stay in the DOM and are unhidden by
-           renderAuthProviders() in app.ts once auth/v1/settings says the provider
-           is switched on for this project; with neither enabled this whole block
-           is display:none and the card is byte-for-byte the card that shipped
-           before. Marks are inline SVG so the buttons paint with the page and
-           never wait on a third-party image. -->
-      <div class="oauth hide" id="oauthwrap">
-        <div class="oauthdiv"><span>or</span></div>
-        <div class="oauthbtns" id="oauthbtns">
-          <button class="oabtn hide" id="oagoogle" type="button">
-            <span class="oamark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 48 48" focusable="false"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.28-3.14.76-4.59l-7.97-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path></svg></span>
-            <span class="oalabel">Continue with Google</span>
-          </button>
-          <button class="oabtn hide" id="oaapple" type="button">
-            <span class="oamark" aria-hidden="true"><svg width="17" height="20" viewBox="0 0 814 1000" fill="currentColor" focusable="false"><path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57-155.5-127C46.7 790.7 0 663 0 541.8c0-194.4 126.4-297.5 250.8-297.5 66.1 0 121.2 43.4 162.7 43.4 39.5 0 101.1-46 176.3-46 28.5 0 130.9 2.6 198.3 99.2zm-234-181.5c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"></path></svg></span>
-            <span class="oalabel">Continue with Apple</span>
-          </button>
+      <!-- The second face: one field and Continue. A code by email when
+           PUBLIC_AUTH.emailCode is on, which makes the account if there is none;
+           a password when it is off, or when asked for (App Review signs in so). -->
+      <div class="mailface hide" id="mailface">
+        <div class="facehead"><button class="iconbtn" id="authback" type="button" aria-label="Back"><svg class="ic"><use href="#i-arrow-left"></use></svg></button><h2 id="authtitle">Continue with email</h2></div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input id="email" type="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="you@example.com" enterkeyhint="go">
         </div>
+        <div class="field hide" id="pwfield">
+          <label for="pw">Password</label>
+          <div class="pwbox">
+            <input id="pw" type="password" autocomplete="current-password" placeholder="Your password" enterkeyhint="go">
+            <button type="button" class="pweye" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"></use></svg></button>
+          </div>
+        </div>
+        <button class="btn" id="authgo">Continue</button>
+        <div class="autherr" id="autherr" role="alert"></div>
+        <div class="authswap"><button id="pwswap" type="button">Use a password instead</button><button id="forgotpw" type="button">Forgot password?</button></div>
       </div>
-      <div class="authswap" id="authswap">Already have an account? <button id="authtoggle">Sign in</button></div>
-      <!-- Confirmation-on state. With enable_confirmations true a signup is a
-           mail send and nothing else — no session comes back — and a form left
-           sitting there reads as a signup that failed. Apple's own account
-           sheets answer three questions at this moment and so does this: what
-           was sent, which address it went to, and what to do when it does not
-           arrive. While it is up nothing else on the card is shown, because
-           nothing else on the card is a choice anybody has. -->
+      <!-- Cloudflare Turnstile mounts here once PUBLIC_CAPTCHA carries a site key,
+           interaction-only; empty, it takes no room. Beside both faces that send
+           mail, so Resend can carry a token too. -->
+      <div class="capgate" id="capgate"></div>
+      <!-- The code. One field, not six boxes: iOS offers the code from the
+           message above the keyboard and fills a single one-time-code field in one
+           go, which a row of one-character boxes stops. No maxlength, because it
+           counts characters and a pasted "123 456" is seven; the input handler
+           keeps six digits instead. -->
       <div class="mailsent hide" id="mailsent" tabindex="-1">
         <span class="mailmark" aria-hidden="true"><svg class="ic"><use href="#i-mail"></use></svg></span>
         <h2>Check your email</h2>
         <p id="mailbody"></p>
-        <!-- One field, not six boxes. WebKit's own guidance for
-             autocomplete="one-time-code" is a single input: iOS offers the code
-             out of the message above the keyboard and fills it in one go, and a
-             row of one-character boxes is exactly where that autofill stops
-             working. Instagram's confirmation screen is a single field too. The
-             link in the mail still works for anyone reading it on a desktop.
-             No maxlength: it counts characters, not digits, so a code pasted as
-             "123 456" arrived truncated to "123 45" and stripped down to five,
-             which is a Confirm button that will not go for no reason a person
-             can see. The input handler slices to six DIGITS instead. -->
         <div class="field">
           <label for="otp">Six-digit code</label>
           <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" autocapitalize="off" spellcheck="false">
         </div>
-        <button class="btn" id="otpgo">Confirm</button>
+        <button class="btn" id="otpgo">Continue</button>
         <div class="autherr" id="otperr"></div>
-        <button class="btn ghost" id="mailresend">Resend the email</button>
-        <div class="authswap"><button id="mailback">Use a different email</button></div>
+        <button class="btn ghost" id="mailresend">Send a new code</button>
+        <div class="authswap"><button id="mailback" type="button">Use a different email</button></div>
       </div>
     </div>
-    <!-- Somebody made this. Software with no maker, no version and no way to say
-         something is wrong reads as unowned however good it is, and that absence
-         was the loudest thing about this page. -->
-    <div class="landfoot">Spotter by Quarterdeck Collective · Free to start ·
-      <a href="https://quarterdeckcollective.com/spotter/whats-new/">What&rsquo;s new</a> · <a href="https://quarterdeckcollective.com/spotter/terms/">Terms</a> ·
-      <a href="https://quarterdeckcollective.com/spotter/privacy/">Privacy</a></div>
   </div>
 </div>
 
@@ -335,7 +319,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="wleavetitle">Leave this workout?</h2>
   <p class="lede" id="wleavelede">Nothing is lost either way.</p>
-  <button class="pickrow leaverow" id="wpause"><svg class="ic"><use href="#i-pause"></use></svg><span class="pt"><b>Pause workout</b><span>Pick it up later from any tab. The clock stops.</span></span></button>
+  <button class="pickrow leaverow" id="wpause"><svg class="ic"><use href="#i-pause"></use></svg><span class="pt"><b>Pause workout</b><span id="wpausesub">Pick it up later from any tab. The clock stops.</span></span></button>
   <button class="pickrow leaverow" id="wend"><svg class="ic"><use href="#i-flag"></use></svg><span class="pt"><b>Finish workout</b><span id="wendsub">Saves what you logged.</span></span></button>
   <button class="btn ghost" data-close="wleavesheet">Keep going</button>
 </div></div>
@@ -371,6 +355,32 @@ export const MARKUP_BODY = String.raw`</head>
 <div class="sheet" id="readysheet" role="dialog" aria-modal="true" aria-labelledby="readykick readytitle"><div class="sheetbody">
   <div class="grabber"></div>
   <div id="readybody"><h2 id="readytitle">Ready to train</h2></div>
+</div></div>
+<!-- A new account's one question screen (app.ts, introCheck): what for, and
+     where. Both optional, and Skip or a drag away is an answer too. -->
+<div class="sheet" id="introsheet" role="dialog" aria-modal="true" aria-labelledby="introtitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <button class="linkbtn introskip" data-close="introsheet">Skip</button>
+  <h2 id="introtitle">What are you training for?</h2>
+  <div class="ichips" data-k="aim" role="radiogroup" aria-labelledby="introtitle"><button class="chip" role="radio" data-v="strength"><svg class="ic"><use href="#i-dumbbell"></use></svg>Get stronger</button><button class="chip" role="radio" data-v="muscle"><svg class="ic"><use href="#i-trend"></use></svg>Build muscle</button><button class="chip" role="radio" data-v="fat"><svg class="ic"><use href="#i-flag"></use></svg>Lose fat</button><button class="chip" role="radio" data-v="consistency"><svg class="ic"><use href="#i-calendar"></use></svg>Just be consistent</button></div>
+  <div class="field hide" id="introliftf">
+    <label for="introlift">A lift to get stronger at? Optional</label>
+    <input id="introlift" type="text" placeholder="e.g. bench 305" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">
+  </div>
+  <h2 id="introwhereq">Where do you train?</h2>
+  <div class="ichips three" data-k="where" role="radiogroup" aria-labelledby="introwhereq"><button class="chip" role="radio" data-v="gym">Gym</button><button class="chip" role="radio" data-v="home">Home</button><button class="chip" role="radio" data-v="both">Both</button></div>
+  <button class="btn" id="introgo">Continue</button>
+</div></div>
+<!-- A question, what to press, and Not now (app.ts, askSheet): the starter
+     picker, a guest's "Keep this workout?" (which borrows the landing's three
+     buttons) and the first plan's offer of reminders. -->
+<div class="sheet" id="asksheet" role="dialog" aria-modal="true" aria-labelledby="asktitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <div id="askart"></div>
+  <h2 id="asktitle"></h2>
+  <p class="lede" id="asklede"></p>
+  <div id="askbody"></div>
+  <button class="btn ghost" data-close="asksheet">Not now</button>
 </div></div>
 
 <!-- ---------- workout mode ---------- -->
@@ -721,12 +731,24 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2>What counts</h2>
   <p class="lede countnow" id="countnow"></p>
-  <p class="lede">A session is a workout you finished with at least one set logged. Two in one
-    day count as two. Rest days are free &mdash; the week only asks for the number you set, and it
-    starts again on Monday.</p>
-  <p class="lede">Come up one session short and a freeze covers the week, automatically and once
+  <p class="lede">A workout counts when you finish it with at least one set logged. Two in one
+    day count as two. Rest days are free &mdash; the week only asks for your workouts per week
+    (Settings), and it starts again on Monday.</p>
+  <p class="lede">Come up one workout short and a freeze covers the week, automatically and once
     every four weeks. It costs nothing, and you are told afterwards.</p>
   <div class="btnrow"><button class="btn" id="countdone">Done</button></div>
+</div></div>
+
+<!-- The goal card, opened (app.ts, gsFill): where the goal started and where it
+     ends, the line it is on, this program week's days and, for fat loss, the
+     weigh-in and the sources. Before the account sheet, which a weigh-in opens
+     over it. -->
+<div class="sheet" id="goalsheet" role="dialog" aria-modal="true" aria-labelledby="gstitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <div id="gsbody"></div>
+  <div class="btnrow"><button class="btn ghost" data-close="goalsheet">Done</button><button class="btn" id="gsadjust">Adjust with Pumpy</button></div>
+  <button class="danger" id="gsend">End goal</button>
+  <p class="setnote hide" id="gsfree">This is your one free plan. Ending it is for good.</p>
 </div></div>
 
 <div class="sheet" id="copysheet"><div class="sheetbody">
@@ -888,10 +910,12 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="setgroup">
     <!-- What the week ring is measured against: the user's own number, prefilled
          from the plan, and never raised by this app. -->
-    <div class="kv"><span class="k">Sessions a week</span>
-      <span class="v goalset"><button class="chip" id="goalless" aria-label="One session a week fewer">&minus;</button><b id="goalnum">3</b><button class="chip" id="goalmore" aria-label="One session a week more">+</button></span></div>
+    <div class="kv"><span class="k">Workouts per week</span>
+      <span class="v goalset"><button class="chip" id="goalless" aria-label="One workout per week fewer">&minus;</button><b id="goalnum">3</b><button class="chip" id="goalmore" aria-label="One workout per week more">+</button></span></div>
     <div class="kv"><span class="k">Weight unit</span>
       <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
+    <!-- Optional, typed by the person, in the unit above (app.ts, openWeighIn). -->
+    <button class="kv row" id="setbodyrow"><span class="k">Body weight</span><span class="v" id="setbody">Not set</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <div class="kv"><span class="k">Timer sounds</span>
       <span class="v"><button class="chip" id="soundtoggle">On</button></span></div>
     <!-- Unhidden only where the browser will actually buzz. iOS Safari has no

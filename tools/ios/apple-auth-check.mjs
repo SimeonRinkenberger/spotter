@@ -45,13 +45,12 @@ const extract = name => {
   assert(start >= 0);
   return source.slice(start, source.indexOf('\n  }', start) + 4);
 };
-let names = [], failures = [], busy = false, routes = [];
+let names = [], failures = [], busy = false, said = [];
 const ctx = vm.createContext({
-  native: { signInWithApple: async () => ({ user: { id: 'fixture' }, fullName: 'Alex Example' }) }, sb: {}, registerAppleGrant: () => {}, toast: () => {},
-  oauthBusy: false, oauthWatchdog: null, clearTimeout: () => {},
-  setOauthBusy: id => { busy = !!id; }, authError: () => {},
-  saveProviderName: (user, name) => names.push([user.id, name]), oauthFailed: error => failures.push(error),
-  PUBLIC_AUTH: { apple_services_id: '' }, oauthRedirect: provider => routes.push(provider)
+  native: { signInWithApple: async () => ({ user: { id: 'fixture' }, fullName: 'Alex Example' }) }, sb: {}, registerAppleGrant: () => {}, toast: m => said.push(m),
+  oauthBusy: false, oauthWatchdog: null, clearTimeout: () => {}, NO_SHELL: 'no shell',
+  setOauthBusy: id => { busy = !!id; },
+  saveProviderName: (user, name) => names.push([user.id, name]), oauthFailed: error => failures.push(error)
 });
 vm.runInContext(extract('nativeAppleSignIn') + extract('appleSignIn') + '; appleSignIn()', ctx);
 await new Promise(resolve => setImmediate(resolve));
@@ -62,7 +61,10 @@ vm.runInContext('appleSignIn()', ctx);
 await new Promise(resolve => setImmediate(resolve));
 assert.equal(busy, false);
 assert.equal(failures.length, 0);
+// The page ships only inside the app (B.2): with no shell the button says where
+// it works, and nothing is opened.
 ctx.native = null;
 vm.runInContext('appleSignIn()', ctx);
-assert.deepEqual(routes, ['apple']);
-console.log('PASS Apple auth: native token/nonce exchange, first/returning name, cancellation, invalid credentials, duplicate requests, retry, shared button and web fallback.');
+assert.deepEqual(said, ['no shell']);
+assert.equal(busy, false);
+console.log('PASS Apple auth: native token/nonce exchange, first/returning name, cancellation, invalid credentials, duplicate requests, retry, shared button, and no web fallback.');
