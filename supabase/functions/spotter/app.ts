@@ -23,14 +23,14 @@ export const APP = String.raw`
   var SB_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10emV2b3h4cHNrdG1yYmJ1eHZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMjM5ODgsImV4cCI6MjEwMzc5OTk4OH0._vpNhLJtv2bVGgXXClva9O5cX8Y5eJdTgbgAO81NnmU";
   var API = SB_URL + "/functions/v1/spotter/api/";
 
-  // Public identifiers for the two sign-in providers. Neither is a secret: a Google
-  // web client id and an Apple Services id are visible to anyone who opens this page,
-  // which is why they live here and not in app_config (service-role only) or in a
-  // second file to host. Fill them in after creating the credentials — README,
-  // "Sign in with Google / Apple". Leaving one blank does not break anything: the
-  // button only appears once the provider is switched on for the Supabase project,
-  // and a blank id simply sends that button down the redirect fallback.
-  var PUBLIC_AUTH = { google_client_id: "48831784248-dh1o2fhiem9kqgs6ambnnvaba8vojrf2.apps.googleusercontent.com", apple_services_id: "" };
+  // How the email door works (B.2). emailCode: a six-digit code by mail, which
+  // makes the account when there is none; custom SMTP carries it since 25 Sept
+  // 2026. Off, the same face asks for a password, as the card did before. The
+  // password path stays either way, for the accounts that have one and for App
+  // Review. The providers need nothing here any more: both sign in through the
+  // phone's own sheet (native/apple-auth.js, native/google-auth.js), and the web
+  // app whose Google and Apple scripts needed client ids is retired.
+  var PUBLIC_AUTH = { emailCode: true };
 
   // The other half of the signup boundary, and public for the same reason: a
   // Turnstile SITE key is meant to be read off the page. Its secret twin lives in
@@ -479,45 +479,50 @@ export const APP = String.raw`
   }
 
   // ---------- auth ----------
-
-  var authMode = "signup";
+  //
+  // One card, three faces (markup.ts, #authcard): the doors (Apple, Google and
+  // email, the legal line, the creator code), the email step, and the code.
+  // "signup" is the doors' name: every door there makes an account as readily
+  // as it signs into one, so there is no "Already have an account?" any more,
+  // and the second face is "email". pwMode: the email face asks for a password
+  // (the code flag off, or asked for). pwNew: a password that signed nobody in,
+  // offered back as a new account, in words that never say whether that address
+  // already has one.
+  var authMode = "signup", pwMode = !PUBLIC_AUTH.emailCode, pwNew = false;
 
   function setAuthMode(mode) {
+    var was = authMode, mail = mode === "email";
     authMode = mode;
-    var isUp = mode === "signup";
-    $("authtitle").textContent = isUp ? "Create your account" : "Welcome back";
-    $("authgo").textContent = isUp ? "Create account" : "Sign in";
-    $("pw").setAttribute("autocomplete", isUp ? "new-password" : "current-password");
-    $("authswap").innerHTML = "";
-    $("authswap").appendChild(document.createTextNode(
-      isUp ? "Already have an account? " : "New here? "));
-    var b = el("button", null, isUp ? "Sign in" : "Create an account");
-    b.onclick = function () { setAuthMode(isUp ? "signin" : "signup"); };
-    $("authswap").appendChild(b);
-    $("forgotwrap").classList.toggle("hide", isUp);
-    // Same rule as Forgot your password, the other way round: the sentence is
-    // about creating an account, so it belongs to the face that creates one.
-    $("consent").classList.toggle("hide", !isUp);
-    // So does the creator code fold: a code is for an account being made.
-    $("authcodewrap").classList.toggle("hide", !isUp);
-    if (isUp) paintAuthCode();
+    $("doors").classList.toggle("hide", mail);
+    $("mailface").classList.toggle("hide", !mail);
+    if (mail) paintMail(); else paintAuthCode();
+    if (was !== mode) faceIn($(mail ? "mailface" : "doors"), mail ? 24 : -24);
+  }
+
+  // A face arrives from the side it is on: the email step from the right, the
+  // doors from the left on the way back, a push and a pop.
+  function faceIn(n, fx) {
+    n.style.setProperty("--fx", fx + "px");
+    n.classList.remove("facein");
+    void n.offsetWidth;
+    n.classList.add("facein");
+  }
+
+  // The email face as it stands: one field or two, and a button that says what
+  // it will do.
+  function paintMail() {
+    $("pwfield").classList.toggle("hide", !pwMode);
+    $("authgo").textContent = pwNew ? "Create an account with this email" : "Continue";
+    $("pw").setAttribute("autocomplete", pwNew ? "new-password" : "current-password");
+    $("pwswap").textContent = pwMode ? "Email me a code instead" : "Use a password instead";
+    $("pwswap").classList.toggle("hide", pwMode && !PUBLIC_AUTH.emailCode);
   }
 
   function authError(msg) {
     var e = $("autherr");
-    e.classList.remove("ok");
     if (!msg) { e.classList.remove("show"); return; }
     e.textContent = msg;
     e.classList.add("show");
-  }
-
-  // The same box, carrying good news: a reset link on its way, or an account that
-  // is gone. Two sentences do not earn a second element.
-  function authOK(msg) {
-    var e = $("autherr");
-    e.textContent = msg;
-    e.classList.add("show");
-    e.classList.add("ok");
   }
 
   // gotrue writes for a log ("AuthApiError: User already registered"); the person
@@ -531,16 +536,14 @@ export const APP = String.raw`
     // A six-digit code that is wrong and one that has been used read the same to
     // gotrue ("Token has expired or is invalid"), and they read the same here.
     if (/token|otp/i.test(m)) return "That code is wrong or has expired. Ask for a new one.";
-    if (/already regist/i.test(m)) return "That email already has an account — sign in instead.";
+    if (/already regist/i.test(m)) return "That email already has an account. Check the password, or tap Forgot password.";
     if (/invalid login|invalid.*credential/i.test(m)) return "Wrong email or password.";
     if (/rate limit|too many|for security purposes/i.test(m)) return "Too many tries. Give it a minute.";
-    if (/confirm/i.test(m)) return "Check your email to confirm your account, then sign in.";
+    if (/confirm/i.test(m)) return "Check your email for the code, then try again.";
     if (/network|fetch|failed to fetch/i.test(m)) return "Could not reach Spotter — check your connection.";
     if (/password/i.test(m) && /weak|short|least|6 char/i.test(m)) return "Use at least 8 characters.";
     if (/email/i.test(m) && /invalid|valid/i.test(m)) return "That email address does not look right.";
-    return authMode === "signup"
-      ? "Could not create your account. Try again in a moment."
-      : "Could not sign you in. Try again in a moment.";
+    return "Could not sign you in. Try again in a moment.";
   }
 
   // AI permission is separate from account creation and is checked before any
@@ -556,13 +559,16 @@ export const APP = String.raw`
     var a = el("a", null, text); a.href = href; return a;
   }
 
+  // The one sentence App Store 5.1.2(i) asks for, written once: the front door
+  // opens it with "By continuing you agree to the", Settings with the words for
+  // an account that already exists.
   function consentFill(node, opening) {
     node.innerHTML = "";
     node.appendChild(document.createTextNode(opening));
     node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/terms/", "Terms"));
-    node.appendChild(document.createTextNode(". AI processing is optional; Spotter asks for permission before using it. "));
-    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy policy"));
-    node.appendChild(document.createTextNode("."));
+    node.appendChild(document.createTextNode(" and "));
+    node.appendChild(consentLink("https://quarterdeckcollective.com/spotter/privacy/", "Privacy Policy"));
+    node.appendChild(document.createTextNode(". Spotter asks before it uses AI on your videos."));
   }
 
   function consentAt() {
@@ -711,71 +717,80 @@ export const APP = String.raw`
     return opts;
   }
 
+  // The code Supabase mails, and the account it makes when there is none: the
+  // one call behind Continue and behind Send a new code.
+  function sendCode(email, tok) {
+    return sb.auth.signInWithOtp({ email: email,
+      options: withCap({ shouldCreateUser: true, emailRedirectTo: AUTH_RETURN }, tok) });
+  }
+
   function doAuth() {
-    var email = $("email").value.trim();
-    var pw = $("pw").value;
+    var email = $("email").value.trim(), pw = $("pw").value, btn = $("authgo"), code = !pwMode, make = pwNew;
     authError("");
-    if (!email || !pw) { authError("Enter your email and a password."); return; }
-    if (authMode === "signup" && pw.length < 8) {
-      authError("Use at least 8 characters."); return;
-    }
-    // Optional, but never silently dropped: a code that is not a code is said
-    // so here, where the field can be emptied, rather than lost after sign-up.
-    if (authMode === "signup" && $("authcode").value.trim() && !creatorCode($("authcode").value)) {
-      authError(creatorSays("bad_code")); return;
-    }
-    var btn = $("authgo");
-    var mode = authMode;
+    if (email.indexOf("@") < 1) { authError("Type your email address."); $("email").focus(); return; }
+    if (!code && !pw) { authError("Type your password."); $("pw").focus(); return; }
+    if (make && pw.length < 8) { authError("Use at least 8 characters for a new account."); return; }
     btn.disabled = true;
-    btn.textContent = mode === "signup" ? "Creating…" : "Signing in…";
-    function idle() { btn.disabled = false; setAuthMode(authMode); }
+    btn.textContent = code ? "Sending…" : make ? "Creating…" : "Signing in…";
+    function idle() { btn.disabled = false; paintMail(); }
     capToken().then(function (tok) {
-      if (mode === "signup") {
-        return sb.auth.signUp({ email: email, password: pw,
-          options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
-      }
+      if (code) return sendCode(email, tok);
+      if (make) return sb.auth.signUp({ email: email, password: pw, options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
       var args = { email: email, password: pw };
       if (tok) args.options = { captchaToken: tok };
       return sb.auth.signInWithPassword(args);
     }).then(function (r) {
+      var m = r.error ? String(r.error.message || r.error) : "";
       idle();
-      if (r.error) {
-        // An account that exists but was never confirmed is not a wrong password,
-        // and the one thing it needs is the resend button, not a red box.
-        if (/not confirmed/i.test(r.error.message)) { mailSent(email); return; }
-        authError(authMessage(r.error.message));
+      // An account that exists but was never confirmed is not a wrong password:
+      // what it needs is its code, not a red box.
+      if (/not confirmed/i.test(m)) { mailSent(email, "signup"); return; }
+      // A wrong password and an address with no account read the same to gotrue,
+      // and they read the same here: the way on is offered, the answer is not.
+      if (!code && !make && /invalid login|invalid.*credential/i.test(m)) {
+        pwNew = true;
+        paintMail();
+        authError("That email and password didn’t sign you in. New to Spotter? Create an account with them.");
         return;
       }
-      // The button that was just pressed carried the sentence above it, so this
-      // is the agreement. It is written once there is a profile row to write it
-      // on, which is after boot.
-      // Confirmations on: signUp answers with a user and no session. gotrue
-      // answers exactly the same way for an address that already has an account,
-      // and that is right — this form must not be a way to ask which addresses
-      // are registered.
-      if (!r.data.session) mailSent(email);
+      if (m) { authError(authMessage(m)); return; }
+      // A code on its way; or confirmations on, where signUp answers with a user
+      // and no session — exactly as it does for an address that already has an
+      // account, which is right: this card is not a way to ask who is registered.
+      if (code || !r.data.session) mailSent(email, code ? "email" : "signup");
     }).catch(function (e) {
       idle();
       authError(authMessage(e && e.message ? e.message : e));
     });
   }
 
+  // A creator code typed at the door is said to be wrong at the door, where it
+  // can be fixed, rather than lost once the account is made.
+  function codeBad() {
+    var raw = $("authcode").value.trim();
+    if (!raw || creatorCode(raw)) return false;
+    toast(creatorSays("bad_code"));
+    return true;
+  }
+
   // ---------- check your email ----------
   //
   // Apple's own account sheets answer three things at this moment and so does
-  // this one: what was sent, which address it went to, and what to do when it
-  // does not arrive. The resend sits behind a countdown because gotrue's
-  // max_frequency refuses a second send inside a minute anyway, and a button that
-  // fails for a reason nobody explained is worse than a button that says wait.
+  // this face: what was sent, which address it went to, and what to do when it
+  // does not arrive. Send a new code waits a minute, because gotrue's
+  // max_frequency refuses a second send inside one anyway, and a button that
+  // fails for a reason nobody explained is worse than one that says wait.
+  // mailType is the kind of code, as verifyOtp names it: "email" (a sign-in, or
+  // the account it made), "signup" (a confirmation) or "recovery".
   var mailAddr = null;
-  var mailType = "signup";
+  var mailType = "email";
   var mailLeft = 0;
   var mailTick = null;
 
   function mailLabel() {
     var b = $("mailresend");
     b.disabled = mailLeft > 0;
-    b.textContent = mailLeft > 0 ? "Resend in " + mailLeft + "s" : "Resend the email";
+    b.textContent = mailLeft > 0 ? "Send a new code in " + mailLeft + "s" : "Send a new code";
   }
 
   function mailCount(secs) {
@@ -792,17 +807,15 @@ export const APP = String.raw`
 
   function mailSent(email, type) {
     mailAddr = email;
-    mailType = type === "recovery" ? "recovery" : "signup";
+    mailType = type;
     var p = $("mailbody");
     p.innerHTML = "";
-    // Recovery keeps the sentence that promises nothing: whether that address has
-    // an account is not a question this form is allowed to answer.
-    p.appendChild(document.createTextNode(mailType === "recovery"
-      ? "If that address has an account, a reset link and a six-digit code are on their way to "
-      : "We sent a confirmation link and a six-digit code to "));
+    // A reset promises nothing: whether that address has an account is not a
+    // question this card answers.
+    p.appendChild(document.createTextNode(type === "recovery"
+      ? "If that address has an account, a six-digit code is on its way to " : "We sent a six-digit code to "));
     p.appendChild(el("b", null, email));
-    p.appendChild(document.createTextNode(". Tap the link, or type the code in below. It can " +
-      "take a minute, and it is worth a look in spam."));
+    p.appendChild(document.createTextNode(". It can take a minute, and it is worth a look in spam."));
     $("otp").value = "";
     otpError("");
     $("mailsent").classList.remove("hide");
@@ -814,12 +827,10 @@ export const APP = String.raw`
 
   // ---------- the six-digit code ----------
   //
-  // The confirmation link signs a person in wherever it opens, which on a phone
-  // is the browser and not this app. A code is the way out of that: it is typed
-  // into the session that asked for it, so the account lands where the person is
-  // standing. The link still works untouched for anyone reading the mail on a
-  // desktop. gotrue puts the code in the template as {{ .Token }} — README,
-  // "Self-hosting", item 8.
+  // Typed into the session that asked for it, so the account lands where the
+  // person is standing; the link in the same mail opens the retired web page, so
+  // in the app the code is the way. gotrue puts it in the template as
+  // {{ .Token }}.
   function otpError(msg) {
     var e = $("otperr");
     e.textContent = msg || "";
@@ -838,7 +849,7 @@ export const APP = String.raw`
     b.disabled = true;
     b.textContent = "Checking…";
     otpError("");
-    function idle() { b.disabled = false; b.textContent = "Confirm"; }
+    function idle() { b.disabled = false; b.textContent = "Continue"; }
     capToken().then(function (tok) {
       var args = { email: mailAddr, token: code, type: mailType };
       if (tok) args.options = { captchaToken: tok };
@@ -858,22 +869,32 @@ export const APP = String.raw`
     });
   }
 
-  function mailClose() {
+  // The code face closes. With keep it goes back to the email step; without, the
+  // whole card starts again at the doors (showLanding's use: whoever signs in
+  // next is not the person who was told to check an inbox), and every field goes
+  // with it, since a code or a password left in one is readable by the next
+  // person holding this phone.
+  function mailClose(keep) {
     clearInterval(mailTick);
     mailAddr = null;
-    // A code left in a field is a code the next person at this browser can read.
     $("otp").value = "";
     otpError("");
     $("mailsent").classList.add("hide");
     $("authcard").classList.remove("sent");
+    if (keep) return;
+    $("pw").value = "";
+    pwNew = false;
+    pwMode = !PUBLIC_AUTH.emailCode;
+    authError("");
+    setAuthMode("signup");
   }
 
   function mailBack() {
-    mailClose();
+    mailClose(true);
     authError("");
-    setAuthMode("signup");
-    $("email").value = "";
+    faceIn($("mailface"), -24);
     $("email").focus();
+    $("email").select();
   }
 
   function mailResend() {
@@ -882,12 +903,12 @@ export const APP = String.raw`
     b.disabled = true;
     b.textContent = "Sending…";
     capToken().then(function (tok) {
-      // Two different endpoints send the two mails, and resend only knows about
-      // the confirmation one; asking for a reset again is asking for a reset.
-      return mailType === "recovery"
-        ? sb.auth.resetPasswordForEmail(mailAddr, withCap({ redirectTo: AUTH_RETURN }, tok))
-        : sb.auth.resend({ type: "signup", email: mailAddr,
-            options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
+      // Each code is asked for again the way it was asked for: a sign-in code by
+      // the same call, a reset as a reset, and a confirmation by resend, which
+      // knows about nothing else.
+      return mailType === "email" ? sendCode(mailAddr, tok)
+        : mailType === "recovery" ? sb.auth.resetPasswordForEmail(mailAddr, withCap({ redirectTo: AUTH_RETURN }, tok))
+        : sb.auth.resend({ type: "signup", email: mailAddr, options: withCap({ emailRedirectTo: AUTH_RETURN }, tok) });
     }).then(function (r) {
       mailCount(60);
       if (r && r.error) { toast(authMessage(r.error.message)); return; }
@@ -898,47 +919,21 @@ export const APP = String.raw`
     });
   }
 
-  // Coming back on a link that is spent. gotrue answers an expired link and an
-  // already-used one identically — the token is consumed either way — so one
-  // sentence covers both, and it is a sentence rather than the error_description
-  // gotrue wrote for a log. Only the error case is touched: a good link still
-  // carries its session past here untouched.
-  function linkProblem() {
-    var q = location.hash.indexOf("error") > 0 ? location.hash.slice(1) : location.search.slice(1);
-    if (q.indexOf("error") < 0) return;
-    var p;
-    try { p = new URLSearchParams(q); } catch (e) { return; }
-    var code = p.get("error_code") || p.get("error") || "";
-    if (!code) return;
-    try { history.replaceState(null, "", location.pathname); } catch (e) { /* ignore */ }
-    if (state.user) return;
-    authError((/expired|invalid|denied/i.test(code)
-      ? "That link has expired or was already used."
-      : "That link could not be opened.") + " Sign in below, or ask for a new one.");
-  }
-
   // ---------- provider sign-in (Google / Apple) ----------
   //
-  // Token flow, not redirect flow. An installed PWA on iOS runs in its own window,
-  // and a full-page navigation out to accounts.google.com leaves it — the person
-  // finishes in Safari, where the session lands in storage the PWA cannot read, and
-  // comes back to a signed-out home screen icon. Both providers below hand us an
-  // OpenID id_token inside the page we are already in, and signInWithIdToken turns
-  // that into a session with no navigation at all. signInWithOAuth is kept as the
-  // fallback for the cases the token flow cannot cover: the provider script blocked
-  // or missing, One Tap declining to show, or no public client id configured yet.
-  //
-  // Nonce: gotrue compares sha256hex(the nonce we send it) against the id_token's
-  // nonce claim, so the provider must have put that hash in the token. Google copies
-  // the value through untouched; Apple's JS SDK hashes it on the way out. We hand
-  // both providers the hashed value and then read the claim back off the token to
-  // decide which of our two values to forward — correct either way, one prompt.
-
-  var GIS_SRC = "https://accounts.google.com/gsi/client";
-  var APPLEID_SRC = "https://appleid.cdn-apple.com/appleauth/static/jsapi/appleid/1/en_US/appleid.auth.js";
+  // Both through the phone's own sheet: Google's in the system web session with
+  // PKCE (native/google-auth.js), Apple's in the Sign in with Apple sheet
+  // (native/apple-auth.js), which also hands Apple's grant to the server so that
+  // deleting the account revokes it (registerAppleGrant, apple-auth.ts). The web
+  // app's in-page token flows — Google's script, Apple's pop-up, the nonce
+  // juggling between them and the redirect behind both — went with the web app
+  // (B.2). loadScript stays for Turnstile.
   var SCRIPT_WAIT = 8000;
 
-  var authProviders = null;
+  // What the project has switched on (auth/v1/settings), answered before it is
+  // asked: both are on, so both are drawn with the page rather than popping in
+  // under a thumb, and a project that turns one off hides it on the next read.
+  var authProviders = { google: true, apple: true };
   var oauthBusy = false;
   var oaLabels = {};
   var scriptOnce = {};
@@ -972,61 +967,10 @@ export const APP = String.raw`
     scriptOnce[src] = p;
     return p;
   }
-
-  function randomNonce() {
-    var b = new Uint8Array(32);
-    window.crypto.getRandomValues(b);
-    var raw = "";
-    for (var i = 0; i < b.length; i++) raw += String.fromCharCode(b[i]);
-    return btoa(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  }
-
-  function sha256Hex(str) {
-    return window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(str))
-      .then(function (buf) {
-        var out = "";
-        var view = new Uint8Array(buf);
-        for (var i = 0; i < view.length; i++) out += ("0" + view[i].toString(16)).slice(-2);
-        return out;
-      });
-  }
-
-  // Read-only peek at the payload. Nothing here is trusted — the token is verified
-  // by gotrue against the provider's keys; we only need to know which nonce it holds.
-  function tokenNonce(jwt) {
-    try {
-      var part = String(jwt).split(".")[1];
-      if (!part) return null;
-      part = part.replace(/-/g, "+").replace(/_/g, "/");
-      while (part.length % 4) part += "=";
-      var body = JSON.parse(atob(part));
-      return body && body.nonce ? String(body.nonce) : null;
-    } catch (e) { return null; }
-  }
-
-  function nonceToSend(idToken, raw, hashed) {
-    var claim = tokenNonce(idToken);
-    // No nonce in the token means the provider dropped it; gotrue rejects the pair
-    // unless we drop it too.
-    if (!claim) return null;
-    // Claim is our hashed value: the provider copied it through, so gotrue needs the
-    // value that hashes to it. Otherwise the provider hashed ours, and gotrue needs
-    // the value we handed over.
-    return claim === hashed ? raw : hashed;
-  }
-
-  function isAppleDevice() {
-    var ua = navigator.userAgent || "";
-    // iPadOS reports itself as a Mac; both are Apple hardware, so both take the
-    // Apple-first order anyway.
-    return /iPhone|iPad|iPod|Macintosh|Mac OS X/i.test(ua);
-  }
-
   function oaLabelOf(id) {
     if (!oaLabels[id]) oaLabels[id] = $(id).querySelector(".oalabel").textContent;
     return oaLabels[id];
   }
-
   function setOauthBusy(id) {
     ["oagoogle", "oaapple"].forEach(function (b) {
       var node = $(b);
@@ -1035,13 +979,11 @@ export const APP = String.raw`
       node.querySelector(".oalabel").textContent = b === id ? "Opening…" : oaLabelOf(b);
     });
     oauthBusy = !!id;
-    // Both provider UIs are somebody else's window, and neither is guaranteed to
-    // tell us it went away — a blocked pop-up, a FedCM sheet closed in a way that
-    // fires no moment. Without this, one of those leaves the buttons disabled until
-    // the page is reloaded. Long enough that it never interrupts a real sign-in.
+    // The sheet is the phone's, and a sheet that never reports back must not
+    // leave both buttons disabled until the app is restarted.
     clearTimeout(oauthWatchdog);
     if (id) oauthWatchdog = setTimeout(function () {
-      setOauthBusy(null); authError("Sign-in did not open. Try again, or use email while we reconnect.");
+      setOauthBusy(null); toast("Sign-in did not open. Try again, or continue with email.");
     }, 30000);
   }
 
@@ -1049,43 +991,13 @@ export const APP = String.raw`
     var m = e && e.message ? String(e.message) : String(e || "");
     if (/not enabled|unsupported provider/i.test(m)) return "That sign-in method is not switched on yet.";
     if (/nonce/i.test(m)) return "That sign-in took too long — try again.";
-    if (/popup|blocked/i.test(m)) return "Allow pop-ups for Spotter, then try again.";
     // What the provider said is for the console.
-    return "That sign-in did not work. Try again, or use your email and password.";
+    return "That sign-in did not work. Try again, or continue with email.";
   }
 
   function oauthFailed(e) {
     setOauthBusy(null);
     toast(oauthMessage(e));
-  }
-
-  // Whole-page handover to the provider and back. Only used when the in-page token
-  // flow is not available.
-  function oauthRedirect(provider) {
-    sb.auth.signInWithOAuth({
-      provider: provider,
-      options: { redirectTo: AUTH_RETURN }
-    }).then(function (r) {
-      if (r && r.error) oauthFailed(r.error);
-      // On success the browser is already navigating; leave the button busy.
-    }).catch(oauthFailed);
-  }
-
-  function finishIdToken(provider, idToken, raw, hashed, fullName) {
-    var args = { provider: provider, token: idToken };
-    var n = nonceToSend(idToken, raw, hashed);
-    if (n) args.nonce = n;
-    sb.auth.signInWithIdToken(args).then(function (r) {
-      setOauthBusy(null);
-      if (r.error) { oauthFailed(r.error); return; }
-      // onAuthStateChange has already swapped the view. The name write below is
-      // deliberately on the next tick: supabase-js holds the auth lock across that
-      // callback and a query started inside it deadlocks.
-      if (fullName && r.data && r.data.user) {
-        var u = r.data.user;
-        setTimeout(function () { saveProviderName(u, fullName); }, 0);
-      }
-    }).catch(oauthFailed);
   }
 
   // Apple hands over the person's name on the FIRST authorization only and never
@@ -1102,7 +1014,6 @@ export const APP = String.raw`
         if (r && !r.error && state.profile) state.profile.display_name = fullName;
       }, function () {});
   }
-
   // The system authentication sheet returns a one-use code to this app. The
   // verifier stays in native auth storage and Supabase validates the exchange.
   function nativeGoogleSignIn() {
@@ -1116,61 +1027,15 @@ export const APP = String.raw`
       oauthFailed(e);
     });
   }
+  // No shell, no sheet to open: the page works only inside the app now, so a
+  // desktop browser or the review lab is told where these two doors lead.
+  var NO_SHELL = "Apple and Google sign-in open in the Spotter app on your phone.";
 
   function googleSignIn() {
     if (oauthBusy) return;
+    if (!native) { toast(NO_SHELL); return; }
     setOauthBusy("oagoogle");
-    authError("");
-    if (native) { nativeGoogleSignIn(); return; }
-    if (!PUBLIC_AUTH.google_client_id) { oauthRedirect("google"); return; }
-    var raw = randomNonce();
-    var hashed = null;
-    var handed = false;
-    sha256Hex(raw).then(function (h) {
-      hashed = h;
-      return loadScript(GIS_SRC);
-    }).then(function () {
-      var gid = window.google && window.google.accounts && window.google.accounts.id;
-      if (!gid) throw new Error("script blocked");
-      gid.initialize({
-        client_id: PUBLIC_AUTH.google_client_id,
-        nonce: hashed,
-        context: "signin",
-        auto_select: false,
-        itp_support: true,
-        callback: function (resp) {
-          handed = true;
-          if (!resp || !resp.credential) { oauthRedirect("google"); return; }
-          finishIdToken("google", resp.credential, raw, hashed, null);
-        }
-      });
-      gid.prompt(function (note) {
-        if (handed) return;
-        var type = null;
-        try { type = note && note.getMomentType ? note.getMomentType() : null; } catch (e) { type = null; }
-        // FedCM is always on now, and it took isNotDisplayed/getNotDisplayedReason
-        // with it; getMomentType and getDismissedReason are what is left.
-        if (type === "skipped" || (note && note.isNotDisplayed && note.isNotDisplayed())) {
-          // No Google session in this browser, or One Tap suppressed. The whole-page
-          // flow can still sign this person in, so send them there.
-          handed = true;
-          oauthRedirect("google");
-          return;
-        }
-        if (type === "dismissed") {
-          var why = null;
-          try { why = note && note.getDismissedReason ? note.getDismissedReason() : null; } catch (e) { why = null; }
-          // credential_returned arrives in the callback above. Anything else is the
-          // person closing the sheet, and bouncing them to a redirect they did not
-          // ask for would be rude.
-          if (why !== "credential_returned") { handed = true; setOauthBusy(null); }
-        }
-      });
-    }).catch(function () {
-      if (handed) return;
-      handed = true;
-      oauthRedirect("google");
-    });
+    nativeGoogleSignIn();
   }
 
   function registerAppleGrant(code, session) {
@@ -1185,7 +1050,6 @@ export const APP = String.raw`
       });
     }, 25000);
   }
-
   function nativeAppleSignIn() {
     clearTimeout(oauthWatchdog);
     native.signInWithApple(sb, registerAppleGrant).then(function (result) {
@@ -1199,86 +1063,34 @@ export const APP = String.raw`
       oauthFailed(e);
     });
   }
-
   function appleSignIn() {
     if (oauthBusy) return;
+    if (!native) { toast(NO_SHELL); return; }
     setOauthBusy("oaapple");
-    authError("");
-    if (native) { nativeAppleSignIn(); return; }
-    if (!PUBLIC_AUTH.apple_services_id) { oauthRedirect("apple"); return; }
-    var raw = randomNonce();
-    var hashed = null;
-    var ready = false;
-    sha256Hex(raw).then(function (h) {
-      hashed = h;
-      return loadScript(APPLEID_SRC);
-    }).then(function () {
-      if (!window.AppleID || !window.AppleID.auth) throw new Error("script blocked");
-      ready = true;
-      window.AppleID.auth.init({
-        clientId: PUBLIC_AUTH.apple_services_id,
-        scope: "name email",
-        // With usePopup the result comes back by postMessage to this window, so the
-        // redirect URI has to be this page's own origin — and that origin has to be
-        // registered against the Services ID. README has the exact values.
-        redirectURI: AUTH_RETURN,
-        usePopup: true,
-        nonce: hashed
-      });
-      return window.AppleID.auth.signIn();
-    }).then(function (res) {
-      var tok = res && res.authorization ? res.authorization.id_token : null;
-      if (!tok) throw new Error("Apple did not return a token.");
-      var name = null;
-      if (res.user && res.user.name) {
-        var parts = [res.user.name.firstName, res.user.name.middleName, res.user.name.lastName];
-        name = parts.filter(Boolean).join(" ").trim() || null;
-      }
-      finishIdToken("apple", tok, raw, hashed, name);
-    }).catch(function (e) {
-      // Before the script is up this is a load failure and the whole-page flow is
-      // the right answer. After it, the person was in Apple's sheet: a cancel is a
-      // cancel, and any other failure is worth saying out loud rather than silently
-      // starting a second, different sign-in.
-      if (!ready) { oauthRedirect("apple"); return; }
-      var code = e && e.error ? String(e.error) : String((e && e.message) || e || "");
-      if (/popup_closed|user_cancelled|user_trigger_new_signin_flow/i.test(code)) {
-        setOauthBusy(null);
-        return;
-      }
-      oauthFailed(e);
-    });
+    nativeAppleSignIn();
   }
 
-  // Which buttons exist is the project's answer, not ours: auth/v1/settings lists
-  // every provider switched on for this Supabase project. Fetched once, cached in
-  // memory; if the fetch fails we show neither button rather than a button that
-  // cannot work.
+  // Which buttons exist is the project's answer: auth/v1/settings lists every
+  // provider switched on. A read that fails keeps what the page assumed.
   function loadAuthProviders() {
     return fetch(SB_URL + "/auth/v1/settings", { headers: { apikey: SB_ANON } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
-        authProviders = j && j.external ? j.external : null;
+        if (j && j.external) authProviders = j.external;
         renderAuthProviders();
       })
-      .catch(function () { authProviders = null; });
+      .catch(function () {});
   }
 
   function renderAuthProviders() {
     var wrap = $("oauthwrap");
     if (!wrap) return;
     var hasGoogle = !!(authProviders && authProviders.google);
-    var hasApple = !!(authProviders && authProviders.apple) &&
-      (native ? native.platform === "ios" : !!PUBLIC_AUTH.apple_services_id);
+    // Apple's sheet is an iPhone's; Android has Google and email, as before.
+    var hasApple = !!(authProviders && authProviders.apple) && !!native && native.platform === "ios";
     $("oagoogle").classList.toggle("hide", !hasGoogle);
     $("oaapple").classList.toggle("hide", !hasApple);
     wrap.classList.toggle("hide", !(hasGoogle || hasApple));
-    // Apple's guidance is that its button is no less prominent than the others, and
-    // on Apple hardware that is the one people reach for first.
-    if (hasApple && isAppleDevice()) {
-      var box = $("oauthbtns");
-      box.insertBefore($("oaapple"), box.firstChild);
-    }
   }
 
   // Reads "google" / "apple" / "email" off the session for the settings sheet.
@@ -1294,14 +1106,239 @@ export const APP = String.raw`
   }
 
 
-  // ---------- the front door (seams, B.2; built by b2-door) ----------
+  // ---------- the first minute (B.2) ----------
   //
-  // introCheck: a new account (no workouts, no settings.intent) is asked two
-  // questions once — what for, and where — and can skip both. firstPlanMoment:
-  // the first plan a person ever makes offers reminders on training days, a
-  // single-button ask before the system's own.
-  function introCheck() {}
-  function firstPlanMoment() {}
+  // introCheck, at the end of every boot: a workout done before there was an
+  // account lands in this one, and a new account (no workouts, no
+  // settings.intent) is asked two things once — what for, and where — and can
+  // skip both. Nothing else is asked up front: notifications, AI permission and
+  // Health are each asked at the moment they are for (Duolingo asks one
+  // motivation question and saves the rest for after the first lesson; Fitbod's
+  // first two questions are these, goal and equipment).
+  function introCheck() {
+    guestLanded();
+    introAsk();
+  }
+
+  // introLater: the question waits for the workout or the sheet on screen, and
+  // is asked as that closes (sessionChanged, closeSheet).
+  var intro = null, introLater = false;
+
+  function introAsk() {
+    var s = state.profile && (state.profile.settings || {});
+    introLater = false;
+    if (!s || s.intent || !state.libReady || state.workouts.length) return;
+    if ($("workout").classList.contains("open") || document.querySelector(".sheet.open")) { introLater = true; return; }
+    intro = {};
+    // Asked is answered: shown once, so a skip, a drag away or a killed app all
+    // leave the same {skipped} behind, and Continue writes over it.
+    introSave({ skipped: true, at: new Date().toISOString() });
+    $("introlift").value = "";
+    introPaint();
+    openSheet("introsheet");
+  }
+
+  // b: a chip just tapped. One answer a question, and a second tap on the lit
+  // one takes it back, because both questions are optional.
+  function introPaint(b) {
+    var k = b && b.parentNode.getAttribute("data-k"), f = $("introliftf");
+    if (k) { intro[k] = intro[k] === b.getAttribute("data-v") ? null : b.getAttribute("data-v"); haptic("select"); }
+    Array.prototype.forEach.call($("introsheet").querySelectorAll("[data-v]"), function (c) {
+      var on = intro[c.parentNode.getAttribute("data-k")] === c.getAttribute("data-v");
+      c.classList.toggle("active", on);
+      c.setAttribute("aria-checked", on);
+    });
+    if (intro.aim === "strength" && f.classList.contains("hide")) viewIn(f);
+    f.classList.toggle("hide", intro.aim !== "strength");
+    $("introgo").disabled = !intro.aim && !intro.where;
+  }
+
+  function introDone() {
+    introSave({ aim: intro.aim || null, where: intro.where || null, at: new Date().toISOString(),
+      lift: intro.aim === "strength" ? parseLiftText($("introlift").value, state.unit) : null });
+    closeSheet("introsheet");
+    // Train's first card offers the starter that matches where they train.
+    daySig = "";
+    drawDay();
+  }
+
+  // Merged into the column and written whole, as every setting is.
+  function introSave(v) {
+    state.profile.settings = Object.assign({}, state.profile.settings, { intent: v });
+    saveSettings();
+  }
+
+  // ---------- a workout before an account ----------
+  //
+  // "Try a workout first" runs a Spotter Starter with nobody signed in (Apple:
+  // put sign-in off until it is needed; 5.1.1(v): a sample workout is not an
+  // account feature). Nothing in it asks the server anything as anybody. The
+  // finished session waits on this phone, and the first sign-in here puts it in
+  // that account as the ordinary log row it would have been.
+  var GUEST_KEY = "spotter.guest.session";
+
+  function guestKeep(p) {
+    // An id of its own, so a retry after a lost answer is refused as a
+    // duplicate rather than saved twice.
+    if (!p.id && window.crypto && crypto.randomUUID) p.id = crypto.randomUUID();
+    try { localStorage.setItem(GUEST_KEY, JSON.stringify(p)); } catch (e) { /* private mode: kept for this visit only */ }
+  }
+
+  function guestLanded() {
+    var g = null, epoch = accountEpoch, uid = state.user && state.user.id;
+    // The sheet that asked them to keep it has been answered.
+    if (askKeep) closeSheet("asksheet");
+    try { g = JSON.parse(localStorage.getItem(GUEST_KEY)); } catch (e) { /* none */ }
+    if (!g || !uid) return;
+    g.user_id = uid;
+    sb.from("workout_logs").insert(g).then(function (r) {
+      // Anything but a copy already there waits for the next sign-in to try again.
+      if (!accountNow(epoch, uid) || (r.error && r.error.code !== "23505")) return;
+      localStorage.removeItem(GUEST_KEY);
+      invalidateLogs();
+      quietly(loadLogs().then(function (logs) {
+        toast(logs.length > 1 ? "Saved your workout" : "Saved your first workout");
+        publishSummary();
+        if (drawn.train) renderTrain();
+      }));
+    });
+  }
+
+  // ---------- Spotter Starters: the picker, running one, keeping one ----------
+  //
+  // A row says how long and what it takes, which is what choosing a first
+  // workout turns on; the art is Pumpy's own, one drawing a starter.
+  var STARTER_NEED = { bodyweight: "No equipment", dumbbells: "One pair of dumbbells", gym: "Barbell, bench and machines" };
+  var STARTER_ART = { bodyweight: "bear-crawl", dumbbells: "dumbbell-lunge", gym: "barbell-squat" };
+
+  // The picker row's shape: something to recognise, a name, one line.
+  function rowBtn(lead, title, line, fn) {
+    var b = el("button", "pickrow"), t = el("span", "pt");
+    b.appendChild(lead);
+    t.appendChild(el("b", null, title));
+    t.appendChild(el("span", null, line));
+    b.appendChild(t);
+    b.onclick = fn;
+    return b;
+  }
+
+  function openStarters() {
+    loadStarters().then(function (list) {
+      var box = el("div", "mlist");
+      if (!list.length) { toast("Could not open the starters. Try again in a moment."); return; }
+      list.forEach(function (s) {
+        var row = box.appendChild(el("div", "strow")), img = el("img"), k;
+        img.alt = "";
+        img.src = cardArt({ kind: "starter", starter: s.key });
+        // Workout Mode opens first and the sheet closes behind it, on the one
+        // history entry, as every sheet hands over (askPaused).
+        row.appendChild(rowBtn(img, s.title, s.minutes + " min · " + STARTER_NEED[s.key], function () {
+          runStarter(s);
+          closeSheet("asksheet");
+        }));
+        if (!state.user) return;
+        k = row.appendChild(el("button", "chip", starterKept(s.key) ? "Kept" : "Keep"));
+        k.disabled = !!starterKept(s.key);
+        k.setAttribute("aria-label", "Keep " + s.title + " in Workouts");
+        k.onclick = function () { keepStarter(s, k); };
+      });
+      askSheet(null, "Try a workout", state.user ? "Three to do now, no video needed. Keep one and it stays in Workouts."
+        : "No account needed. Pick one and go.", box);
+    });
+  }
+
+  // A starter kept to Workouts is a workout like any other from then on, so it
+  // runs as that card and its sessions count on it.
+  function starterKept(key) {
+    return state.workouts.filter(function (w) { return w.shortcode === "starter-" + key; })[0] || null;
+  }
+
+  function runStarter(s) { startWorkout(starterKept(s.key) || starterCard(s)); }
+
+  function keepStarter(s, b) {
+    var epoch = accountEpoch, uid = state.user.id, was = b.textContent;
+    b.disabled = true;
+    b.textContent = "Keeping…";
+    api("starters/keep", { method: "POST", body: JSON.stringify({ key: s.key }) }).then(function (r) {
+      if (!r || !r.workout) throw r;
+      if (!accountNow(epoch, uid)) return;
+      if (!srcById(r.workout.id)) { libraryRev++; state.workouts.unshift(r.workout); render(); }
+      b.textContent = "Kept";
+      haptic("success");
+      toast(s.title + " is in Workouts.");
+    }).catch(function (e) {
+      b.disabled = false;
+      b.textContent = was;
+      toast((e && e.message) || "Could not keep it just now. Try again in a moment.");
+    });
+  }
+
+  // The recap after a starter, signed in: keep it for next time. (A guest is
+  // asked to keep the session itself, keepAsk.)
+  function sumKeep(w) {
+    if (w.kind !== "starter" || w.id || !state.user || starterKept(w.starter)) return null;
+    var box = el("div", "reader-offer"), b;
+    box.appendChild(el("b", null, "Do it again anytime"));
+    box.appendChild(el("p", null, "Keep " + w.title + " in Workouts, with the videos you save."));
+    b = box.appendChild(el("button", "btn ghost", "Keep in Workouts"));
+    b.onclick = function () { keepStarter({ key: w.starter, title: w.title }, b); };
+    return box;
+  }
+
+  // ---------- one question, one answer ----------
+  //
+  // askSheet: maybe a drawing, a question, what to press, and Not now. The
+  // guest's copy borrows the landing's own three buttons (keepAsk), so there is
+  // one set of doors, and closeSheet gives them back (doorsHome).
+  var askKeep = false;
+
+  function askSheet(art, title, lede, body) {
+    doorsHome();
+    $("askart").innerHTML = "";
+    if (art) $("askart").appendChild(pumpyArt(art, false));
+    $("asktitle").textContent = title;
+    $("asklede").textContent = lede;
+    $("askbody").innerHTML = "";
+    $("askbody").appendChild(body);
+    openSheet("asksheet");
+  }
+
+  function keepAsk() {
+    askSheet("proud", "Keep this workout?", "Continue with Apple, Google or email and it goes in your history. Until then it’s on this phone.", $("doorbtns"));
+    askKeep = true;
+  }
+
+  function doorsHome() {
+    askKeep = false;
+    if ($("doorbtns").parentNode !== $("doors")) $("doors").insertBefore($("doorbtns"), $("doors").querySelector(".legal"));
+  }
+
+  // The first plan anybody makes is when a reminder means something: offered
+  // once, on a button that does not say Allow, and only then the phone's own
+  // ask (HIG: ask in context, once the value is plain), through Settings ›
+  // Reminders' own switch. The rest-end ask stays where it is.
+  function firstPlanMoment() {
+    var s = state.profile && state.profile.settings, epoch = accountEpoch, uid = state.user && state.user.id;
+    if (!s || s.remindAsked || remind.plan || !native) return;
+    Promise.all([pushKey(), native.push.status()]).then(function (both) {
+      fromPlugin(both[1]);
+      if (!pushable() || denied() || remind.plan) return;
+      setTimeout(function () {
+        if (accountNow(epoch, uid) && !document.querySelector(".sheet.open") && !$("workout").classList.contains("open")) remindAsk();
+      }, 700);
+    }, function () { /* no answer from the phone: nothing is offered */ });
+  }
+
+  function remindAsk() {
+    var go = el("button", "btn", "Remind me on training days");
+    state.profile.settings = Object.assign({}, state.profile.settings, { remindAsked: new Date().toISOString() });
+    saveSettings();
+    // Inside the tap: iOS gives an app one chance at its permission sheet, and
+    // only from a gesture.
+    go.onclick = function () { closeSheet("asksheet"); toggleRemind("plan"); };
+    askSheet("plan", "A nudge on training days?", "On a day with a workout planned, one reminder at " +
+      new Date(2026, 0, 1, 0, remind.at).toLocaleTimeString([], { timeStyle: "short" }) + ". Change the time in Settings.", go);
+  }
 
   function showLanding() {
     if (native) $("pumpyinput").value = "";
@@ -2705,6 +2742,8 @@ export const APP = String.raw`
   }
 
   function cardArt(w) {
+    // A Spotter Starter, kept or not, wears the drawing its picker row wears.
+    if (w.kind === "starter") return pumpyAsset("covers/" + STARTER_ART[w.starter || String(w.shortcode).slice(8)] + ".webp");
     return w.platform === "pumpy" ? pumpyAsset("covers/" + pumpyCover(w) + ".webp") : w.thumb_url;
   }
 
@@ -3206,7 +3245,8 @@ export const APP = String.raw`
   // sentence for that.
 
   function srcById(id) {
-    return state.workouts.filter(function (x) { return x.id === id; })[0] || null;
+    var k = /^starter:/.test(id) && starters && starters.filter(function (x) { return "starter:" + x.key === id; })[0];
+    return k ? starterCard(k) : state.workouts.filter(function (x) { return x.id === id; })[0] || null;
   }
 
   function sourceOf(ex) {
@@ -4753,9 +4793,11 @@ export const APP = String.raw`
     } else if (live && src && (src.thumb_url || (src.shortcode && /^(instagram|tiktok|youtube)$/.test(src.platform)))) {
       row("play", "Watch original", src.author ? "@" + src.author : null, function () { openWatch(src, ex); });
     }
-    row("help", "Demo and how-to", null, function () { explain(ex, w); });
+    // A demo, a swap and the exercise bank ask the server as somebody, so a
+    // guest's session goes without them rather than failing at them.
+    if (state.user) row("help", "Demo and how-to", null, function () { explain(ex, w); });
     if (!live) row("pencil", "Edit exercise", null, function () { openExEdit(w, ctx.bi, ctx.ei, ex); });
-    row("swap", "Swap exercise", null, function () {
+    if (state.user) row("swap", "Swap exercise", null, function () {
       openSwap(ex.name, w.title, live ? swapTarget(w, ex) : { w: w, bi: ctx.bi, ei: ctx.ei, ex: ex });
     });
     if (!live && ordCan(w)) row("reorder", "Reorder", null, function () { openOrder(w, "e" + ctx.bi + "." + ctx.ei); });
@@ -4767,7 +4809,7 @@ export const APP = String.raw`
           else openSetSheet(entry.sets.length);
         });
       }
-      row("plus", "Add an exercise", null, openWorkoutAdd);
+      if (state.user) row("plus", "Add an exercise", null, openWorkoutAdd);
     }
     if (!live) {
       list.appendChild(group = el("div", "mlist"));
@@ -7282,7 +7324,9 @@ export const APP = String.raw`
   // ended with the process, and that moment is when its pause began.
   function draftOf() {
     return {
-      workoutId: wo.workout.id, title: wo.workout.title,
+      // A starter has no id until it is kept, so its draft is keyed by the
+      // starter: paused, it comes back from the paused bar like any card.
+      workoutId: wo.workout.id || (wo.workout.starter ? "starter:" + wo.workout.starter : null), title: wo.workout.title,
       entries: wo.entries, blocks: wo.workout.blocks, startedAt: wo.startedAt, i: wo.i, rounds: wo.rounds,
       amrap: wo.amrap,
       rest: restUntil && !restFace ? { until: restUntil, total: restTotal, held: restHeld } : null,
@@ -7484,7 +7528,7 @@ export const APP = String.raw`
     // resumed first (askPaused); with none, there was nothing in it to keep.
     if (!resume) {
       var waiting = pausedDraft();
-      if (waiting && waiting.workoutId === w.id) { resumeWorkout(); return; }
+      if (waiting && waiting.workoutId === (w.id || "starter:" + w.starter)) { resumeWorkout(); return; }
       if (waiting && draftSets(waiting)) { askPaused(waiting); return; }
       if (waiting) toast("Closed " + (waiting.title || "the paused workout") + " — nothing was logged.");
     }
@@ -7507,7 +7551,10 @@ export const APP = String.raw`
       // prs: what fell today, keyed by movement. rounds: the lap of each circuit.
       // amrap: the clock, the round count and the partial round of each complex.
       wake: null, prs: {}, rounds: (resume && resume.rounds) || {},
-      amrap: (resume && resume.amrap) || {}, finished: false
+      amrap: (resume && resume.amrap) || {}, finished: false,
+      // Nobody signed in and nobody on the way back (earlyUid): a guest trying a
+      // starter from the landing, whose finish stays on this phone.
+      guest: !state.user && !earlyUid
     };
     woPhase = "idle";
     // A draft saved before this wave — or one whose block has since stopped being
@@ -7548,7 +7595,8 @@ export const APP = String.raw`
     publishSummary();
     sessionChanged();
     history.pushState({ workout: 1 }, "");
-    lastWeights();
+    // Last time's numbers are an account's; a guest has none to ask for.
+    if (state.user) lastWeights();
   }
 
   // Start on one card while another's session waits with sets in it. Apple's
@@ -8524,7 +8572,7 @@ export const APP = String.raw`
     // Fitbod puts "+ Add Exercise" at the FOOT of the exercise list, which is
     // where somebody looks when the card has run out and they are not done. A
     // pager has no foot, so its last stop is one.
-    if (wo.i >= endStop()) {
+    if (wo.i >= endStop() && state.user) {
       var tile = icon(el("button", "pickrow waddcard"), "plus");
       var tt = el("div", "pt");
       tt.appendChild(el("b", null, "Add an exercise"));
@@ -10315,13 +10363,13 @@ export const APP = String.raw`
     if (!logged.length) { leaveWorkout(); toast("Workout closed — nothing logged."); return; }
     // Painted before the account came back (offline with an hour-old token): the
     // session stays open and on disk, and Save works once the account is back.
-    if (!state.user) {
+    if (!state.user && !wo.guest) {
       saveDraft();
       toast("Reconnecting… This workout is kept on this phone. Save it once you're back online.");
       return;
     }
     var payload = {
-      user_id: state.user.id,
+      user_id: wo.guest ? null : state.user.id,
       workout_id: wo.workout.id,
       workout_title: wo.workout.title,
       started_at: wo.startedAt,
@@ -10329,9 +10377,16 @@ export const APP = String.raw`
       duration_seconds: Math.round((Date.now() - new Date(wo.startedAt).getTime()) / 1000),
       entries: logged
     };
+    // A guest's session waits on this phone for the first sign-in (guestLanded),
+    // and the sheet that offers the account follows the recap up.
+    if (wo.guest) {
+      guestKeep(payload);
+      // Only while its recap is still up: Done may already have taken it away.
+      setTimeout(function () { if (wo && wo.finished) keepAsk(); }, 900);
+    }
     // Insert first, draw from memory: the one moment of payoff in the whole loop
     // should never wait on a gym's signal.
-    sb.from("workout_logs").insert(payload).select("id").single().then(function (r) {
+    else sb.from("workout_logs").insert(payload).select("id").single().then(function (r) {
       if (r.error) { toast("Could not save that session — check your connection."); return; }
       // The summary is already on screen, and Send to Strava needs a log id to
       // push. The insert is the only moment that id exists, and the summary holds
@@ -10437,6 +10492,8 @@ export const APP = String.raw`
 
   function draftCheck(d, then) {
     var epoch = accountEpoch, uid = state.user && state.user.id;
+    // A starter's card ships with the app: it only has to be read in.
+    if (/^starter:/.test(d.workoutId)) { loadStarters().then(function () { if (srcById(d.workoutId) && then) then(); }); return; }
     if (!uid || draftAsked === d.workoutId) return;
     draftAsked = d.workoutId;
     sb.from("workouts").select(CARD_COLS).eq("user_id", uid).eq("id", d.workoutId).maybeSingle().then(function (r) {
@@ -10477,6 +10534,9 @@ export const APP = String.raw`
     pausedBar.sync();
     if (drawn.train && trainLean) drawDay();
     if (current) paintDock(current);
+    // Once the leaving has finished moving history: a sheet opened under a
+    // traversal still in flight would land on the wrong entry.
+    if (introLater) setTimeout(introAsk, 400);
   }
 
   // A session paused and walked away from waits in one bar above the tab bar, on
@@ -10642,8 +10702,9 @@ export const APP = String.raw`
 
     // What next (sumNext), then the one thing that sells, and only under it — a
     // live session's, since a past one's next step is long gone. A session that
-    // closes a program week says so first (sumCheck, B.2).
-    if (!past) [sumCheck(payload), sumNext(w), sumOffer(w)].forEach(function (n) { if (n) main.appendChild(n); });
+    // closes a program week says so first (sumCheck, B.2), and a starter not yet
+    // kept offers Keep last (sumKeep).
+    if (!past) [sumCheck(payload), sumNext(w), sumOffer(w), sumKeep(w)].forEach(function (n) { if (n) main.appendChild(n); });
 
     // The card, and every way off this phone with it.
     main.appendChild(shareRow(payload, logged, past));
@@ -10939,6 +11000,8 @@ export const APP = String.raw`
   // truth whatever order the taps came in. One at a time, and never before the
   // row exists: in the live moment the insert may still be in the air.
   function sumWrite(c) {
+    // A guest's recap corrects the copy waiting on this phone (guestKeep).
+    if (!state.user) { guestKeep(c.payload); return; }
     if (!c.payload.id) { if (sumQueue.indexOf(c) < 0) sumQueue.push(c); return; }
     if (c.busy) { c.again = true; return; }
     var entries = c.logged.filter(function (e) { return e.sets.length; }), body = JSON.stringify(entries);
@@ -13361,14 +13424,33 @@ export const APP = String.raw`
   $("setbodyrow").onclick = openWeighIn;
 
   // S6: nothing on the shelf to do yet. The lesson is the add sheet's own share
-  // row, the one used every day after this, as the empty library shows it.
+  // row, the one used every day after this, as the empty library shows it. Two
+  // more doors under it (B.2), for a first day with no video to hand: a Spotter
+  // Starter to do now, the one that matches "Where do you train?" with the other
+  // two a tap away, and a goal for Pumpy to plan. A starter done today changes
+  // the words, so the card does not read as if nothing happened.
   function firstCard(n) {
-    var card = el("div", "daycard tcard empty");
-    card.appendChild(pumpyArt("coach", false));
-    card.appendChild(el("h2", null, n ? "Spotter is reading " + n + (n > 1 ? " videos" : " video") : "Save your first workout video"));
-    card.appendChild(el("p", null, n ? "It lands here the moment it is ready." : "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+    var card = el("div", "daycard tcard empty"), done = !n && daySessions(state.logs, ymd(new Date())).length;
+    var s = starters && starterFor(state.profile && state.profile.settings && state.profile.settings.intent, starters), box, b;
+    card.appendChild(pumpyArt(done ? "proud" : "coach", false));
+    card.appendChild(el("h2", null, n ? "Spotter is reading " + n + (n > 1 ? " videos" : " video")
+      : done ? "Nice work — that’s one done" : "Save your first workout video"));
+    card.appendChild(el("p", null, n ? "It lands here the moment it is ready." : done
+      ? "Now save a workout video you want to do next. Found one? Share it to Spotter."
+      : "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
     if (!n) paintSaveOn(card.appendChild($("addsheet").querySelector(".shareflow").cloneNode(true)));
     card.appendChild(tbtn("btn firstsave", "Add video", function () { $("addbtn").click(); }));
+    if (n) return card;
+    // Read in the first time this card is drawn; the card is drawn again with it.
+    if (!starters) loadStarters().then(function (l) { if (l.length) { daySig = ""; drawDay(); } });
+    box = card.appendChild(el("div", "mlist firstdoors"));
+    if (s) {
+      b = box.appendChild(el("div", "strow"));
+      b.appendChild(rowBtn(ic("play"), (done ? "Another: " : "Try one now: ") + s.title, s.minutes + " min · " + STARTER_NEED[s.key],
+        function () { runStarter(s); }));
+      b.appendChild(tbtn("chip", "2 more", openStarters));
+    }
+    box.appendChild(rowBtn(ic("chats"), "Set a goal with Pumpy", "A plan on your calendar, week by week", function () { openGoalChat({}); }));
     return card;
   }
 
@@ -17608,7 +17690,8 @@ export const APP = String.raw`
   // came in on the link opens it already filled, so the person can see it took.
   function authCodeShow(on, quiet) {
     $("authcodefield").classList.toggle("hide", !on);
-    $("authcodeask").classList.toggle("hide", on);
+    // The question and its separator go together once it is answered.
+    $("authcodewrap").classList.toggle("hide", on);
     if (on && !quiet) $("authcode").focus();
   }
 
@@ -18263,6 +18346,8 @@ export const APP = String.raw`
     var n = $(id);
     if (!n.classList.contains("open")) return;
     if (id === "aiconsentsheet") dismissAiConsent();
+    if (id === "asksheet") doorsHome();
+    if (introLater) setTimeout(introAsk, 400);
     // The steppers go back to the superset panel they were borrowed from.
     if (id === "setsheet") ssDock();
     // A tile still in hand is put down where it came from; nothing was written.
@@ -19567,6 +19652,7 @@ export const APP = String.raw`
   // The column is written whole, so every preference goes up together: saving one
   // of them used to be enough to drop the others.
   function saveSettings() {
+    if (!state.user) return;
     var s = Object.assign({}, (state.profile && state.profile.settings) || {},
       { unit: state.unit, sounds: state.sounds, haptics: state.haptics });
     // The column is written WHOLE, so the segment has to ride along with every
@@ -19725,7 +19811,7 @@ export const APP = String.raw`
   // so this says where rather than offering a button that would be ignored.
   var REMIND_OFF = "Reminders are off in your phone's Settings.";
   var REMIND_WHAT = "Two at most and never more than one a day: today's plan at the hour nearest the " +
-    "time you pick, and one on the last day the week's goal is still reachable.";
+    "time you pick, and one on the last day your workouts per week are still in reach.";
 
   function remindNote() {
     if (native) {
@@ -20204,7 +20290,7 @@ export const APP = String.raw`
   // says whether the address has an account, which would be a membership oracle.
   function forgotPassword() {
     var email = $("email").value.trim();
-    if (!email) { authError("Type your email above first, then tap this."); return; }
+    if (!email) { authError("Type your email above first, then tap this."); $("email").focus(); return; }
     var b = $("forgotpw");
     b.disabled = true;
     capToken().then(function (tok) {
@@ -20215,7 +20301,7 @@ export const APP = String.raw`
       mailSent(email, "recovery");
     }, function () {
       b.disabled = false;
-      authError("Could not ask for a link. Check your connection.");
+      authError("Could not ask for a code. Check your connection.");
     });
   }
 
@@ -20267,8 +20353,7 @@ export const APP = String.raw`
           // built underneath an open Settings.
           closeSheet("settingssheet");
           sb.auth.signOut().then(function () {
-            setAuthMode("signin");
-            authOK("Your account is deleted. Everything in it has been erased.");
+            toast("Your account is deleted. Everything in it has been erased.", 5200);
           });
         }, function () { done("Could not delete it. Try again in a moment."); });
       }
@@ -21480,7 +21565,7 @@ export const APP = String.raw`
 
   $("authgo").onclick = doAuth;
   $("forgotpw").onclick = forgotPassword;
-  consentFill($("consent"), "By creating an account you agree to the ");
+  consentFill($("consent"), "By continuing you agree to the ");
   $("consentok").onclick = function () { requireAiConsent(true).catch(function () {}); };
   $("setairow").onclick = function () { requireAiConsent(true).catch(function () {}); };
   $("aiconsentallow").onclick = function () { noteConsent(true); };
@@ -21500,13 +21585,40 @@ export const APP = String.raw`
   $("otp").addEventListener("keydown", function (e) { if (e.key === "Enter") otpGo(); });
   $("mailresend").onclick = mailResend;
   $("mailback").onclick = mailBack;
-  $("oagoogle").onclick = googleSignIn;
-  $("oaapple").onclick = appleSignIn;
+  $("oagoogle").onclick = function () { if (!codeBad()) googleSignIn(); };
+  $("oaapple").onclick = function () { if (!codeBad()) appleSignIn(); };
+  // Focused inside the tap: the only focus iOS answers with a keyboard.
+  $("oamail").onclick = function () {
+    if (codeBad()) return;
+    // From the sheet a guest's recap raised, the email step is back on the
+    // landing: the sheet and the recap go in one history step, as the leave
+    // sheet's Finish does it.
+    if (askKeep) { closeSheet("asksheet", true); leaveWorkout(1); }
+    setAuthMode("email");
+    $("email").focus();
+  };
+  $("introgo").onclick = introDone;
+  $("introsheet").addEventListener("click", function (e) { var b = e.target.closest("[data-v]"); if (b) introPaint(b); });
+  $("authback").onclick = function () { authError(""); setAuthMode("signup"); };
+  $("pwswap").onclick = function () {
+    pwMode = !pwMode; pwNew = false;
+    authError(""); paintMail();
+    $(pwMode ? "pw" : "email").focus();
+  };
+  $("tryfirst").onclick = function () { openStarters(); };
   oaLabelOf("oagoogle");
   oaLabelOf("oaapple");
+  renderAuthProviders();
   loadAuthProviders();
+  $("email").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { if (pwMode) $("pw").focus(); else doAuth(); }
+  });
   $("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doAuth(); });
-  // the sign-in/sign-up toggle is rebuilt by setAuthMode, which wires its own handler
+  // A different address or password is a different question: the offer to make
+  // an account was about the pair that failed.
+  ["email", "pw"].forEach(function (id) {
+    $(id).addEventListener("input", function () { if (pwNew) { pwNew = false; paintMail(); } });
+  });
 
   $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); addMode(null); openSheet("addsheet"); };
   // Once: which lines each platform shows (the Shortcut set-up is web only, the
@@ -22122,8 +22234,6 @@ export const APP = String.raw`
   captureShare();
   captureBilling();
   captureStrava();
-  // After the three captures, because it strips the query it reads from.
-  linkProblem();
 
   // The library the person left, while the SDK is still deciding who they are.
   paintBeforeAuth();

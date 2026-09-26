@@ -93,8 +93,8 @@ assert.match(markup, /id="remready"/, 'Settings has the "When a saved video is r
 assert(app.includes('if (remind.ready === false) s.notifyReady = false; else if (remind.ready) delete s.notifyReady;'),
   'notifyReady is written only to say Off, and left alone until the profile has said which');
 // B.2: a session that closes a program week says so first (sumCheck), then the same two.
-assert(/if \(!past\) \[(sumCheck\(payload\), )?sumNext\(w\), sumOffer\(w\)\]/.test(app) &&
-  app.indexOf('sumNext(w), sumOffer(w)]') < app.indexOf('main.appendChild(shareRow(payload, logged, past));'),
+assert(/if \(!past\) \[(sumCheck\(payload\), )?sumNext\(w\), sumOffer\(w\)(, sumKeep\(w\))?\]/.test(app) &&
+  app.indexOf('sumNext(w), sumOffer(w)') < app.indexOf('main.appendChild(shareRow(payload, logged, past));'),
   'the recap: the week\'s check-in, the next step, then the offer, under the figures and above the share row');
 assert(app.includes('if (fromShare) body.source = "share";'), 'a share from another app says so to /api/ingest');
 
