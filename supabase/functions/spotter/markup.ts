@@ -711,7 +711,7 @@ export const MARKUP_BODY = String.raw`</head>
 <div class="sheet" id="trainmore"><div class="sheetbody">
   <div class="grabber"></div>
   <h2 id="tmtitle">Plan</h2>
-  <div class="picklist" id="tmlist"></div>
+  <div id="tmlist"></div>
   <button class="btn ghost" data-close="trainmore">Done</button>
 </div></div>
 

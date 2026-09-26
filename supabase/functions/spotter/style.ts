@@ -1534,7 +1534,9 @@ export const STYLE = String.raw`<style>
   /* Hung from the frame's bottom edge, not the layout viewport's — not the same
      edge on an installed iPhone. -100% makes top the line the toast sits ON, so
      the 96px of clearance still means 96px. */
-  #toast { position: fixed; left: 50%;
+  /* width: max-content, since beside left: 50% shrink-to-fit only ever had half
+     the screen to fill, and a set's Undo wrapped to three lines over the name. */
+  #toast { position: fixed; left: 50%; width: max-content;
     top: calc(var(--vvtop) + var(--vvh) - 96px - var(--pbar, 0px) - var(--sab));
     transform: translate(-50%, calc(-100% + 14px)); z-index: 90; background: var(--ink); color: var(--paper);
     padding: 12px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 600; opacity: 0;
@@ -1673,7 +1675,9 @@ export const STYLE = String.raw`<style>
   .tcalhead { display: flex; align-items: center; gap: 8px; min-height: 44px; }
   .tctitle, .tcacts { display: grid; }
   .tcacts { justify-items: end; }
-  .tctitle { flex: 1; justify-items: start; transition: transform var(--t-2) var(--e-spring); }
+  /* Centred in the row, not hung from its top: the week's range is a 44px button
+     and the month's name, stacked in the same cell, is only a line of text. */
+  .tctitle { flex: 1; justify-items: start; align-items: center; transition: transform var(--t-2) var(--e-spring); }
   .wbdrag .tctitle { transition: none; }
   .tctitle > *, .tcacts > * { grid-area: 1 / 1; }
   /* The week's words and the month's controls share the row and cross over. */

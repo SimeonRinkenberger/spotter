@@ -162,20 +162,48 @@ export const APP = String.raw`
   }
   wireIconMotion();
 
-  var toastTimer = null;
-  function toast(msg, ms) {
+  // undo: this is the toast offering an Undo (offerUndo). While one is up,
+  // anything else said waits for it (toastNext): written over, the Undo was gone
+  // from the screen while its write still went ahead five seconds later.
+  var toastTimer = null, toastHeld = null;
+  function toast(msg, ms, undo) {
     var t = $("toast");
+    if (undoFn && !undo) { toastHeld = { msg: msg, ms: ms, at: Date.now() }; return; }
     t.textContent = msg;
     t.onclick = null;
     t.classList.remove("tappable");
     t.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () {
+      toastGone(t);
       t.classList.remove("show");
       t.classList.remove("tappable");
       t.onclick = null;
     }, ms || 2800);
   }
+
+  // What was said while an Undo was up has its turn once the Undo has gone —
+  // the latest of it, and only while it is still news.
+  function toastNext() {
+    var h = toastHeld;
+    toastHeld = null;
+    if (h && Date.now() - h.at < 7000) toast(h.msg, h.ms);
+  }
+
+  // A tap on the toast is the toast's alone. On the phone a tap aimed at a toast
+  // as it expired — and now and then the very tap that ran its Undo — reached
+  // the card under it once the toast had let go of it. For half a second after
+  // the toast goes, a click where it stood is swallowed.
+  var toastSpot = null;
+  function toastGone(t) {
+    var r = t.getBoundingClientRect();
+    if (t.classList.contains("show")) toastSpot = { l: r.left - 8, t: r.top - 8, r: r.right + 8, b: r.bottom + 8, until: Date.now() + 500 };
+  }
+  document.addEventListener("click", function (e) {
+    var s = toastSpot;
+    if (!s || Date.now() > s.until || (e.target.closest && e.target.closest("#toast"))) return;
+    if (e.clientX >= s.l && e.clientX <= s.r && e.clientY >= s.t && e.clientY <= s.b) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
 
   // ---------- haptics ----------
   //
@@ -221,6 +249,7 @@ export const APP = String.raw`
     toast("Timer sounds are on · Tap to mute", 5200);
     t.classList.add("tappable");
     t.onclick = function () {
+      toastGone(t);
       t.onclick = null;
       t.classList.remove("tappable");
       setSounds(false);
@@ -263,19 +292,23 @@ export const APP = String.raw`
     undoTimer = null;
     var f = undoFn;
     undoFn = null;
+    // Before the commit, which may have something of its own to say.
+    toastNext();
     if (f) f();
   }
 
   function offerUndo(msg, commit, revert) {
     // A second delete commits the first: two pending, one toast, one of them
-    // unaccounted for.
+    // unaccounted for. What was waiting to be said is older than this, and goes.
+    toastHeld = null;
     flushUndo();
     undoFn = commit;
     undoTimer = setTimeout(flushUndo, UNDO_MS);
-    toast(msg + " · Undo", UNDO_MS);
+    toast(msg + " · Undo", UNDO_MS, true);
     var t = $("toast");
     t.classList.add("tappable");
     t.onclick = function () {
+      toastGone(t);
       t.onclick = null;
       t.classList.remove("tappable");
       t.classList.remove("show");
@@ -283,6 +316,7 @@ export const APP = String.raw`
       undoTimer = null;
       undoFn = null;
       revert();
+      toastNext();
     };
   }
 
@@ -1293,7 +1327,7 @@ export const APP = String.raw`
     accountEpoch++; reads = {}; inFlight = {}; libraryRev++; logsRev++; planRev++;
     // A delayed delete belongs to the account that offered its undo. If that
     // account leaves first, retain the server row rather than write as the next.
-    clearTimeout(undoTimer); undoTimer = null; undoFn = null;
+    clearTimeout(undoTimer); undoTimer = null; undoFn = null; toastHeld = null;
     clearTimeout(detailCloseTimer); clearTimeout(woCloseTimer);
     clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
     if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
@@ -8650,7 +8684,7 @@ export const APP = String.raw`
   function undoOff() {
     var t = $("toast");
     flushUndo();
-    if (t.classList.contains("tappable")) { t.onclick = null; t.classList.remove("show", "tappable"); }
+    if (t.classList.contains("tappable")) { toastGone(t); t.onclick = null; t.classList.remove("show", "tappable"); }
   }
 
   // The history read lands after the first screen is drawn: the lines that quote
@@ -12323,8 +12357,8 @@ export const APP = String.raw`
       if (n === "o") calSet(true);
       else if (n === "t") backToToday();
       else if (n === "m") {
-        openMore("Plan", [["Copy week", openCopy], ["Build with Pumpy", programWithPumpy, state.weekStart],
-          ["What counts", openCounts]]);
+        openMore("Plan", [["Copy week", openCopy, null, 0, "calendar"],
+          ["Build with Pumpy", programWithPumpy, state.weekStart, 0, "chats"], ["What counts", openCounts, null, 0, "help"]]);
       } else if (n) calStep(+n);
     };
     cal.handle.onclick = function () { calSet(!calOpen); };
@@ -12939,8 +12973,8 @@ export const APP = String.raw`
       go.disabled = String(u.row.id).indexOf("tmp-") === 0;
       go.setAttribute("aria-label", go.disabled ? "Saving the plan…" : "More for this plan");
       go.onclick = function () {
-        openMore(w.title || "Workout", [["Move", openPlanSheet, { w: w, row: u.row, from: "upnext" }],
-          ["Swap", planSwap, u.row], ["Remove from plan", planRemove, u.row, 1]]);
+        openMore(w.title || "Workout", [["Move", openPlanSheet, { w: w, row: u.row, from: "upnext" }, 0, "calendar"],
+          ["Swap", planSwap, u.row, 0, "swap"], ["Remove from plan", planRemove, u.row, 1, "trash"]]);
       };
       return card;
     }
@@ -13006,7 +13040,8 @@ export const APP = String.raw`
         .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])).disabled = wait && a[2] !== startWorkout; });
     });
     if (d.empty) card.appendChild(el("div", "tdose", d.when === "past" ? "Nothing logged or planned." : "Nothing planned yet."));
-    card.appendChild(tbtn("planadd", "+ Plan a workout", planPick, d.key));
+    // A day already gone takes no plan: it would only be a missed day at once.
+    if (d.when !== "past") card.appendChild(tbtn("planadd", "+ Plan a workout", planPick, d.key));
     return card;
   }
 
@@ -13022,15 +13057,22 @@ export const APP = String.raw`
   }
 
   // The one ⋯ sheet Train owns, filled per opening: rows of [words, fn, argument,
-  // danger]. Handed over rather than stacked: whatever a row opens opens first,
-  // and this closes behind it, so the one history entry never falls between them.
+  // danger, glyph], drawn as the ⋯ Workout sheet draws its own — grouped rows a
+  // thumb high, and the one that takes something away alone in a group of its
+  // own, in the app's red. Handed over rather than stacked: whatever a row opens
+  // opens first, and this closes behind it, so the one history entry never falls
+  // between them.
   function openMore(title, rows) {
-    var list = $("tmlist");
+    var list = $("tmlist"), keep = null, drop = null;
     $("tmtitle").textContent = title;
     list.innerHTML = "";
     rows.forEach(function (r) {
-      list.appendChild(tbtn("pickrow" + (r[3] ? " danger" : ""), r[0], function () { r[1](r[2]); closeSheet("trainmore"); }));
+      var box = r[3] ? (drop = drop || el("div", "mlist")) : (keep = keep || list.appendChild(el("div", "mlist")));
+      var b = box.appendChild(tbtn("pickrow" + (r[3] ? " del" : ""), null, function () { r[1](r[2]); closeSheet("trainmore"); }));
+      if (r[4]) b.appendChild(ic(r[4]));
+      b.appendChild(document.createTextNode(r[0]));
     });
+    if (drop) list.appendChild(drop);
     openSheet("trainmore");
   }
 
@@ -13051,7 +13093,10 @@ export const APP = String.raw`
     head = shelfBox.appendChild(el("div", "secthead"));
     head.appendChild(el("b", null, "Ready to try"));
     head.appendChild(el("span", "shelfn", all.length + " saved, not done yet"));
-    head.appendChild(tbtn("linkbtn", "See all", function () { state.filter = "ready"; render(); setView("library"); }));
+    head.appendChild(tbtn("linkbtn", "See all", function () {
+      // At the top, where the narrow's chip and its line say what is showing.
+      state.filter = "ready"; render(); $("libpage").scrollTop = 0; setView("library");
+    }));
     list.forEach(function (w) {
       var b = row.appendChild(tbtn("shelfitem", null, openDetail, w)), art = b.appendChild(el("span", "shelfart")), img;
       if (cardArt(w)) { img = art.appendChild(el("img")); img.alt = ""; img.loading = "lazy"; img.src = cardArt(w); }
