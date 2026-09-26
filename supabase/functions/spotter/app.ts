@@ -162,20 +162,52 @@ export const APP = String.raw`
   }
   wireIconMotion();
 
-  var toastTimer = null;
-  function toast(msg, ms) {
+  // undo: this is the toast offering an Undo (offerUndo). While one is up,
+  // anything else said waits for it (toastNext): written over, the Undo was gone
+  // from the screen while its write still went ahead five seconds later.
+  var toastTimer = null, toastHeld = null;
+  function toast(msg, ms, undo) {
     var t = $("toast");
+    if (undoFn && !undo) { toastHeld = { msg: msg, ms: ms, at: Date.now() }; return; }
     t.textContent = msg;
     t.onclick = null;
     t.classList.remove("tappable");
     t.classList.add("show");
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () {
+      toastGone(t);
       t.classList.remove("show");
       t.classList.remove("tappable");
       t.onclick = null;
     }, ms || 2800);
   }
+
+  // What was said while an Undo was up has its turn once the Undo has gone —
+  // the latest of it, and only while it is still news.
+  function toastNext() {
+    var h = toastHeld;
+    toastHeld = null;
+    if (h && Date.now() - h.at < 7000) toast(h.msg, h.ms);
+  }
+
+  // A tap on a toast that takes one (Undo, Tap to mute) is the toast's alone. On
+  // the phone a tap aimed at one as it expired — and now and then the very tap
+  // that ran its Undo — reached the card under it once the toast had let go. For
+  // a second after such a toast goes (QA's late taps landed up to one), a click
+  // where it stood is swallowed. A toast that takes no tap never took one, so it
+  // leaves nothing behind.
+  var toastSpot = null;
+  function toastGone(t) {
+    var r = t.getBoundingClientRect();
+    if (t.classList.contains("show") && t.classList.contains("tappable")) {
+      toastSpot = { l: r.left - 8, t: r.top - 8, r: r.right + 8, b: r.bottom + 8, until: Date.now() + 1000 };
+    }
+  }
+  document.addEventListener("click", function (e) {
+    var s = toastSpot;
+    if (!s || Date.now() > s.until || (e.target.closest && e.target.closest("#toast"))) return;
+    if (e.clientX >= s.l && e.clientX <= s.r && e.clientY >= s.t && e.clientY <= s.b) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
 
   // ---------- haptics ----------
   //
@@ -221,6 +253,7 @@ export const APP = String.raw`
     toast("Timer sounds are on · Tap to mute", 5200);
     t.classList.add("tappable");
     t.onclick = function () {
+      toastGone(t);
       t.onclick = null;
       t.classList.remove("tappable");
       setSounds(false);
@@ -263,19 +296,23 @@ export const APP = String.raw`
     undoTimer = null;
     var f = undoFn;
     undoFn = null;
+    // Before the commit, which may have something of its own to say.
+    toastNext();
     if (f) f();
   }
 
   function offerUndo(msg, commit, revert) {
     // A second delete commits the first: two pending, one toast, one of them
-    // unaccounted for.
+    // unaccounted for. What was waiting to be said is older than this, and goes.
+    toastHeld = null;
     flushUndo();
     undoFn = commit;
     undoTimer = setTimeout(flushUndo, UNDO_MS);
-    toast(msg + " · Undo", UNDO_MS);
+    toast(msg + " · Undo", UNDO_MS, true);
     var t = $("toast");
     t.classList.add("tappable");
     t.onclick = function () {
+      toastGone(t);
       t.onclick = null;
       t.classList.remove("tappable");
       t.classList.remove("show");
@@ -283,6 +320,7 @@ export const APP = String.raw`
       undoTimer = null;
       undoFn = null;
       revert();
+      toastNext();
     };
   }
 
@@ -337,7 +375,11 @@ export const APP = String.raw`
     return p;
   }
   function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
-  function invalidateLogs() { logsRev++; state.logs = null; }
+  // The logs on screen are out of date: the next loadLogs reads them again. They
+  // stay up meanwhile as lite rows — the counts, the strip's dots, Up next and the
+  // Workouts statuses read those — rather than a hole every status blinks out of;
+  // what needs every figure (fullLogs) waits for the read.
+  function invalidateLogs() { logsRev++; state.logsLite = !!state.logs; }
 
   function deadline(work, ms) {
     var controller = new AbortController(), timer;
@@ -1289,16 +1331,17 @@ export const APP = String.raw`
     accountEpoch++; reads = {}; inFlight = {}; libraryRev++; logsRev++; planRev++;
     // A delayed delete belongs to the account that offered its undo. If that
     // account leaves first, retain the server row rather than write as the next.
-    clearTimeout(undoTimer); undoTimer = null; undoFn = null;
+    clearTimeout(undoTimer); undoTimer = null; undoFn = null; toastHeld = null;
     clearTimeout(detailCloseTimer); clearTimeout(woCloseTimer);
     clearTimeout(pendTimer); pendTimer = null; pendPolls = 0; pendBusy = false;
     if (wkChannel) { sb.removeChannel(wkChannel); wkChannel = null; }
     booting = null; earlyUid = null; reconnecting = false; state.profile = null; state.workouts = []; state.logs = null;
+    state.logsLite = false; state.libReady = false; clearTimeout(trainCacheTimer); trainWantMonth = false;
+    trainCacheGoal = null;
     state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
     expCache = {}; expWaiting = {}; vidCache = {}; expKey = ""; capWaiting = {};
-    today.rows = []; today.at = 0; today.day = null; today.busy = false; today.shown = false; today.asked = 0;
     current = null;
     if (sc) scForget();
     if (wo) saveDraft();
@@ -1312,10 +1355,10 @@ export const APP = String.raw`
     }
     if (native && native.purchases) native.purchases.clear().catch(function () {});
     if (billing) { billing.prices = null; billing.caps = null; billing.capsWaiting = null; billing.asking = false; billing.fails = 0; billing.busy = false; billing.sub = null; billing.subAsked = false; billing.limits = null; billing.limitsAt = 0; billing.limitsWaiting = null; billing.said = null; billing.ctx = null; billing.cc = null; billing.ccWaiting = null; billing.redeeming = false; }
-    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "today", "resume", "recapopts"].forEach(function (id) {
+    ["grid", "chips", "colbar", "libcount", "empty", "dinner", "pumpylog", "pumpyannounce", "pumpyctx", "pumpythreads", "trainview", "pausedbar", "recapopts"].forEach(function (id) {
       var n = $(id); if (n) n.innerHTML = "";
     });
-    $("count0").textContent = "Reading your library";
+    $("countlib").textContent = "Reading your workouts";
     clearTimeout(toastTimer); $("toast").classList.remove("show"); $("toast").textContent = "";
     Array.prototype.forEach.call(document.querySelectorAll(".sheet.open, #detail.open, #workout.open"), function (n) {
       n.classList.remove("open");
@@ -1350,7 +1393,8 @@ export const APP = String.raw`
     publishSignedOut();
     state.user = null;
     guideUser();
-    state.workouts = []; state.logs = null; state.plan = null; state.awards = null;
+    state.workouts = []; state.logs = null; state.logsLite = false; state.libReady = false;
+    state.plan = null; state.awards = null;
     // What the last person was looking for is not what the next one is. The
     // library came back narrowed to a search and a creator nobody had typed.
     state.filter = "All"; state.q = ""; $("search").value = "";
@@ -1377,10 +1421,13 @@ export const APP = String.raw`
     // Before the network answers anything: the library someone is looking at is
     // almost always the one they left. Already up if it was painted before the
     // token came back, when only the today card is still to ask.
-    if (earlyUid !== state.user.id) paintCache(); else renderToday();
+    if (earlyUid !== state.user.id) paintCache();
     earlyUid = null;
+    // Train is the page the app opens on, so its two reads go out now, beside the
+    // library's, rather than in idle time after it.
+    drawn.train = true;
+    quietly(prepareTrain());
     var profileReady = loadProfile();
-    maybeInstallHint();
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
@@ -1390,6 +1437,7 @@ export const APP = String.raw`
       // one in the background while the rest of the start carries on.
       .then(function () { if (accountNow(epoch, uid)) takeParkedShare(); })
       .then(function () { if (accountNow(epoch, uid)) consumeOpen(); })
+      .then(function () { if (accountNow(epoch, uid)) readyOnOpen(); })
       .then(function () { if (accountNow(epoch, uid)) return consumeBilling(); })
       .then(function () { if (accountNow(epoch, uid)) consumeCreator(); })
       .then(function () { if (accountNow(epoch, uid)) return warmPages(); })
@@ -1510,8 +1558,8 @@ export const APP = String.raw`
     // Only announce a transition, so a favourite toggle or a note edit is silent.
     if (was && was.ingest_status === "processing" && row.ingest_status === "ready") {
       // A read that could not add anything leaves the card as it was and says
-      // why; "Ready" over an unchanged card would be the wrong news.
-      toast(UNCHANGED.test(row.ingest_error || "") ? row.ingest_error : "Ready: " + (row.title || "your workout"));
+      // why; anything else is the ready moment ("ready" further down).
+      if (UNCHANGED.test(row.ingest_error || "")) toast(row.ingest_error); else readyArrived(row);
     } else if (was && was.ingest_status === "processing" && row.ingest_status === "failed") {
       toast(row.ingest_error === UNAVAILABLE ? "That post is private, deleted or unavailable."
         : row.kind === "photo" || row.kind === "p" ? "Could not read that post — open it to try again."
@@ -1570,6 +1618,8 @@ export const APP = String.raw`
         // browser's own push subscription the moment Settings opens.
         if (s.remind) { remind.plan = !!s.remind.plan; remind.risk = !!s.remind.risk; }
         if (typeof s.remindAt === "number") remind.at = s.remindAt;
+        // Absent is on: only ever written to say Off (saveSettings).
+        remind.ready = s.notifyReady !== false;
         // The top-bar button and the strip were drawn from the default; correct them.
         paintSounds();
         // The plan is on this row, and the shelf counter is drawn from the plan.
@@ -1667,6 +1717,7 @@ export const APP = String.raw`
 
   function dropCache() {
     try { localStorage.removeItem(CACHE_KEY); } catch (e) { }
+    try { localStorage.removeItem(TRAIN_KEY); } catch (e) { }
   }
 
   function paintCache() {
@@ -1674,15 +1725,65 @@ export const APP = String.raw`
     if (c) paintRows(c);
   }
 
+  // ---------- Train's cache ----------
+  //
+  // Train is the first page now, and after an hour away it would otherwise wait
+  // on two reads — the plan and the logs — before it could say what today is.
+  // So the last answer is kept, as the library's is: the plan rows, and the logs
+  // cut down to what the strip, the ring, the statuses and Up next read (which
+  // workout, when, how long, how many sets — each set a bare 1). state.logsLite
+  // says the logs are that cut; loadLogs treats them as not loaded, and anything
+  // that needs a log's real figures (Progress, Records, awards, a corrected best)
+  // asks fullLogs(), which answers null until the real ones land.
+  var TRAIN_KEY = "spotter-train-v1", trainCacheTimer = 0, trainCacheGoal = null;
+
+  function liteLog(l) {
+    var ones = [];
+    (l.entries || []).forEach(function (e) { (e.sets || []).forEach(function (x) { if (x) ones.push(1); }); });
+    return { id: l.id, workout_id: l.workout_id, workout_title: l.workout_title, started_at: l.started_at,
+      completed_at: l.completed_at, duration_seconds: l.duration_seconds, entries: ones.length ? [{ sets: ones }] : [] };
+  }
+
+  function fullLogs() { return state.logsLite ? null : state.logs; }
+
+  function writeTrainCache() {
+    if (!state.user) return;
+    clearTimeout(trainCacheTimer);
+    var uid = state.user.id;
+    trainCacheTimer = setTimeout(function () {
+      if (!state.user || state.user.id !== uid || !state.plan || !state.logs || state.logsLite) return;
+      try {
+        localStorage.setItem(TRAIN_KEY, JSON.stringify({ v: 1, uid: uid, at: Date.now(),
+          goal: goalSetting(), plan: state.plan, logs: state.logs.map(liteLog) }));
+      } catch (e) { try { localStorage.removeItem(TRAIN_KEY); } catch (e2) { } }
+    }, 1000);
+  }
+
+  // Only into an empty slot: a real answer already in hand is never replaced by
+  // an older one, and the reads that follow overwrite this one as they land.
+  function paintTrainCache(uid) {
+    var c = null;
+    try { c = JSON.parse(localStorage.getItem(TRAIN_KEY) || "null"); } catch (e) { c = null; }
+    if (!c || c.v !== 1 || !uid || c.uid !== uid) return false;
+    if (!state.plan && c.plan) state.plan = c.plan;
+    if (!state.logs && c.logs) { state.logs = c.logs; state.logsLite = true; }
+    trainCacheGoal = c.goal || null;
+    return true;
+  }
+
   function paintRows(c) {
     state.workouts = c.workouts;
     state.collections = c.collections || [];
     state.colItems = c.colItems || [];
+    state.libReady = true;
+    paintTrainCache(c.uid);
     // Every card here has been seen before, so none should fly in — not now and
     // not when load() lands. seenCards is the ledger that already stops a filter
     // tap re-animating the grid; this is the same idea one launch earlier.
     for (var i = 0; i < state.workouts.length; i++) seenCards[state.workouts[i].id] = 1;
     render();
+    // The first page, drawn from the same kept answer before any read returns.
+    if (state.plan && state.logs) renderTrain();
   }
 
   // ---------- the cache before the token ----------
@@ -1761,12 +1862,12 @@ export const APP = String.raw`
   // back. What needs no account stays usable: the Library, a card, and training
   // from it (Save waits for the account, see finishWorkout). Every other tap says
   // so instead of acting as nobody.
-  var WAITING = "Reconnecting… Your library and workouts still work offline.";
+  var WAITING = "Reconnecting… Your workouts still work offline.";
 
   function accountFree(t) {
     if (!t || !t.closest) return false;
-    if (t.closest("[data-close], #dclose, #grid, #chips, #searchwrap, #hint, #filtersheet, #sortsheet, #tab0, #resume, #toast, " +
-      "#dinner .startbtn, #dinner .source-disclosure, #workout")) return true;
+    if (t.closest("[data-close], [data-offline], #dclose, #grid, #chips, #searchwrap, #filtersheet, #sortsheet, #tab0, #tab1, #pausedbar, #toast, " +
+      "#dstart, #dinner .dcover, #dinner .dwatch, #watchsheet, #workout")) return true;
     // Workout Mode's own sheets: a set, the rest, leaving, adding a movement.
     return !!(wo && !wo.finished && t.closest(".sheet"));
   }
@@ -1781,10 +1882,7 @@ export const APP = String.raw`
 
   function load(retry) {
     if (!state.user) return Promise.resolve();
-    // When the call was made, not when readOnce's microtask runs: boot's cached
-    // paint (and its today read) happens in between, and on a phone that paint
-    // takes long enough that a later clock made the today read look older.
-    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev, begun = Date.now();
+    var uid = state.user.id, epoch = accountEpoch, rev = libraryRev;
     return readOnce("library:" + rev + ":" + !!retry, function () {
       var rows = sb.from("workouts").select(CARD_COLS).eq("user_id", uid)
         .order("created_at", { ascending: false }).limit(200).then(function (r) {
@@ -1793,10 +1891,7 @@ export const APP = String.raw`
           // A socket event or local edit after the read started is newer evidence.
           if (rev !== libraryRev) return;
           state.workouts = r.data || [];
-          // Refresh means refresh, for the today card too, unless the today read
-          // went out after this one did: at boot the cached paint has just asked,
-          // and asking again here read plan and workout_logs twice per launch.
-          if (today.asked < begun) today.at = 0;
+          state.libReady = true;
           render();
           if (current && $("detail").classList.contains("open")) {
             var fresh = state.workouts.filter(function (w) { return w.id === current.id; })[0];
@@ -1827,7 +1922,7 @@ export const APP = String.raw`
         if (!retry) return new Promise(function (resolve) {
           setTimeout(function () { resolve(accountNow(epoch, uid) ? load(true) : undefined); }, 900);
         });
-        toast("Could not load your library — pull down to try again.");
+        toast("Could not load your workouts — pull down to try again.");
       });
     });
   }
@@ -1841,8 +1936,8 @@ export const APP = String.raw`
     if (!force && sameRow(current, w)) return;
     var old = current, d = $("dinner"), scroll = $("detail").scrollTop;
     if (!$("detail").classList.contains("open")) { current = w; return; }
-    var source = d.querySelector(".source-disclosure");
-    var keepSource = source && old.url === w.url && old.caption === w.caption && old.platform === w.platform;
+    // A playing original is in the clip sheet, not on the card, so rebuilding the
+    // card never stops it; only the folds need putting back as they were.
     var opened = Array.from(d.querySelectorAll(".disclosure")).map(function (box) {
       return { title: box.firstChild.textContent, open: box.open };
     });
@@ -1851,10 +1946,6 @@ export const APP = String.raw`
       d.querySelectorAll(".disclosure").forEach(function (box, i) {
         if (opened[i] && opened[i].title === box.firstChild.textContent) box.open = opened[i].open;
       });
-    }
-    if (keepSource) {
-      var replacement = d.querySelector(".source-disclosure");
-      if (replacement) replacement.replaceWith(source);
     }
     $("detail").scrollTop = scroll;
   }
@@ -2033,8 +2124,8 @@ export const APP = String.raw`
   function isColFilter(f) { return typeof f === "string" && f.indexOf("col:") === 0; }
   // The third way a library divides itself, after the category the model guessed
   // and the collection the user made — and the only one nobody had to work for. It
-  // takes the same "prefix:value" shape as a collection filter so visible(),
-  // renderChips() and chipSig all learn it at once, and is keyed lower-case so one
+  // takes the same "prefix:value" shape as a collection filter so visible() and
+  // renderChips() both learn it at once, and is keyed lower-case so one
   // person cannot end up with two chips.
   function isByFilter(f) { return typeof f === "string" && f.indexOf("by:") === 0; }
   function authorKey(a) { return a ? String(a).toLowerCase().trim() : ""; }
@@ -2098,20 +2189,26 @@ export const APP = String.raw`
   }
 
   function visible() {
-    var q = state.q.toLowerCase().trim();
-    return state.workouts.filter(function (w) {
+    var q = state.q.toLowerCase().trim(), ready = state.filter === "ready";
+    // Ready to try is readyToTry()'s own list, so it and Train's shelf never disagree.
+    return (ready ? readyToTry() : state.workouts).filter(function (w) {
       if (state.filter === "Favorites") { if (!w.favorite) return false; }
       else if (isColFilter(state.filter)) { if (!inCol(state.filter.slice(4), w.id)) return false; }
       else if (isByFilter(state.filter)) { if (authorKey(w.author) !== state.filter.slice(3)) return false; }
       else if (isMgFilter(state.filter)) { if (!hasMg(w, state.filter.slice(3))) return false; }
-      else if (state.filter !== "All" && w.category !== state.filter) return false;
+      else if (state.filter !== "All" && !ready && w.category !== state.filter) return false;
       if (!q) return true;
-      var hay = [w.title, w.author, w.category, (w.muscle_groups || []).join(" "),
-        (w.equipment || []).join(" "), (w.tags || []).join(" "), exerciseNames(w).join(" "),
-        colsOf(w.id).map(function (c) { return c.name; }).join(" ")]
-        .join(" ").toLowerCase();
-      return hay.indexOf(q) >= 0;
+      return searchHay(w).indexOf(q) >= 0;
     });
+  }
+
+  // What a search looks through: the library's field and the day picker's alike,
+  // so a word finds the same workouts in both.
+  function searchHay(w) {
+    return [w.title, w.author, w.category, (w.muscle_groups || []).join(" "),
+      (w.equipment || []).join(" "), (w.tags || []).join(" "), exerciseNames(w).join(" "),
+      colsOf(w.id).map(function (c) { return c.name; }).join(" ")]
+      .join(" ").toLowerCase();
   }
 
   function exerciseNames(w) {
@@ -2122,22 +2219,57 @@ export const APP = String.raw`
     return out;
   }
 
-  var chipSig = null;
+  // One status per card, in the rule's own words (cardStatus, statusLabel). None
+  // on a card still being read or one that could not be, which keep their own
+  // state; none until the plan and the logs are both in, or the rule would call a
+  // trained workout "New". (A reread after a finished session happens under the
+  // summary, and lands before anybody is looking at the grid again.)
+  // The words are kept per status and day: the grid redraws on every keystroke of
+  // a search, and toLocaleDateString was four-fifths of what a status cost.
+  var badgeWords = {};
+
+  function cardBadge(w) {
+    if (!state.plan || !state.logs || isPending(w) || isFailed(w)) return null;
+    var st = cardStatus(w), now = new Date(), k = ymd(now) + st.kind + st.day + st.last + st.n;
+    return { kind: st.kind, label: badgeWords[k] || (badgeWords[k] = statusLabel(st, now)) };
+  }
+
+  // The plan or the logs just changed under the library: the statuses, the
+  // Ready to try count and its narrow line follow. renderGrid rebuilds only the
+  // cards whose status actually moved, so an unchanged answer costs nothing.
+  function libStatusesChanged() {
+    if (!state.libReady) return;
+    renderChips(); renderColBar(); renderGrid();
+  }
 
   function renderChips() {
-    var wrap = $("chips");
-    if (isColFilter(state.filter) && !colById(state.filter.slice(4))) state.filter = "All";
+    var wrap = $("chips"), f = state.filter, n = state.logs ? readyToTry().length : 0;
+    // Gone from under it: the collection deleted, or the shelf's last card trained.
+    if (isColFilter(f) && !colById(f.slice(4)) || f === "ready" && state.logs && !n) f = state.filter = "All";
+    var ready = f === "ready";
     wrap.innerHTML = "";
     wrap.classList.toggle("hide", !state.workouts.length);
     function control(label, fn, active) {
       var b = el("button", "chip" + (active ? " active" : ""), label);
       b.onclick = fn; wrap.appendChild(b);
+      return b;
     }
-    var filterLabel = state.filter !== "All" && !isColFilter(state.filter) && !isByFilter(state.filter) && !isMgFilter(state.filter) ? "Filter: " + state.filter : "Filters";
-    control(filterLabel, function () { openLibraryFilters(false); }, state.filter !== "All" && !isColFilter(state.filter));
-    control("Collections", function () { openLibraryFilters(true); }, isColFilter(state.filter));
-    control("Sort: " + SORTLBL[sortMode], function () { openSort(); });
-    if (state.filter !== "All") control("Clear filter", function () { state.filter = "All"; render(); });
+    var named = f !== "All" && !ready && !isColFilter(f) && !isByFilter(f) && !isMgFilter(f);
+    control(named ? "Filter: " + f : "Filters", function () { openLibraryFilters(false); },
+      f !== "All" && !ready && !isColFilter(f));
+    // A toggle rather than a door: one tap narrows the grid to what has never been
+    // trained, the same tap brings everything back. Not offered until the logs
+    // say what has been trained, and not at all when the answer is nothing.
+    if (n || ready) {
+      var r = control("Ready to try", function () { state.filter = ready ? "All" : "ready"; render(); viewIn($("grid")); }, ready);
+      if (n) r.appendChild(el("span", "n", String(n)));
+      r.setAttribute("aria-pressed", String(ready));
+    }
+    control("Collections", function () { openLibraryFilters(true); }, isColFilter(f));
+    // Newest is the order a library is in; only a grouping is worth naming, and
+    // four chips have to share a row that "Sort: Newest" alone pushed onto two.
+    control(sortMode === "new" ? "Sort" : "Sort: " + SORTLBL[sortMode], function () { openSort(); });
+    if (f !== "All" && !ready) control("Clear filter", function () { state.filter = "All"; render(); });
   }
 
   function openLibraryFilters(collections) {
@@ -2157,7 +2289,7 @@ export const APP = String.raw`
       manage.onclick = function () { openCollections(null); closeSheet("filtersheet"); };
       list.appendChild(manage);
     } else {
-      option("Favorites", "Favourites");
+      option("Favorites", "Favorites");
       CATEGORIES.forEach(function (c) {
         if (state.workouts.some(function (w) { return w.category === c; })) option(c, c);
       });
@@ -2173,10 +2305,12 @@ export const APP = String.raw`
     var c = isColFilter(state.filter) ? colById(state.filter.slice(4)) : null;
     // A creator or a body part narrows the grid as a collection does, and with the
     // creator chips gone this line is the only thing that says which narrow is on —
-    // and the only way back out.
-    if (!c && (isByFilter(state.filter) || isMgFilter(state.filter))) {
-      var isBy = isByFilter(state.filter), k = state.filter.slice(3), n = 0, name = null;
-      state.workouts.forEach(function (w) {
+    // and the only way back out. Ready to try says itself the same way.
+    var rd = state.filter === "ready";
+    if (!c && (rd || isByFilter(state.filter) || isMgFilter(state.filter))) {
+      var isBy = isByFilter(state.filter), k = state.filter.slice(3), n = rd ? readyToTry().length : 0;
+      var name = rd ? "Ready to try" : null;
+      if (!rd) state.workouts.forEach(function (w) {
         if (isBy ? authorKey(w.author) !== k : !hasMg(w, k)) return;
         n++;
         if (!name && isBy && k) name = "@" + w.author;
@@ -2201,7 +2335,7 @@ export const APP = String.raw`
     var ren = el("button", null, "Rename");
     ren.onclick = function () { openRename("collection", c.id, c.name); };
     bar.appendChild(ren);
-    var del = el("button", "warn", "Delete");
+    var del = el("button", "warn", "Remove");
     del.onclick = function () { deleteCollection(c); };
     bar.appendChild(del);
   }
@@ -2326,100 +2460,6 @@ export const APP = String.raw`
     else pg.scrollTo({ top: top, behavior: "smooth" });
   }
 
-  // ---------- today ----------
-  //
-  // A training app is opened with one question — what am I doing today — and the
-  // plan knew the answer two tabs away. One card above the grid, and none at all on
-  // an empty day: nothing planned is not a problem to solve. The Plan tab is the
-  // only thing that reads plan rows and most sessions never open it, so this does
-  // its own read of today's plan and today's logs: two small selects.
-
-  var today = { day: null, rows: [], done: false, at: 0, busy: false, shown: false, asked: 0 };
-
-  // Anchored to the chip row instead of declared in markup.ts: setView hides that
-  // row exactly when the Library is off screen, and one CSS adjacency rule lets
-  // this card leave with it however the block is laid out later.
-  var todayBox = el("div", "todaywrap hide");
-  todayBox.id = "today";
-  $("chips").parentNode.insertBefore(todayBox, $("chips").nextSibling);
-
-  function loadToday() {
-    if (today.busy || !state.user) return;
-    var key = ymd(new Date()), epoch = accountEpoch, uid = state.user.id;
-    today.busy = true; today.asked = Date.now();
-    Promise.all([
-      sb.from("plan").select("workout_id").eq("day", key),
-      // Pulled back a day: no time zone can then leave this morning's session
-      // outside the window, and the local date below is what decides.
-      sb.from("workout_logs").select("started_at")
-        .gte("started_at", ymd(new Date(Date.now() - 86400000)) + "T00:00:00Z")
-    ]).then(function (rs) {
-      if (!accountNow(epoch, uid)) return;
-      if (rs[0].error || rs[1].error) throw new Error("Today unavailable");
-      today.day = key;
-      today.rows = rs[0].data || [];
-      // The Plan's own test for its tick, so the two cannot disagree about today.
-      // A day is the local one: comparing UTC dates ticked the wrong day every
-      // evening west of Greenwich, which is most of an evening's training.
-      today.done = (rs[1].data || []).some(function (l) {
-        return l.started_at && ymd(new Date(l.started_at)) === key;
-      });
-      renderToday();
-    }).catch(function () { /* the age check tries again in half a minute */ })
-      .then(function () { if (accountNow(epoch, uid)) { today.busy = false; today.at = Date.now(); } });
-  }
-
-  function todayDose(w) {
-    var n = exerciseNames(w).length;
-    var first = ((w.blocks || [])[0] || {}).exercises || [];
-    return [n ? n + (n === 1 ? " exercise" : " exercises") : null,
-      first.length ? doseText(first[0]) : null, fmtDur(w.duration_minutes)]
-      .filter(Boolean).join(" · ");
-  }
-
-  function renderToday() {
-    // The snapshot ages two ways this screen never hears about: the day rolling over
-    // under a phone left on the counter, and a session finished in Workout Mode,
-    // which does not come back through load(). One age check covers both, at two
-    // small reads a minute however often the library repaints.
-    if (state.view === "library" &&
-      (today.day !== ymd(new Date()) || Date.now() - today.at > 30000)) loadToday();
-
-    var box = todayBox, list = [];
-    today.rows.forEach(function (p) {
-      var m = state.workouts.filter(function (x) { return x.id === p.workout_id; })[0];
-      if (m) list.push(m);
-    });
-    var w = list[0];
-    box.innerHTML = "";
-    if (!w) { box.classList.add("hide"); today.shown = false; return; }
-    box.classList.remove("hide");
-
-    var card = el("div", "daycard today" + (today.done ? " done" : ""));
-    var head = el("div", "dayhead");
-    head.appendChild(el("div", "dayname", "Today"));
-    if (today.done) head.appendChild(icon(el("div", "daydone"), "check", "Done today"));
-    card.appendChild(head);
-    var t = el("button", "ttitle", w.title || "Workout");
-    t.onclick = function () { openDetail(w); };
-    card.appendChild(t);
-    var dose = [todayDose(w), list.length > 1 ? "+" + (list.length - 1) + " more today" : null]
-      .filter(Boolean).join(" · ");
-    if (dose) card.appendChild(el("div", "tdose", dose));
-    // Where the week stands, on the card already answering "what am I doing today".
-    var wk = thisWeek();
-    if (wk) card.appendChild(el("div", "tweek" + (wk.atRisk ? " risk" : ""), weekLine(wk)));
-    // The detail overlay's own start call, so finishing lands in the same place.
-    var go = el("button", "btn tstart" + (today.done ? " ghost" : ""),
-      today.done ? "Log another" : "Start");
-    go.onclick = function () { startWorkout(w); };
-    card.appendChild(go);
-    box.appendChild(card);
-    // Only the first appearance arrives: rebuilt on every render, a card that
-    // re-enters on every filter tap is a flicker.
-    if (!today.shown) { today.shown = true; viewIn(box); }
-  }
-
   function fmtDur(m) {
     if (!m) return null;
     if (m < 60) return m + " min";
@@ -2501,16 +2541,18 @@ export const APP = String.raw`
       else if (pendingMotion) pendingMotion.unobserve(previous[key].node);
     });
     function card(w, i, groupKey) {
-      var key = (groupKey || "flat") + ":" + w.id;
+      var key = (groupKey || "flat") + ":" + w.id, b = cardBadge(w);
+      // The status is in the signature, so a plan or a finished session repaints
+      // just the cards it changed.
       var sig = JSON.stringify([w.title, w.ingest_status, w.media_stage, w.platform, w.thumb_url, w.pumpy_cover,
-        w.favorite, w.duration_minutes, w.category, w.difficulty, cardMeta(w)]);
+        w.favorite, w.duration_minutes, w.category, w.difficulty, cardMeta(w), b && b.label]);
       var entry = previous[key];
       // Pressed: kept as it is, with its old signature so the catch-up redraws it.
       if (entry && entry.sig !== sig && entry.node === pressedCard) { gridBehind = true; sig = entry.sig; }
       if (!entry || entry.sig !== sig) {
         var changed = !!entry;
         if (entry && pendingMotion) pendingMotion.unobserve(entry.node);
-        entry = { id: w.id, sig: sig, node: cardNode(w, i) };
+        entry = { id: w.id, sig: sig, node: cardNode(w, i, b) };
         if (changed) entry.node.classList.add("fresh");
       }
       entry.node.onclick = function () { openDetail(w); };
@@ -2545,7 +2587,7 @@ export const APP = String.raw`
           paintSaveOn(how);
           empty.appendChild(how);
         } else empty.appendChild(el("p", null, "Paste a TikTok, Instagram, or YouTube link to get started."));
-        var first = el("button", "btn firstsave", "Save your first workout");
+        var first = el("button", "btn firstsave", "Add video");
         first.onclick = function () { $("addbtn").click(); };
         empty.appendChild(first);
       } else {
@@ -2662,8 +2704,9 @@ export const APP = String.raw`
   // One card, wherever it is going: the flat grid, or a section of it. i is its
   // place on the page, so the first four are still the ones told to hurry. Listed
   // under three muscles it flies in once — cardIn is how a NEW card arrives, and
-  // one workout arriving three times is a flock, not news.
-  function cardNode(w, i) {
+  // one workout arriving three times is a flock, not news. b is its status
+  // (cardBadge), or nothing while the plan and the logs are still unknown.
+  function cardNode(w, i, b) {
     var pending = isPending(w), failed = isFailed(w);
     var card = el("button", "carditem" + (pending ? " pending" : "") + (failed ? " failed" : ""));
     if (pending && pendingMotion) pendingMotion.observe(card);
@@ -2721,11 +2764,20 @@ export const APP = String.raw`
     if (w.favorite) {
       var fv = icon(el("div", "fav"), "star");
       fv.setAttribute("role", "img");
-      fv.setAttribute("aria-label", "Favourite");
+      fv.setAttribute("aria-label", "Favorite");
       tw.appendChild(fv);
     }
     var d = fmtDur(w.duration_minutes);
     if (d) tw.appendChild(el("div", "durbadge", d));
+    // One status, on the picture's bottom-left corner, where it sits on every card
+    // and adds no height. A word as well as a mark, never a colour alone; the words
+    // are the rule's, and a screen reader reads them with the rest of the card.
+    if (b) {
+      var sp = el("div", "stpill " + b.kind);
+      if (b.kind !== "new") sp.appendChild(ic(b.kind === "done" ? "check" : "calendar"));
+      sp.appendChild(document.createTextNode(b.label));
+      tw.appendChild(sp);
+    }
     card.appendChild(tw);
 
     var body = el("div", "cardbody");
@@ -2748,14 +2800,12 @@ export const APP = String.raw`
   function render() {
     renderChips();
     renderColBar();
-    renderResume();
-    renderToday();
+    sessionChanged();
     renderGrid();
     renderLibCount();
     var n = state.workouts.length;
     $("searchwrap").classList.toggle("hide", !n);
-    maybeInstallHint();
-    $("count0").textContent = n ? n + (n === 1 ? " workout" : " workouts") : "No workouts yet";
+    $("countlib").textContent = n ? n + " saved" : "Nothing saved yet";
   }
 
   // ---------- detail ----------
@@ -2975,8 +3025,8 @@ export const APP = String.raw`
 
   // ---------- choosing a rest ----------
   //
-  // One wheel, four homes: the pill's sheet, both dose panes and the section
-  // sheet. It replaced fifteen chips and a Custom… pair because the owner asked
+  // One wheel, three homes: both dose panes (the card's Edit exercise and the
+  // workout's add) and the section sheet. It replaced fifteen chips and a Custom… pair because the owner asked
   // for "a swipable thing like the apple alarm so there's not like a million
   // buttons" — and a wheel that reaches every value IS the custom option. The
   // shape is Clock's timer, UIDatePicker's countdown mode: minutes 0–10 and
@@ -2992,8 +3042,7 @@ export const APP = String.raw`
   // value and onPick keep the chip grid's three shapes: "" for the default, 0
   // for no rest, a number of seconds. onPick hears of a new notch once the wheel
   // settles, and of "Use default" at once; saving is the caller's business —
-  // the rest sheet has a Save, the panes and the section sheet their own
-  // buttons. A value off the grid (97 s from a video) shows its nearest notch
+  // the panes and the section sheet have their own buttons. A value off the grid (97 s from a video) shows its nearest notch
   // and stays 97 until someone moves the wheel.
   function restDetent(t) { return clamp(Math.round(t / 5) * 5, 0, 655); }
 
@@ -3184,7 +3233,7 @@ export const APP = String.raw`
     t.appendChild(el("span", "fromtitle", src.title || "Untitled workout"));
     b.appendChild(tw);
     b.appendChild(t);
-    b.onclick = function () { openDetail(src, true); $("detail").scrollTop = 0; };
+    b.onclick = function () { showCard(src); };
     return b;
   }
 
@@ -3309,6 +3358,16 @@ export const APP = String.raw`
 
   // keepHistory is set when Realtime re-renders an open card in place: the overlay
   // is already on the history stack and pushing again would need two back gestures.
+  //
+  // The card top to bottom, since Simplify-B (25 Sept): the cover, which is the way
+  // to the video; what it is and whose; the rows, each of which opens its exercise
+  // sheet; what shapes the card; the fixes for a thin read; the caption. Start and
+  // Plan are pinned under all of it (#ddock), so nothing stands between somebody
+  // who has just saved a video and doing it — the Plus offer that used to sit above
+  // Start is one fold down now, with the other repairs. Recipe apps settled on this
+  // shape (Crouton and Mela: a picture, a line of facts, the list, one way into
+  // cooking that never scrolls away), and so did Apple Fitness+: artwork first,
+  // Let's Go beside one quieter button, everything else under ⋯.
   function openDetail(w, keepHistory) {
     if (!keepHistory) { guideClear(); guideStill(); }
     current = w;
@@ -3326,18 +3385,50 @@ export const APP = String.raw`
     // an overlay already open — a citation chip — is a new place with no order.
     if (navFrom) { dNav = gridNav(w.id); navFrom = false; }
     else if (dNav && dNav.ids[dNav.i] !== w.id) dNav = null;
+    paintManage(w);
 
-    $("workmanage").innerHTML = "";
-    $("workmanage").appendChild(manageRow(w));
-    syncRereadButton(w);
-    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
-    $("dorder").hidden = isPending(w) || isFailed(w) || !ordCan(w);
+    var dead = isPending(w) || isFailed(w), art = cardArt(w);
+    // A coach's card has no video, and an upload's file is gone by the time its
+    // card exists: neither has an original to go back to.
+    var canWatch = !isUpload(w) && w.platform !== "pumpy";
 
-    d.appendChild(el("div", "dkick", isPending(w)
-      ? stageOf(w).kick
-      : (isFailed(w) ? failedKick(w, false) : (w.category || "Other"))));
-    var titleEl = el("h2", "dtitle", w.title || "Untitled workout");
-    d.appendChild(titleEl);
+    // The original in the clip sheet with its caption under it: what the folded
+    // "Watch original" row used to hold, now a tap on the picture. The player
+    // lives in the sheet, so a background refresh of the card never stops it.
+    function watchOriginal() {
+      var body = $("watchbody"), em = embedNode(w);
+      body.innerHTML = "";
+      if (em) body.appendChild(em);
+      if (w.url) body.appendChild(originalLink(w));
+      if (typeof w.caption === "string") body.appendChild(el("div", "capbox", w.caption));
+      else askCaption(w, {}, body);
+      $("watchtitle").textContent = "Watch original";
+      openSheet("watchsheet");
+      if (em) fitEmbed(em, w.platform);
+    }
+
+    // The thumbnail, or the drawing a coach's card wears, at 16:9. A picture that
+    // will not load keeps its sand frame and its label, which is still the door.
+    if (art) {
+      var cover = el(canWatch ? "button" : "div", "dcover"), img = el("img");
+      img.alt = "";
+      img.decoding = "async";
+      img.onload = function () { cover.classList.add("in"); };
+      img.onerror = function () { cover.classList.add("in", "noart"); };
+      img.src = art;
+      // Cached: a fade for a wait already over is the flicker it prevents.
+      if (img.complete && img.naturalWidth) cover.classList.add("in", "now");
+      cover.appendChild(img);
+      if (canWatch) {
+        cover.appendChild(icon(el("span", "dplay"), "play", "Watch original"));
+        cover.onclick = watchOriginal;
+      }
+      d.appendChild(cover);
+    }
+
+    d.appendChild(el("div", "dkick", isPending(w) ? stageOf(w).kick : isFailed(w) ? failedKick(w, false)
+      : [w.category || "Other", w.difficulty ? capWord(w.difficulty) : ""].filter(Boolean).join(" · ")));
+    d.appendChild(el("h2", "dtitle", w.title || "Untitled workout"));
     // The handle does what a collection pill does: close the card, land in a library
     // already narrowed to that creator. setView only moves the pager now — arriving
     // on a page deliberately does not redraw it — so the new filter has to be drawn
@@ -3350,18 +3441,42 @@ export const APP = String.raw`
       d.appendChild(au);
     }
 
+    // One line of facts and one of gear, both text: five equipment pills took two
+    // rows of a 375px screen to say what "cables · machine · barbell +2" says.
+    if (!dead) {
+      var exN = exerciseNames(w).length, sets = 0, eq = w.equipment || [];
+      allExercises(w).forEach(function (x) { sets += +x.sets || 0; });
+      var facts = [w.duration_minutes ? "~" + fmtDur(w.duration_minutes) : "",
+        exN ? exN + (exN === 1 ? " exercise" : " exercises") : "",
+        sets ? sets + (sets === 1 ? " set" : " sets") : ""].filter(Boolean).join(" · ");
+      if (facts) d.appendChild(el("div", "workout-meta", facts));
+      var gear = eq.length ? eq.slice(0, 3).join(" · ") + (eq.length > 3 ? " +" + (eq.length - 3) : "")
+        : w.has_full_workout ? "bodyweight" : "";
+      if (gear) d.appendChild(el("div", "dgear", gear));
+    }
+    // No picture to tap: the same door as a chip, where the old pill stood.
+    if (canWatch && !art) {
+      var wbtn = icon(el("button", "chip dwatch"), "play", "Watch original");
+      wbtn.onclick = watchOriginal;
+      d.appendChild(wbtn);
+    }
 
-    if (!isPending(w) && !isFailed(w) && w.ingest_error &&
+    // What the read could not fill in, as one folded line like the caveat under
+    // it: the headline is the news for most readers, the sentence the detail.
+    if (!dead && w.ingest_error &&
         !((w.blocks || []).length === 0 && String(w.ingest_error).indexOf(PLUS_READ_HINT) === 0)) {
-      var incomplete = el("div", "sect");
-      incomplete.appendChild(el("h3", null, UNCHANGED.test(w.ingest_error) ? "That read did not change this card" : "Some details are missing"));
-      incomplete.appendChild(el("div", "capbox", w.ingest_error));
-      d.appendChild(incomplete);
+      var gap = disclosure(null, "dnote");
+      gap.firstChild.appendChild(ic("alert"));
+      gap.firstChild.appendChild(el("b", null, UNCHANGED.test(w.ingest_error) ? "That read did not change this card" : "Some details are missing"));
+      gap.lastChild.textContent = w.ingest_error;
+      d.appendChild(gap);
     }
 
     // A card whose extraction has not landed yet, or one whose job gave up. Both
     // are real rows with a real link — the user keeps what they saved either way.
-    if (isPending(w) || isFailed(w)) {
+    // Neither gets the dock: there is nothing to start yet, and each has its own
+    // way forward right here.
+    if (dead) {
       var isUp = isUpload(w);
       var stage = stageOf(w);
       var note = el("div", "sect");
@@ -3395,34 +3510,13 @@ export const APP = String.raw`
         pb.onclick = function () { openCaption(w); };
         d.appendChild(pb);
       }
-      // An upload has no original to open — its only address is inside Spotter,
-      // and that address stopped resolving to anything the moment it was read.
-      if (!isUp) d.appendChild(originalLink(w));
 
       setFav(w);
       paintNav();
+      $("detail").classList.remove("docked");
       $("detail").classList.add("open");
       if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
       return;
-    }
-
-    var pills = el("div", "pillrow");
-
-    (w.equipment || []).forEach(function (e) { pills.appendChild(el("span", "pill", e)); });
-    if (!(w.equipment || []).length && w.has_full_workout) pills.appendChild(el("span", "pill", "bodyweight"));
-    if (pills.children.length) d.appendChild(pills);
-
-    var specs = [];
-    var dur = fmtDur(w.duration_minutes);
-    if (dur) specs.push([dur, "Duration"]);
-    var exN = exerciseNames(w).length;
-    if (exN) specs.push([String(exN), "Exercises"]);
-    if (w.difficulty) specs.push([capWord(w.difficulty), "Level"]);
-
-    if (specs.length) {
-      d.appendChild(el("div", "workout-meta", specs.map(function (v) {
-        return v[0] + (v[1] === "Exercises" ? " exercises" : "");
-      }).join(" · ")));
     }
 
     // The confidence score, translated into the only thing a user needs from it:
@@ -3450,11 +3544,9 @@ export const APP = String.raw`
           ? "The exercises below were not traceable to anything written on the post. Watch the original before you train it."
           : "A few sets or reps were not written down anywhere Spotter could find. Worth a glance at the original.";
       }
-      // One line, folded like the rows around it: the headline is the whole caveat
-      // for most readers, and the sentence behind it opens on the same chevron
-      // "Watch original" and "Options" use, so the card has one way of hiding
-      // things rather than two.
-      var warn = disclosure(null, "unverified"), wt = warn.lastChild;
+      // One compact line, folded: the headline is the whole caveat for most
+      // readers, and the sentence behind it opens on a tap.
+      var warn = disclosure(null, "dnote unverified"), wt = warn.lastChild;
       warn.firstChild.appendChild(ic(from.video || from.speech ? "eye" : (conf < 0.45 ? "alert" : "eye")));
       warn.firstChild.appendChild(el("b", null, head));
       wt.appendChild(document.createTextNode(why));
@@ -3477,91 +3569,6 @@ export const APP = String.raw`
       d.appendChild(warn);
     }
 
-    // "Plus reads the video" only where Plus reads more: a TikTok video. A file of
-    // the person's own is read the same way on either plan (the uploads allowance
-    // pays for it), so a Basic upload card is not told Plus would have watched
-    // what Spotter just watched. An Instagram card whose caption left it thin is
-    // offered the one thing that works for a reel instead; the empty-card box
-    // above already does that for a card with nothing in it.
-    var plusCan = w.platform === "tiktok" && w.kind !== "photo";
-    var addHere = canAddVideo(w) && (w.blocks || []).length > 0;
-    if (w.platform !== "pumpy" && w.read_quality !== "premium" && addHere) {
-      var addBox = el("div", "reader-offer");
-      addBox.appendChild(el("b", null, "Add the video"));
-      addBox.appendChild(el("p", null, ADD_VIDEO_WHY));
-      var addv = el("button", "btn ghost", "Add the video");
-      addv.onclick = function () { openAddVideo(w); };
-      addBox.appendChild(addv);
-      d.appendChild(addBox);
-    } else if (w.platform !== "pumpy" && w.read_quality !== "premium" && plusCan) {
-      var quality = el("div", "reader-offer");
-      quality.appendChild(el("b", null, "Basic read"));
-      quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
-      if (w.platform === "tiktok" && w.kind !== "photo") {
-        // No number until one is known. The count used to be hard-coded here as
-        // four, which is right today and would go quietly wrong the moment the
-        // allowance moved in config; the read below fills it in a moment later.
-        var pv = billing.limits && billing.limits.video_previews;
-        var trial = el("button", "btn ghost", !isFree() ? "Read with Plus"
-          : pv ? "Try a Plus read · " + Math.max(0, pv.cap - pv.used) + " left this month"
-          : "Try a Plus read");
-        trial.onclick = function () { readVideo(w, trial, isFree()); };
-        quality.appendChild(trial);
-        if (isFree()) recentLimits().then(function (r) {
-          if (!trial.isConnected || !r.video_previews) return;
-          var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
-          trial.textContent = left ? "Try a Plus read · " + left + " left this month" : "Explore Spotter Plus";
-          // Opens on what ran out, as a refused preview would.
-          if (!left) trial.onclick = function () {
-            var c = billing.caps;
-            openPlans({ kind: "media", plan: "free", scope: "month", cap: r.video_previews.cap, used: r.video_previews.used,
-              next_plan: "plus", next_cap: c ? capNum(c.plus.month_reads) : undefined });
-          };
-        }).catch(function () {});
-      }
-      if (isFree()) {
-        var value = el("button", "fixlink", "See everything in Plus");
-        value.onclick = function () { openPlans({ kind: "media" }); };
-        quality.appendChild(value);
-      }
-      d.appendChild(quality);
-    }
-    var waiting = pausedDraft();
-    var start = el("button", "startbtn", waiting && waiting.workoutId === w.id ? "Resume workout"
-      : w.has_full_workout ? "Start workout" : "Start & log freestyle");
-    start.onclick = function () { startWorkout(w); };
-    d.appendChild(start);
-
-    var actions = el("div", "detail-actions");
-    var schedule = el("button", "chip", "Schedule");
-    schedule.onclick = function () { scheduleWorkout(w); };
-    actions.appendChild(schedule);
-    var ask = el("button", "chip", "Ask Pumpy");
-    ask.onclick = function () { history.back(); openPumpy(w); };
-    actions.appendChild(ask);
-    d.appendChild(actions);
-
-    var original = disclosure("Watch original / source", "source-disclosure");
-    var sourceBody = original.lastChild;
-    if (!isUpload(w) && w.url) sourceBody.appendChild(originalLink(w));
-    if (w.caption) sourceBody.appendChild(el("div", "capbox", w.caption));
-    // Asked for on the press that opens it, a beat before the tap lands, and on the
-    // open itself for a keyboard.
-    original.firstChild.addEventListener("pointerdown", function () { askCaption(w, original, sourceBody); });
-    original._prepareDisclosure = function () {
-      if (!original.open) {
-        var old = sourceBody.querySelector(".embedwrap, .dphoto");
-        if (old) old.remove();
-        return;
-      }
-      askCaption(w, original, sourceBody);
-      if (sourceBody.querySelector(".embedwrap, .dphoto")) return;
-      var em = embedNode(w);
-      if (em) { sourceBody.insertBefore(em, sourceBody.firstChild); fitEmbed(em, w.platform); }
-    };
-    original.addEventListener("toggle", original._prepareDisclosure);
-    if (w.platform !== "pumpy") d.appendChild(original);
-
     // Above the blocks: a coach's card arrives with no video attached, and whose
     // videos it came out of is the first thing worth knowing about it.
     var cites = citedSources(w);
@@ -3574,7 +3581,6 @@ export const APP = String.raw`
       d.appendChild(built);
     }
 
-    var canOrder = ordCan(w);
     (w.blocks || []).forEach(function (b, bi) {
       var sect = el("div", "sect workout-block");
       // A block has a name in the data — "Warm-up", "Finisher". The card printed
@@ -3582,82 +3588,56 @@ export const APP = String.raw`
       // round. The name IS the heading.
       var blockRow = el("div", "exrow delete-swipe block-swipe");
       var blockFront = el("div", "exmain");
-      blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Block " + (bi + 1))));
+      blockFront.appendChild(el("h3", null, b.title || (w.blocks.length === 1 ? "Exercises" : "Section " + (bi + 1))));
       // Its one quiet action opens the section sheet, which is where the name,
       // the kind, the rounds and the rest live now; removing is in there and in
       // the swipe.
       var blockMore = el("button", "linkbtn", "Edit");
-      blockMore.setAttribute("aria-label", "Edit " + (b.title || "block " + (bi + 1)));
+      blockMore.setAttribute("aria-label", "Edit " + (b.title || "section " + (bi + 1)));
       blockMore.onclick = function () { openSection(w, bi); };
       blockFront.appendChild(blockMore);
       var blockActions = el("div", "exacts");
-      var blockDelete = icon(el("button", "exact danger"), "trash", "Delete");
-      blockDelete.setAttribute("aria-label", "Delete " + (b.title || "block " + (bi + 1)));
+      var blockDelete = icon(el("button", "exact danger"), "trash", "Remove");
+      blockDelete.setAttribute("aria-label", "Remove " + (b.title || "section " + (bi + 1)));
       blockDelete.onclick = function () { deleteBlock(w, bi); };
       blockActions.appendChild(blockDelete); blockRow.appendChild(blockFront); blockRow.appendChild(blockActions);
       sect.appendChild(blockRow);
       var bm = blockMetaText(b);
       if (bm) sect.appendChild(el("div", "blockmeta", bm));
       (b.exercises || []).forEach(function (ex, ei) {
-        var row = el("div", "exercise-card");
-        var main = el("div", "exercise-main");
-        var name = el("div", "exname");
-        name.appendChild(document.createTextNode(ex.name));
-        var cue = cueOf(ex);
-        if (cue) name.appendChild(el("div", "exnote", cue));
-        // Under the cue: how this differed from the standard version, and when in
-        // the video it happens. Both are one glance each, and both are things the
-        // row could never say before — the delta because nothing computed it, the
-        // second because nothing knew it.
-        var marks = rowMarks(ex);
-        if (marks) name.appendChild(marks);
-        var segment = bitBtn(sourceOf(ex) || w, ex);
-        if (segment) name.appendChild(segment);
-        if (ex.recommendation) name.appendChild(el("div", "exnote recommendation", ex.recommendation.note));
+        // What to do and how long to rest, and a ▶ where the video shows the
+        // movement at a known second; everything you can DO to it is one tap away
+        // in its sheet (openExerciseSheet) and Remove one swipe away. It used to
+        // carry a clip chip, a rest pill and an Options fold of its own: three
+        // controls a row, forty-odd on a long card.
+        var swipe = el("div", "exrow delete-swipe"), front = el("div", "exmain");
+        var row = el("button", "exercise-main"), name = el("span", "exname", ex.name);
+        var rest = restOf(ex, b, false), src = sourceOf(ex) || w, t = startOf(ex);
+        var restTxt = restWord(rest.secs).replace("Rest ", "rest "), cue = cueOf(ex), dose = doseText(ex);
+        if (t === null) t = bitOf(ex);
+        // The sheet's rule for "Watch this part": only where the embed can seek.
+        if (!src || !/^(youtube|tiktok)$/.test(src.platform)) t = null;
+        if (cue) name.appendChild(el("span", "exnote", cue));
+        if (ex.recommendation) name.appendChild(el("span", "exnote recommendation", ex.recommendation.note));
+        var meta = el("span", "exmeta");
+        if (t !== null) meta.appendChild(icon(el("span", "exclip"), "play", clock(t)));
+        // A default is dimmer than a rest somebody chose: the same number is a
+        // different fact about the video.
+        meta.appendChild(el("span", rest.source === "default" ? "dflt" : null, restTxt));
         // Say which lines are the user's own. Everything else on the card is the
         // creator's wording, and the difference matters when they come back to it.
-        if (ex.added_by_user) name.appendChild(el("div", "exmine", "Added by you"));
-        else if (ex.edited_by_user) name.appendChild(el("div", "exmine", "Edited by you"));
+        if (ex.added_by_user || ex.edited_by_user) meta.appendChild(el("span", null, ex.added_by_user ? "Added by you" : "Edited by you"));
+        name.appendChild(meta);
         var fl = fromLine(ex);
         if (fl) name.appendChild(fl);
-        // The source line used to be a hover title here — invisible on a phone, and
-        // silent about where it came from. The Explain sheet says all of it now.
-        main.appendChild(name);
-        var dose = doseText(ex);
-        if (dose) main.appendChild(el("div", "exdose", dose));
-        row.appendChild(main);
-        var acts = el("div", "exercise-actions");
-        // The rest, where the owner pointed: the empty half of the options line.
-        // It is the rest Workout Mode will actually run, so a default is marked
-        // as one — dimmer, outlined, and saying so — because "1:30" the card
-        // stated and "1:30" nobody chose are different facts about the video.
-        var rest = restOf(ex, b, false), dflt = rest.source === "default";
-        var pill = el("button", "pill restpill" + (dflt ? " dflt" : ""), restWord(rest.secs) + (dflt ? " · default" : ""));
-        pill.onclick = function () { openRest(w, bi, ei, ex); };
-        acts.appendChild(pill);
-        var options = disclosure("Options", "exercise-options");
-        options.firstChild.setAttribute("aria-label", "Options for " + ex.name);
-        var edit = icon(el("button", "pickrow"), "pencil", "Review / Edit");
-        edit.onclick = function () { openExEdit(w, bi, ei, ex); };
-        options.lastChild.appendChild(edit);
-        var demo = icon(el("button", "pickrow"), "play", "Demo");
-        demo.onclick = function () { explain(ex, w); };
-        options.lastChild.appendChild(demo);
-        var swap = icon(el("button", "pickrow"), "swap", "Swap or modify");
-        swap.onclick = function () { openSwap(ex.name, w.title, { w: w, bi: bi, ei: ei, ex: ex }); };
-        options.lastChild.appendChild(swap);
-        if (canOrder) {
-          var move = icon(el("button", "pickrow"), "reorder", "Reorder");
-          move.onclick = function () { openOrder(w, "e" + bi + "." + ei); };
-          options.lastChild.appendChild(move);
-        }
-        acts.appendChild(options);
-        row.appendChild(acts);
-        var swipe = el("div", "exrow delete-swipe");
-        var front = el("div", "exmain");
+        row.appendChild(name);
+        if (dose) row.appendChild(el("span", "exdose", dose));
+        row.setAttribute("aria-haspopup", "dialog");
+        row.setAttribute("aria-label", [ex.name, dose, restTxt, t !== null ? "shown at " + clock(t) : ""].filter(Boolean).join(", "));
+        row.onclick = function () { openExerciseSheet({ from: "card", w: w, bi: bi, ei: ei, ex: ex, block: b }); };
         front.appendChild(row);
         var drawer = el("div", "exacts");
-        var del = icon(el("button", "exact danger"), "trash", "Delete");
+        var del = icon(el("button", "exact danger"), "trash", "Remove");
         del.setAttribute("aria-label", "Remove " + ex.name);
         del.onclick = function () {
           exEdit = { w: w, block: bi, index: ei, name: ex.name };
@@ -3665,15 +3645,11 @@ export const APP = String.raw`
         };
         drawer.appendChild(del);
         swipe.appendChild(front); swipe.appendChild(drawer); sect.appendChild(swipe);
-        var remove = icon(el("button", "pickrow"), "trash", "Remove exercise");
-        remove.onclick = del.onclick;
-        options.lastChild.appendChild(remove);
       });
-      var addex = el("button", "addex", "+ Add an exercise Spotter missed");
+      var addex = el("button", "addex", "+ Add exercise");
       addex.onclick = function () { openExAdd(w, bi); };
       sect.appendChild(addex);
       d.appendChild(sect);
-
     });
 
     if (!(w.blocks || []).length) {
@@ -3695,7 +3671,7 @@ export const APP = String.raw`
           ? "Spotter read the video itself and still could not make out a workout in it. " +
             "You can watch it and log a freestyle session, or type the exercises in yourself."
           : "This video did not include a written workout, so there is nothing to step through. " +
-            "You can still watch it and log a freestyle session, use Read it again in Options on " +
+            "You can still watch it and log a freestyle session, use Read it again in the ⋯ menu on " +
             "this card to have another go, or type the exercises in yourself."));
       none.appendChild(np);
       none.appendChild(el("div", null, " "));
@@ -3717,21 +3693,13 @@ export const APP = String.raw`
       d.appendChild(none);
     }
 
-    // After the last block, a whole section: a circuit, a finisher, ten minutes
-    // on the bike, a stretch. The per-block add above stays for a single missed
+    // After the last section, a whole new one: a circuit, a finisher, ten minutes
+    // on the bike, a stretch. The per-section add above stays for a single missed
     // movement; this is for "the video had a finisher and the card does not".
-    var tools = el("div", "cardtools");
+    // Reorder lives in ⋯ and in each exercise's sheet now.
     var addsec = el("button", "addex", "+ Add a section");
     addsec.onclick = function () { openSection(w, null); };
-    tools.appendChild(addsec);
-    // Beside it, the card's order: Hevy keeps Reorder with the other things that
-    // change a routine's shape, and so does this.
-    if (canOrder) {
-      var reorder = icon(el("button", "addex"), "reorder", "Reorder");
-      reorder.onclick = function () { openOrder(w); };
-      tools.appendChild(reorder);
-    }
-    d.appendChild(tools);
+    d.appendChild(addsec);
 
     // What this hits: catalog muscles through canonical_id, nothing else. Filled
     // in once the catalog map is here, which after the first card is immediate.
@@ -3814,24 +3782,117 @@ export const APP = String.raw`
     notesSect.appendChild(el("div", null, " "));
     notesBody.appendChild(notesSect);
 
+    // ---- improve this read ----
+    // What used to stand between a new user and Start — the Basic/Plus read offer —
+    // with the repairs for a card that came out thin: one fold under the list.
+    // Built when it opens, because its Plus count is a request and most cards are
+    // never asked about.
+    if (w.platform !== "pumpy") {
+      var imp = disclosure("Improve this read"), ib = imp.lastChild;
+      imp._prepareDisclosure = function () {
+        if (ib.firstChild) return;
+        // "Plus reads the video" only where Plus reads more: a TikTok video. A file
+        // of the person's own is read the same way on either plan (the uploads
+        // allowance pays for it), so a Basic upload card is not told Plus would
+        // have watched what Spotter just watched. An Instagram card whose caption
+        // left it thin is offered the one thing that works for a reel instead; the
+        // empty-card box above already does that for a card with nothing in it.
+        var plusCan = w.platform === "tiktok" && w.kind !== "photo";
+        var addHere = canAddVideo(w) && (w.blocks || []).length > 0;
+        if (w.read_quality !== "premium" && addHere) {
+          var addBox = el("div", "reader-offer");
+          addBox.appendChild(el("b", null, "Add the video"));
+          addBox.appendChild(el("p", null, ADD_VIDEO_WHY));
+          var addv = el("button", "btn ghost", "Add the video");
+          addv.onclick = function () { openAddVideo(w); };
+          addBox.appendChild(addv);
+          ib.appendChild(addBox);
+        } else if (w.read_quality !== "premium" && plusCan) {
+          var quality = el("div", "reader-offer");
+          quality.appendChild(el("b", null, "Basic read"));
+          quality.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
+          // No number until one is known. The count used to be hard-coded here as
+          // four, which is right today and would go quietly wrong the moment the
+          // allowance moved in config; the read below fills it in a moment later.
+          var pv = billing.limits && billing.limits.video_previews;
+          var trial = el("button", "btn ghost", !isFree() ? "Read with Plus"
+            : pv ? "Try a Plus read · " + Math.max(0, pv.cap - pv.used) + " left this month"
+            : "Try a Plus read");
+          trial.onclick = function () { readVideo(w, trial, isFree()); };
+          quality.appendChild(trial);
+          if (isFree()) recentLimits().then(function (r) {
+            if (!trial.isConnected || !r.video_previews) return;
+            var left = Math.max(0, r.video_previews.cap - r.video_previews.used);
+            trial.textContent = left ? "Try a Plus read · " + left + " left this month" : "Explore Spotter Plus";
+            // Opens on what ran out, as a refused preview would.
+            if (!left) trial.onclick = function () {
+              var c = billing.caps;
+              openPlans({ kind: "media", plan: "free", scope: "month", cap: r.video_previews.cap, used: r.video_previews.used,
+                next_plan: "plus", next_cap: c ? capNum(c.plus.month_reads) : undefined });
+            };
+          }).catch(function () {});
+          if (isFree()) {
+            var value = el("button", "fixlink", "See everything in Plus");
+            value.onclick = function () { openPlans({ kind: "media" }); };
+            quality.appendChild(value);
+          }
+          ib.appendChild(quality);
+        }
+        var fixes = el("div", "mlist");
+        fixes.appendChild(icon(el("button", "pickrow"), "compose", "Paste the caption")).onclick = function () { openCaption(w); };
+        if (!isUpload(w)) fixes.appendChild(icon(el("button", "pickrow"), "refresh", "Read it again")).onclick = rereadCard;
+        ib.appendChild(fixes);
+      };
+      // A keyboard, and a refresh putting the fold back open, arrive as a toggle.
+      imp.addEventListener("toggle", function () { if (imp.open) imp._prepareDisclosure(); });
+      d.appendChild(imp);
+    }
+
+    // The caption, last, as the list's footnote. CARD_COLS leaves it on the server,
+    // so it is asked for on the press that opens this, a beat before the tap lands.
+    if (canWatch) {
+      var capd = disclosure("Caption"), capb = capd.lastChild;
+      if (w.url) capb.appendChild(originalLink(w));
+      if (typeof w.caption === "string") capb.appendChild(el("div", "capbox", w.caption));
+      capd.firstChild.addEventListener("pointerdown", function () { askCaption(w, capd, capb); });
+      capd.addEventListener("toggle", function () { if (capd.open) askCaption(w, capd, capb); });
+      d.appendChild(capd);
+    }
+
+    paintDock(w);
     setFav(w);
     paintNav();
-    $("detail").classList.add("open");
+    $("detail").classList.add("docked", "open");
     if (!keepHistory) { $("detail").scrollTop = 0; history.pushState({ detail: 1 }, ""); }
   }
 
-  // The same pill in both halves of openDetail.
+  // A card opened from somewhere that can sit over another card — a citation
+  // chip, the ready sheet's Look it over first, a spotter://workout or start
+  // link — takes the open card's place and its history entry, at its own top.
+  // A second entry would outlive the Back that closes the overlay, and the next
+  // Back would spend it doing nothing. With no card open it is an ordinary open.
+  function showCard(w) {
+    openDetail(w, $("detail").classList.contains("open"));
+    $("detail").scrollTop = 0;
+  }
+
+  // Start is Resume while this card's session is paused — startWorkout resumes it
+  // either way, and the word should not say otherwise — and freestyle on a card
+  // with no list to step through. Painted on open and whenever a session changes.
+  function paintDock(w) {
+    var waiting = pausedDraft();
+    $("dstart").textContent = waiting && waiting.workoutId === w.id ? "Resume workout"
+      : w.has_full_workout ? "Start workout" : "Start & log freestyle";
+  }
+
+  // The external link to the original, in its own app: under the player in the
+  // clip sheet, and at the head of the Caption fold.
   function originalLink(w) {
-    var a = icon(el("a", "pill accent"), "arrow-up-right");
-    a.insertBefore(document.createTextNode("Open original"), a.firstChild);
+    var a = icon(el("a", "pill accent olink"), "arrow-up-right");
+    a.insertBefore(document.createTextNode("Watch original"), a.firstChild);
     a.href = w.source_url || w.url;
     a.target = "_blank";
     a.rel = "noopener";
-    a.style.display = "inline-flex";
-    a.style.alignItems = "center";
-    a.style.gap = "5px";
-    a.style.textDecoration = "none";
-    a.style.marginBottom = "14px";
     return a;
   }
 
@@ -4208,20 +4269,6 @@ export const APP = String.raw`
       row.scrollLeft = 0;
     } else if (openEx && row !== openEx) closeExRow(openEx);
   });
-
-  // A mark over a word: what iOS 26 shows by default, and what a reader needs. The
-  // aria-label keeps the sentence the round buttons carried.
-  function exAct(row, mark, word, label, prim, fn) {
-    var b = icon(el("button", prim ? "exact prim" : "exact"), mark);
-    b.appendChild(el("span", null, word));
-    b.setAttribute("aria-label", label);
-    b.onclick = function (e) {
-      e.stopPropagation();
-      closeExRow(row);
-      fn();
-    };
-    return b;
-  }
 
   // ---------- stepping to the next workout ----------
   //
@@ -4643,24 +4690,77 @@ export const APP = String.raw`
       $("exeditsave"), "Fixed — thanks");
   }
 
-  // ---------- the rest, from the card ----------
+  // ---------- one sheet per exercise ----------
   //
-  // "I want to see what the rest period will be." The pill on the row opens this:
-  // the wheel on the current rest, and a Save. A chip could save on its tap; a
-  // wheel cannot, since every notch it passes on the way would be a correction
-  // posted, so the sheet asks once, as Clock's alarm editor does. Unmoved, Save
-  // only closes. postCorrection holds the button while the write is out.
-
-  function openRest(w, bi, ei, ex) {
-    var was = restVal(ex.rest_seconds), pick = was;
-    $("resttitle").textContent = "Rest after " + ex.name;
-    restWheel($("restwheel"), was, function (v) { pick = v; });
-    $("restsave").onclick = function () {
-      if (pick === was) { closeSheet("restsheet"); return; }
-      postCorrection(w, { op: "edit", block: bi, index: ei, expect_name: ex.name, fields: { rest_seconds: pick } }, $("restsave"),
-        pick === "" ? "Back to the default rest" : pick === 0 ? "No rest after " + ex.name : "Rest set to " + clock(pick), "restsheet");
-    };
-    openSheet("restsheet");
+  // Every row on the card used to carry three controls of its own — Watch this
+  // bit, a rest pill and an Options fold — and Workout Mode had a fourth menu for
+  // the same movement. One sheet now, opened by tapping a row on the card and by
+  // ⋯ Exercise in Workout Mode, the way Hevy hangs everything off one ⋯ per
+  // exercise. Each row hands over to the sheet that already does the job: that
+  // sheet opens first and this one closes behind it, the order the day sheet
+  // taught, so the one history entry is never dropped between the two.
+  //
+  // ctx: { from: "card" | "workout", w, bi, ei, ex, block }
+  //   card     Watch this part · Demo and how-to · Edit exercise · Swap · Reorder · Remove
+  //   workout  Watch this part (or the whole video) · Demo and how-to · Swap ·
+  //            Add set · Add an exercise
+  // The card's own edits change the saved workout, which a running session has
+  // its own copy of, so Edit, Reorder and Remove stay on the card.
+  //
+  // Drawn as an inset-grouped list, iOS's shape for a menu that outgrew a popover:
+  // a mark, a word, a hairline that starts at the word. Remove is last, alone in a
+  // group of its own and in the app's red, as the section sheet's Remove is. Over
+  // the list, what the row on the card had to cut short: the whole cue, and how
+  // this creator's version differs from the standard one.
+  function openExerciseSheet(ctx) {
+    var ex = ctx.ex, w = ctx.w, live = ctx.from === "workout", list = $("exmenulist");
+    var block = ctx.block || ((w && w.blocks) || [])[ctx.bi] || {};
+    var src = sourceOf(ex) || w, t = startOf(ex), rest = restOf(ex, block, false), group = el("div", "mlist");
+    if (t === null) t = bitOf(ex);
+    $("exmenutitle").textContent = ex.name || "Exercise";
+    $("exmenusub").textContent = [doseText(ex),
+      restWord(rest.secs).replace("Rest ", "rest ") + (rest.source === "default" ? " (default)" : ""),
+      ex.equipment || null].filter(Boolean).join(" · ");
+    $("exmenunote").textContent = [cueOf(ex), ex.delta ? "Differs from the standard: " + String(ex.delta).trim() : ""]
+      .filter(Boolean).join("\n");
+    list.innerHTML = "";
+    list.appendChild(group);
+    function row(glyph, label, note, fn, cls) {
+      var b = icon(el("button", "pickrow" + (cls ? " " + cls : "")), glyph, label);
+      if (note) b.appendChild(el("span", "pknote", note));
+      b.onclick = function () { fn(); closeSheet("exmenu"); };
+      group.appendChild(b);
+      return b;
+    }
+    if (t !== null && src && /^(youtube|tiktok)$/.test(src.platform)) {
+      row("play", "Watch this part", clock(t), function () { watchBit(src, t, ex); });
+    } else if (live && src && (src.thumb_url || (src.shortcode && /^(instagram|tiktok|youtube)$/.test(src.platform)))) {
+      row("play", "Watch original", src.author ? "@" + src.author : null, function () { openWatch(src, ex); });
+    }
+    row("help", "Demo and how-to", null, function () { explain(ex, w); });
+    if (!live) row("pencil", "Edit exercise", null, function () { openExEdit(w, ctx.bi, ctx.ei, ex); });
+    row("swap", "Swap exercise", null, function () {
+      openSwap(ex.name, w.title, live ? swapTarget(w, ex) : { w: w, bi: ctx.bi, ei: ctx.ei, ex: ex });
+    });
+    if (!live && ordCan(w)) row("reorder", "Reorder", null, function () { openOrder(w, "e" + ctx.bi + "." + ctx.ei); });
+    if (live && wo && !wo.finished) {
+      var s = wo.screens[wo.i], entry = wo.entries[wo.i];
+      if (s && entry && !(s.cx && !s.ei)) {
+        row("plus", "Add set", null, function () {
+          if (isTimed(s.ex)) { logHold(entry.sets.length, s.ex.duration_seconds); renderWorkout(); }
+          else openSetSheet(entry.sets.length);
+        });
+      }
+      row("plus", "Add an exercise", null, openWorkoutAdd);
+    }
+    if (!live) {
+      list.appendChild(group = el("div", "mlist"));
+      row("trash", "Remove", null, function () {
+        exEdit = { w: w, block: ctx.bi, index: ctx.ei, name: ex.name };
+        deleteExEdit();
+      }, "del");
+    }
+    openSheet("exmenu");
   }
 
   // ---------- a section: circuits, cardio, finishers, stretches ----------
@@ -4766,7 +4866,7 @@ export const APP = String.raw`
         $("sectionsave"), "Section saved", "sectionsheet");
       return;
     }
-    // Handed over rather than stacked, the way dayadd hands over to the picker:
+    // Handed over rather than stacked, the way Train's ⋯ rows hand over (openMore):
     // the bank opens first and this sheet closes behind it, so the sheet layer's
     // one history entry passes across instead of falling to the floor. The
     // furniture rides on the picker's target and comes back here on woaback.
@@ -4873,10 +4973,10 @@ export const APP = String.raw`
     function restore(msg) { w.blocks = before; redraw(); render(); rowBack(rowOf(w, bi)); if (msg) toast(msg); }
     w.blocks.splice(bi, 1); render();
     rowAway(box, from, redraw);
-    offerUndo("Removed " + (expected.title || "block"), function () {
+    offerUndo("Removed " + (expected.title || "the section"), function () {
       cardWrite(w.id, { op: "delete_block", block: bi, expect_block: asStored(expected) })
-        .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that block."); })
-        .catch(function () { restore("Could not reach Spotter — the block is back."); });
+        .then(function (r) { if (r.status === "ok") absorbWorkout(r.workout); else restore(r.message || "Could not remove that section."); })
+        .catch(function () { restore("Could not reach Spotter — the section is back."); });
     }, function () { restore(null); });
   }
 
@@ -5068,7 +5168,7 @@ export const APP = String.raw`
     // card keeps the order it started with, so the card waits for it rather than
     // telling the two apart later.
     if ((wo && !wo.finished && wo.workout.id === w.id) || (d && d.workoutId === w.id)) {
-      toast("Your paused workout is using this order. End or finish it, then reorder.");
+      toast("Your paused workout is using this order. Finish it first, then reorder.");
       return;
     }
     // A delete still under its toast lands first, so the order starts from the
@@ -5086,7 +5186,7 @@ export const APP = String.raw`
   // Named as the card named it when the sheet opened, by the block's stored
   // place: "Block 2" stays Block 2 however far it is carried.
   function ordTitle(blocks, bi) {
-    return blocks[bi].title || (blocks.length === 1 ? "Exercises" : "Block " + (bi + 1));
+    return blocks[bi].title || (blocks.length === 1 ? "Exercises" : "Section " + (bi + 1));
   }
 
   function ordLabel(blocks, k) {
@@ -5418,28 +5518,37 @@ export const APP = String.raw`
     $("dorder").onclick = function () { if (current) openOrder(current); };
   })();
 
-  // The second tap of an armed button is as deliberate as an answer gets, and it
-  // used to be followed by a card sitting there for a round trip. Deleting a
-  // collection and deleting a session already worked this way; the workout was the
-  // odd one out. No undo on purpose — the arming is the confirmation — but a
-  // refused delete puts the card back rather than leaving the library wrong.
-  function removeWorkout(w, btn) {
-    var go = function () {
-      var keptW = state.workouts, keptC = state.colItems;
-      state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
-      state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
-      history.back();
+  // Remove, like every other Remove on a card: off the screen on the tap, off the
+  // server once the Undo has gone (offerUndo's delayed commit, so an Undo cancels a
+  // delete that never happened). It used to ask for an armed second tap instead —
+  // a confirmation standing in for an undo, which the HIG ranks below undo. A
+  // refused delete puts the card back where it was and says so.
+  // spent: the caller has already taken the card's history entry with its own.
+  function removeWorkout(w, spent) {
+    var epoch = accountEpoch, uid = state.user && state.user.id, at = state.workouts.indexOf(w);
+    var items = state.colItems.filter(function (it) { return it.workout_id === w.id; });
+    function back(msg) {
+      if (!srcById(w.id)) state.workouts.splice(Math.max(0, Math.min(at, state.workouts.length)), 0, w);
+      items.forEach(function (it) { if (state.colItems.indexOf(it) < 0) state.colItems.push(it); });
       render();
-      toast("Workout removed.");
+      if (msg) toast(msg);
+    }
+    state.workouts = state.workouts.filter(function (x) { return x.id !== w.id; });
+    state.colItems = state.colItems.filter(function (it) { return it.workout_id !== w.id; });
+    if (!spent && current && current.id === w.id && $("detail").classList.contains("open")) history.back();
+    render();
+    offerUndo("Removed " + (w.title || "the workout"), function () {
+      if (!accountNow(epoch, uid)) return;
+      libraryRev++;
       sb.from("workouts").delete().eq("id", w.id).then(function (r) {
-        if (!r.error) return;
-        state.workouts = keptW;
-        state.colItems = keptC;
-        render();
-        toast("That did not delete. The workout is still here.");
+        libraryRev++;
+        if (!accountNow(epoch, uid)) return;
+        // Its plan rows went with it (the foreign key cascades); the strip reads them
+        // again. A session paused on it goes now, not while the Undo stood.
+        if (r.error) back("That did not remove. The workout is still here.");
+        else { loadPlan(true); dropDraftOf(w.id); }
       });
-    };
-    if (btn) armed(btn, "Tap again to remove", go); else go();
+    }, function () { back(null); });
   }
 
   // ---------- collections and renaming ----------
@@ -5462,25 +5571,19 @@ export const APP = String.raw`
     }, 3000);
   }
 
-  // Rename · Collections · Remove as one row under the title. The favourite star
-  // stays in the top bar: it is a state, these are actions.
-  function manageRow(w) {
-    var row = el("div", "managerow");
-    row.id = "dmanage";
-    if (!isPending(w)) {
-      var ren = icon(el("button", "mbtn"), "pencil", "Rename");
-      ren.onclick = function () { openRename("workout", w.id, w.title || ""); };
-      row.appendChild(ren);
-    }
-    var n = colsOf(w.id).length;
-    var col = icon(el("button", "mbtn" + (n ? " on" : "")), "folder", "Collections");
-    if (n) col.appendChild(el("span", "n", String(n)));
-    col.onclick = function () { openCollections(w); };
-    row.appendChild(col);
-    var rm = icon(el("button", "mbtn quiet"), "trash", "Remove");
-    rm.onclick = function () { removeWorkout(w, rm); };
-    row.appendChild(rm);
-    return row;
+  // The ⋯ Workout sheet is markup; this says which of its rows this card has. The
+  // favorite star stays in the top bar: it is a state, these are actions. Hevy's
+  // routine ⋯ is the model — share, edit, delete in one list — with Ask Pumpy at
+  // its head, where the chip beside Start used to be.
+  function paintManage(w) {
+    var dead = isPending(w) || isFailed(w), n = colsOf(w.id).length;
+    $("worksub").textContent = w.title || "Untitled workout";
+    $("dask").hidden = dead;
+    $("dren").hidden = isPending(w);
+    $("dcoln").textContent = n ? String(n) : "";
+    $("dorder").hidden = dead || !ordCan(w);
+    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
+    syncRereadButton(w);
   }
 
   // The collections this card is in, as tappable pills that jump to that filter.
@@ -5496,11 +5599,10 @@ export const APP = String.raw`
     return wrap;
   }
 
-  // Redraw only the management row and pills on an open card; a full openDetail
-  // would reload the embedded video for a membership toggle.
+  // A membership toggle redraws the collections count and pills, not the card.
   function refreshManage(w) {
-    var m = $("dmanage"), p = $("dcols");
-    if (m) m.parentNode.replaceChild(manageRow(w), m);
+    var p = $("dcols");
+    paintManage(w);
     if (p) p.parentNode.replaceChild(colPills(w), p);
   }
 
@@ -5692,7 +5794,7 @@ export const APP = String.raw`
     if (state.filter === "col:" + c.id) state.filter = "All";
     render();
     if ($("colsheet").classList.contains("open")) renderColSheet();
-    offerUndo("Deleted " + c.name + " — the workouts stay", function () {
+    offerUndo("Removed " + c.name + " — the workouts stay", function () {
       sb.from("collections").delete().eq("id", c.id).then(function (r) {
         if (!r || !r.error) return;
         toast("That did not delete. The collection is still here.");
@@ -6324,23 +6426,6 @@ export const APP = String.raw`
     return out;
   }
 
-  /**
-   * The delta and the timestamp, under an exercise's cue on the card.
-   *
-   * One chip and one pill, on one line that never wraps to two: the delta truncates
-   * because the sheet says it in full, and the second is pushed to the end where a
-   * reader's eye already goes for a duration. Null when the row has neither, which
-   * is every card saved before the pack existed.
-   */
-  function rowMarks(ex) {
-    var delta = ex && ex.delta ? String(ex.delta).trim() : "", t = startOf(ex);
-    if (!delta && t === null) return null;
-    var row = el("div", "exmarks");
-    if (delta) row.appendChild(el("span", "dchip", delta));
-    if (t !== null) row.appendChild(el("span", "t", clock(t)));
-    return row;
-  }
-
   // ---------- how to do this ----------
   //
   // Three answers in the order they earn: what the creator said, somebody filming
@@ -6453,7 +6538,7 @@ export const APP = String.raw`
     var t = startOf(ex);
     if (t === null) t = bitOf(ex);
     if (t === null || !w || !/^(youtube|tiktok)$/.test(w.platform)) return null;
-    var b = icon(el("button", "chip"), "play", "Watch this bit");
+    var b = icon(el("button", "chip"), "play", "Watch this part");
     b.onclick = function () { watchBit(w, t, ex); };
     return b;
   }
@@ -6522,6 +6607,8 @@ export const APP = String.raw`
     if (ex) $("watchbody").appendChild(el("div", "segment-label", ex.name + " · " + clock(t) +
       (secOf(ex.t1) !== null ? "–" + clock(ex.t1) : "")));
     $("watchbody").appendChild(em);
+    // The sheet says which of the two it is (the wording table's video words).
+    $("watchtitle").textContent = "Watch this part";
     openSheet("watchsheet");
     fitEmbed(em, w.platform);
     closeSheet("explainsheet");
@@ -7208,7 +7295,7 @@ export const APP = String.raw`
 
   // The draft on disk, or null. A day is the shelf life: a session paused
   // yesterday morning is one nobody is finishing, and it goes without a word
-  // rather than sitting at the top of the Library until somebody ends it.
+  // rather than waiting above the tab bar until somebody ends it.
   var DRAFT_TTL = 24 * 3600 * 1000;
 
   function readDraft() {
@@ -7230,6 +7317,16 @@ export const APP = String.raw`
   function draftSets(d) {
     var n = 0;
     (d.entries || []).forEach(function (e) { n += (e.sets || []).filter(Boolean).length; });
+    return n;
+  }
+
+  // Planned sets a paused session has not logged, counted as setsLeft counts a
+  // running one's, on the session's own exercise list (it keeps additions).
+  function draftLeft(d, w) {
+    var n = 0;
+    flatten(Object.assign({}, w, { blocks: d.blocks || w.blocks || [] })).forEach(function (s, i) {
+      n += Math.max(0, targetOf(s) - (((d.entries || [])[i] || {}).sets || []).filter(Boolean).length);
+    });
     return n;
   }
 
@@ -7271,12 +7368,13 @@ export const APP = String.raw`
     // In a superset it is the member this set hands over to, until the last set.
     var hand = s && s.ss ? ssTurn(wo.i, 1).next : -1;
     if (hand >= 0) j = hand;
-    var cx = !!(s && s.cx), pre = s ? setPrefill(entry.sets.length) : null, round = cx ? cxLive(s) : null;
-    // The set about to be done. Past the plan it is an extra, and the phone says
-    // so ("Goal reached · Extras welcome") — but a Lock Screen card reading
-    // "Set 3 of 2" just looks broken, so the total grows with the index the way
-    // progress.total already does below.
-    var setNo = entry.sets.filter(Boolean).length + 1;
+    var cx = !!(s && s.cx), pre = s ? nextSet() : null, round = cx ? cxLive(s) : null;
+    // The set about to be done, and the dose it is dialled to: the ones the
+    // phone's button names and a Log set here logs (nextSet). Past the plan it
+    // is an extra, and the phone says so ("Goal reached · Extras welcome") — but
+    // a Lock Screen card reading "Set 3 of 2" just looks broken, so the total
+    // grows with the index the way progress.total already does below.
+    var setNo = pre ? pre.idx + 1 : 1;
     // A complex is scored in rounds off one screen, so it has no "set 2 of 4".
     return {
       v: 1,
@@ -7337,6 +7435,18 @@ export const APP = String.raw`
     if (wo) try { native.live.update(liveState()); } catch (e) { /* ignore */ }
   }
 
+  // A figure changed with nothing saved behind it — a superset panel's stepper,
+  // the history landing under the button — and the dose the Lock Screen offers
+  // changed with it. A beat later rather than per step: a held stepper moves
+  // every 62 ms and the card needs only where it stopped. Never once the session
+  // has ended, which would put the activity back on the Lock Screen.
+  var liveT = 0;
+  function liveSoon() {
+    if (!native || !native.live) return;
+    clearTimeout(liveT);
+    liveT = setTimeout(function () { if (wo && !wo.finished) liveSync(); }, 400);
+  }
+
   // Finished, or walked away from. Either way the Lock Screen has to stop showing
   // a workout nobody is doing, and it is the only thing that can say so.
   function liveEnd(completed) {
@@ -7350,11 +7460,16 @@ export const APP = String.raw`
 
   function startWorkout(w, resume) {
     // Start on a card whose session is waiting is Resume: nobody starting the
-    // workout they paused an hour ago wants a second copy of it.
+    // workout they paused an hour ago wants a second copy of it. Every Start
+    // door comes through here — the card's dock, the day card, Up next, the
+    // ready sheet, spotter://start — so this is where another card's waiting
+    // session stops being overwritten: with sets in it, it is finished or
+    // resumed first (askPaused); with none, there was nothing in it to keep.
     if (!resume) {
       var waiting = pausedDraft();
       if (waiting && waiting.workoutId === w.id) { resumeWorkout(); return; }
-      if (waiting) toast("Ended the paused " + (waiting.title || "workout") + ".");
+      if (waiting && draftSets(waiting)) { askPaused(waiting); return; }
+      if (waiting) toast("Closed " + (waiting.title || "the paused workout") + " — nothing was logged.");
     }
     guideClear(); guideStill();
     // The session owns its exercise list, including additions recovered from a draft.
@@ -7411,9 +7526,37 @@ export const APP = String.raw`
     }
     saveDraft();
     publishSummary();
+    sessionChanged();
     history.pushState({ workout: 1 }, "");
     lastWeights();
   }
+
+  // Start on one card while another's session waits with sets in it. Apple's
+  // Workout app never loses a session, and nor does this: no Discard, and no
+  // new session written over the old one's draft. The waiting one is finished
+  // — saved with its recap, the paused bar's own Finish — or resumed, and the
+  // card that asked is a second Start away once the way is clear. The rows hand
+  // over as every sheet's do: Workout Mode opens first and the sheet closes
+  // behind it on the same history entry, taking with it the ready sheet a
+  // notification's Start Now can have left underneath.
+  function askPaused(d) {
+    var t = d.title || "Workout", n = draftSets(d);
+    $("patitle").textContent = t + " is paused";
+    $("palede").textContent = n + (n === 1 ? " set logged" : " sets logged");
+    $("pafin").querySelector("b").textContent = "Finish " + t;
+    $("pago").querySelector("b").textContent = "Resume " + t;
+    openSheet("pausedask");
+    // Where VoiceOver starts: which session, then what to do about it.
+    $("patitle").focus({ preventScroll: true });
+  }
+
+  function askDone(fin) {
+    resumeWorkout();
+    if (fin) finishWorkout();
+    [].forEach.call(document.querySelectorAll(".sheet.open"), function (n) { closeSheet(n.id); });
+  }
+  $("pafin").onclick = function () { askDone(true); };
+  $("pago").onclick = function () { askDone(false); };
 
   function appendSessionExercise(ex) {
     if (!wo || wo.finished) return false;
@@ -7739,7 +7882,7 @@ export const APP = String.raw`
       var cap = WOA_CAP[r.src], h;
       n[r.src] = (n[r.src] || 0) + 1;
       if (cap && n[r.src] > cap) return;
-      h = r.src === 1 ? "Recent" : r.src === 2 ? "In your library" : capWord(r.pattern || "other");
+      h = r.src === 1 ? "Recent" : r.src === 2 ? "In your workouts" : capWord(r.pattern || "other");
       if (h !== head) { head = h; list.appendChild(el("div", "woahead", h)); }
       woaRow(list, r);
     });
@@ -8109,11 +8252,7 @@ export const APP = String.raw`
         // this one, not against itself.
         Object.keys(hist).forEach(function (k) { hist[k].was = hist[k].best; });
         histReady = true;
-        // Lands after the first exercise is drawn, so refill the line in place
-        // rather than redraw a screen under someone's thumb.
-        var line = $("wlast");
-        if (line && wo && !wo.finished) line.textContent = lastLine(wo.entries[wo.i]);
-        ssPrime();
+        if (wo && !wo.finished) woLate();
       });
   }
 
@@ -8252,7 +8391,34 @@ export const APP = String.raw`
   // title, else the shape it is, else its place on the card.
   function blockName(s) {
     return s.block.title ||
-      (s.block.type && s.block.type !== "straight" ? s.block.type : "Block " + (s.bi + 1));
+      (s.block.type && s.block.type !== "straight" ? s.block.type : "Section " + (s.bi + 1));
+  }
+
+  // "Exercise 2 of 5", counted in stops as the dots are — a complex or a superset
+  // is one thing to do — and, when the card has more than one section, which:
+  // its title, else its kind ("Warm-up", not "warmup"), else "Section 2". A
+  // superset and a complex name their block on the line under this one.
+  function stepLabel(s) {
+    var at = stopOf(wo.i), no = 0, of = 0, i, sec = blockName(s);
+    for (i = 0; i < wo.screens.length; i++) if (isStop(i)) { of++; if (i <= at) no++; }
+    // A card that is one thing to do has nowhere else to be: no "1 of 1".
+    return of < 2 ? "" : "Exercise " + no + " of " + of + (!(s.cx || s.ss) && wo.workout.blocks.length > 1
+      ? " · " + (sec === s.block.type ? kindName(sec) : sec) : "");
+  }
+
+  // What the card asks and what was lifted last time, one line, either half left
+  // off when it is not known: "Goal 2 × 6-8 · last time 8 × 90 lb". A goal met
+  // says so in the same voice. Unfinished is where every set starts, not an
+  // error, so nothing here is ever red.
+  function goalText(s, e) {
+    var h = histReady && hist[exKey(e)], ask = doseText(s.ex), bits = [];
+    if (e.sets.filter(Boolean).length >= targetOf(s)) return "Goal reached · extras welcome";
+    // In a circuit the lap outranks the dose: the reps do not change between rounds.
+    if (isCircuit(s.block)) bits.push("Round " + roundOf(s.bi) + " of " + roundsOf(s.block) + (ask ? " · " + ask : ""));
+    else if (ask) bits.push("Goal " + ask);
+    if (h && h.date) bits.push("last time " + (h.reps ? h.reps + (h.weight ? " × " + wtText(h.weight, h.unit) + " " +
+      state.unit + (h.pair ? " each" : "") : " reps") : timeText(h.secs || 0)));
+    return bits.join(" · ");
   }
 
   // hush: no entrance; a logged round changed a number.
@@ -8281,47 +8447,44 @@ export const APP = String.raw`
 
     var s = wo.screens[wo.i];
     var entry = wo.entries[wo.i];
+    var more = $("wexmore");
+    // The set the big button will log or start, so its pill can say so too.
+    goUp = goState()[3];
 
+    // No written exercises: the big button logs a set through the sheet, and
+    // ⋯ Exercise adds a movement, the only thing it has to offer here.
     if (!s) {
       main.appendChild(el("div", "wblock", "Freestyle"));
       main.appendChild(el("h2", "wname", wo.workout.title || "Workout"));
       main.appendChild(el("div", "wnote",
         "This video had no written exercises. Log what you do — tap the button below to add a set."));
-      var addSet = el("button", "btn", "Log a set");
-      addSet.style.marginTop = "22px";
-      addSet.onclick = function () { openSetSheet(entry.sets.length); };
-      main.appendChild(addSet);
       renderSetPills(main, entry, null);
+      more._ex = null;
+      more.setAttribute("aria-label", "Exercise: add one");
+      paintGo();
       return;
     }
 
-    // A complex replaces the whole per-exercise body: the block is the screen. The
-    // options row below still belongs to ONE movement, so it follows the one the
-    // list is pointing at.
+    // Where the session is, over whatever this screen is: in ahead of a kept
+    // superset's stack, which is the one thing a redraw leaves in place.
+    var step = stepLabel(s);
+    if (step) main.insertBefore(el("div", "wblock wstep", step), main.firstChild);
+    // A complex replaces the whole per-exercise body: the block is the screen.
+    // ⋯ Exercise still speaks about ONE movement, so it follows the one the list
+    // is pointing at, and in a superset the panel that is open.
     var cx = s.cx && !s.ei ? s.cx : null, focus = s.ex;
     if (cx) {
       focus = cxBody(main, s, cx);
     } else if (s.ss) {
       focus = ssBody(main, s, kept);
     } else {
-      var blockLabel = blockName(s);
-      if (s.block.rounds) blockLabel += " · " + s.block.rounds + " rounds";
-      main.appendChild(el("div", "wblock", blockLabel));
       main.appendChild(el("h2", "wname", s.ex.name));
-
-      // The lap outranks the dose: the reps do not change between rounds.
-      var dose = doseText(s.ex);
-      if (isCircuit(s.block)) dose = "Round " + roundOf(s.bi) + " of " +
-        roundsOf(s.block) + (dose ? " · " + dose : "");
-      if (dose) main.appendChild(el("div", "wdose", dose));
+      main.appendChild(el("div", "wgoal", goalText(s, entry))).id = "wgoal";
       if (s.ex.recommendation) main.appendChild(el("div", "wnote", s.ex.recommendation.note));
 
       if (isTimed(s.ex)) {
         timedBody(main, s, entry);
       } else {
-        var last = el("div", "wnote wlast", lastLine(entry));
-        last.id = "wlast";
-        main.appendChild(last);
         if (s.ex.weight) main.appendChild(el("div", "wnote", "Suggested load: " + s.ex.weight));
         // The cue, not "notes": mid-set is exactly where the creator's own coaching
         // point and the one setup detail the name would get wrong are worth reading.
@@ -8330,53 +8493,8 @@ export const APP = String.raw`
         renderSetPills(main, entry, s.ex, targetOf(s));
       }
     }
-
-    // Each panel of a superset counts its own sets and has its own button.
-    if (!cx && !s.ss) {
-      var intended = targetOf(s), completed = entry.sets.filter(Boolean).length;
-      var reached = completed >= intended;
-      var goal = el("div", "set-goal" + (reached ? " reached" : ""),
-        (reached ? "Goal reached · " : "") + completed + " / " + intended +
-        (isCircuit(s.block) ? " rounds" : " sets") + (reached ? " · Extras welcome" : " completed"));
-      goal.setAttribute("role", "status");
-      main.appendChild(goal);
-    }
-    var acts = el("div", "wactions exercise-actions");
-    if (!cx && !s.ss) {
-      var add = el("button", "btn ghost wo-extra-set", isTimed(s.ex) ? "Log extra hold" : "+ Add set");
-      add.onclick = function () {
-        if (isTimed(s.ex)) { logHold(entry.sets.length, s.ex.duration_seconds); renderWorkout(); }
-        else openSetSheet(entry.sets.length);
-      };
-      acts.appendChild(add);
-    }
-    var extra = disclosure("Options", "exercise-options");
-    extra.firstChild.setAttribute("aria-label", "Options for " + focus.name);
-    // Supporting actions stay together so sets and the timer remain the focus.
-    // A source with no embed or thumbnail simply has no Watch action.
-    // A coach's card has no video of its own; a borrowed movement does. So the clip
-    // follows the exercise rather than the workout, and the button names whose video
-    // is coming. An uncited line on a coach's card still offers nothing.
-    var w = wo.workout, clip = sourceOf(focus) || w;
-    if (clip.thumb_url || (clip.shortcode && /^(instagram|tiktok|youtube)$/.test(clip.platform))) {
-      var whose = clip.id !== w.id && clip.author ? "@" + clip.author + "’s" : "the";
-      var watch = icon(el("button", "pickrow"), "play", "Watch " + whose + " clip");
-      watch.onclick = function () { openWatch(clip, focus); };
-      extra.lastChild.appendChild(watch);
-    }
-    var help = icon(el("button", "pickrow"), "help", "Demo");
-    help.onclick = function () { explain(focus, wo.workout); };
-    extra.lastChild.appendChild(help);
-    var swapChip = icon(el("button", "pickrow"), "swap", "Swap or modify");
-    swapChip.onclick = function () { openSwap(focus.name, wo.workout.title, swapTarget(wo.workout, focus)); };
-    extra.lastChild.appendChild(swapChip);
-    // Swapping one movement for another and adding one that was never on the card
-    // are the same thought arriving from two directions, so they sit together.
-    var addChip = icon(el("button", "pickrow"), "plus", "Add an exercise");
-    addChip.onclick = openWorkoutAdd;
-    extra.lastChild.appendChild(addChip);
-    acts.appendChild(extra);
-    main.appendChild(acts);
+    more._ex = focus;
+    more.setAttribute("aria-label", "Exercise: " + focus.name);
 
     // Fitbod puts "+ Add Exercise" at the FOOT of the exercise list, which is
     // where somebody looks when the card has run out and they are not done. A
@@ -8390,6 +8508,7 @@ export const APP = String.raw`
       tile.onclick = openWorkoutAdd;
       main.appendChild(tile);
     }
+    paintGo();
 
     // A swipe said which way the lifter went, so the exercise arrives from that
     // side. An arrow did not, and keeps the entrance it had.
@@ -8416,12 +8535,12 @@ export const APP = String.raw`
     var pills = el("div", "setpills");
     var count = Math.max(target, entry.sets.length + (entry.sets.length >= target ? 1 : 0));
     var timed = isTimed(ex);
-    var just = justSet;
+    var just = justSet, up = entry === wo.entries[wo.i] ? goUp : -1;
     justSet = -1;
     for (var i = 0; i < count; i++) {
       (function (idx) {
         var done = entry.sets[idx];
-        var p = el("button", "setpill" + (done ? " done" : "") + (idx === just ? " just" : "") +
+        var p = el("button", "setpill" + (done ? " done" : idx === up ? " up" : "") + (idx === just ? " just" : "") +
           (done && done.pr ? " pr" : ""));
         var b = el("b", null, done ? setText(done)
           : timed ? ex.duration_seconds + "s" : "Set " + (idx + 1));
@@ -8438,6 +8557,151 @@ export const APP = String.raw`
       })(i);
     }
     main.appendChild(pills);
+  }
+
+  // ---------- the big button ----------
+  //
+  // A set is logged fifteen to twenty-five times a session and used to take a
+  // small pill and then a sheet, while the biggest button on the screen ended the
+  // workout. Now the big button does what this screen does most — logs the next
+  // set on the numbers the sheet would have opened on, starts a hold, counts a
+  // round — and says so, and after the last planned set of the last exercise it
+  // is Finish workout. Hevy's checkmark and Boostcamp's "tap a set, the timer
+  // starts" are the model. A set goes through logNextSet, the door the Lock
+  // Screen and the watch use, so the three cannot disagree on which set it was
+  // or what it weighed; saveSet then rests, buzzes, pops the pill and calls a best.
+
+  // goUp: the set the button logs or starts, whose pill renderSetPills outlines.
+  // goAt: when it was last tapped.
+  var goUp = -1, goAt = 0;
+
+  // Every planned set of a stop is in; a complex is done when its cap has run
+  // out or it has the rounds it asked for.
+  function stopFull(i) {
+    var s = wo.screens[i], a;
+    if (s.cx) { a = cxOf(s.bi, s.cx); return !!a.over || s.block.rounds > 0 && a.rounds >= s.block.rounds; }
+    if (s.ss) return ssTurn(i, 0).done;
+    return wo.entries[i].sets.filter(Boolean).length >= targetOf(s);
+  }
+
+  // What the button does on this screen: [what it does, what it says, its
+  // glyph, the set it logs or starts — none for a round or Finish].
+  function goState() {
+    var s = wo.screens[wo.i], e = wo.entries[wo.i], idx = ssIdx(e), f;
+    if (!s) return ["sheet", "Log a set", "plus", idx];
+    // A hold under way: the button says what the ring's own tap does.
+    if (isTimed(s.ex) && woPhase !== "idle") return restHeld && restFace ? ["hold", "Resume", "play", idx] : ["hold", "Pause", "pause", idx];
+    if (stopOf(wo.i) === endStop() && stopFull(wo.i)) return ["finish", "Finish workout", "flag"];
+    if (s.cx && !s.ei) return ["round", "Round " + (cxOf(s.bi, s.cx).rounds + 1) + " done", "check"];
+    if (isTimed(s.ex)) return ["hold", "Start " + clock(s.ex.duration_seconds), "play", idx];
+    // What logNextSet will log, in its own words.
+    f = nextSet();
+    return ["log", "Log set " + (idx + 1) + " · " + f.reps +
+      (f.weight ? " × " + f.weight.toLocaleString() + " " + wtUnit(s.ex, e) : " reps"), "check", idx];
+  }
+
+  // still: no rise, for a stepper held down, which changes it every tick.
+  function paintGo(still) {
+    if (!wo || wo.finished) return;
+    var b = $("wgo"), st = goState(), t = b.lastChild;
+    if (t.textContent === st[1]) return;
+    t.textContent = st[1];
+    b.firstChild.firstChild.setAttribute("href", "#i-" + st[2]);
+    if (still) return;
+    b.classList.remove("swap");
+    void b.offsetWidth;
+    b.classList.add("swap");
+  }
+
+  function goTap() {
+    if (!wo || wo.finished) return;
+    // Two taps on each other's heels are one tap landing twice, not the next
+    // set: the label under the finger has only just changed, perhaps to Finish.
+    if (Date.now() - goAt < 650) return;
+    goAt = Date.now();
+    var act = goState()[0], s = wo.screens[wo.i];
+    if (act === "log") logTap();
+    else if (act === "sheet") openSetSheet(wo.entries[wo.i].sets.length);
+    else if (act === "hold") ringTap();
+    else if (act === "round") cxRound(s.bi, s.cx);
+    else woFinish();
+  }
+
+  // The one-tap log, and the one door of the three that can take its set back:
+  // a button this wide makes a mistap likelier than a small pill did. While the
+  // toast is up, Undo returns the set, the rest it started, the screen it moved
+  // on from and any best it claimed, as if the tap had not happened. Sets from
+  // the Lock Screen and the wrist get no offer; they are corrected on the pill.
+  function logTap() {
+    var at = wo.i, e = wo.entries[at], k = exKey(e), h = hist[k], rest = restUntil,
+      was = { wo: wo, rounds: JSON.stringify(wo.rounds), pr: wo.prs[k], best: h && h.best };
+    // Said before the set is saved: tellSounds holds back while a toast is up, so
+    // the one-time note about timer sounds is not written over by the offer.
+    toast("Set " + (ssIdx(e) + 1) + " logged");
+    var r = logNextSet({ source: "app" });
+    if (!r.ok) return;
+    // Named when the screen has moved on — a superset handing over, the last set
+    // of a movement moving to the next — since "Set 2" would read as the new one.
+    var set = e.sets[r.idx], rested = restUntil && restUntil !== rest && !restFace;
+    offerUndo(r.pr && !was.pr ? "New best — " + (e.name || "that lift")
+      : (wo.i !== at ? e.name + " · set " : "Set ") + (r.idx + 1) + " logged", function () {
+      // The note held back above has its turn once the offer has gone.
+      setTimeout(function () { if (restUntil && !restFace) tellSounds(); }, 400);
+    }, function () {
+      if (wo !== was.wo || wo.finished) return;
+      // Whatever was opened since is about a screen this puts back.
+      [].forEach.call(document.querySelectorAll(".sheet.open"), function (n) { closeSheet(n.id); });
+      if (e.sets[r.idx] === set) { if (r.idx === e.sets.length - 1) e.sets.pop(); else e.sets[r.idx] = null; }
+      if (h) h.best = was.best;
+      if (was.pr) wo.prs[k] = was.pr; else delete wo.prs[k];
+      if (restFace) stopWork();
+      else if (rested && restUntil) stopRest();
+      // Back to where the tap was made, arriving from the side it left by.
+      if (stopOf(wo.i) !== stopOf(at)) woSlide = -1;
+      wo.i = at;
+      wo.rounds = JSON.parse(was.rounds);
+      haptic("tap");
+      saveDraft();
+      renderWorkout();
+    });
+  }
+
+  // Planned sets not yet logged, counted the way the Lock Screen's progress is.
+  function setsLeft() {
+    var n = 0;
+    wo.screens.forEach(function (s, i) { n += Math.max(0, targetOf(s) - wo.entries[i].sets.filter(Boolean).length); });
+    return n;
+  }
+
+  // Finish, from the pill or from the big button once the card is done: at once
+  // when every planned set is in, else the leave sheet asks first — Finish, Pause
+  // or Keep going. Nothing is ever thrown away, so there is no Discard.
+  function woFinish() {
+    if (!wo || wo.finished) return;
+    var left = setsLeft();
+    if (left || !loggedSets()) { openLeave(left); return; }
+    undoOff();
+    finishWorkout();
+  }
+
+  // A set's Undo is only true while its session is on screen; leaving commits it.
+  function undoOff() {
+    var t = $("toast");
+    flushUndo();
+    if (t.classList.contains("tappable")) { toastGone(t); t.onclick = null; t.classList.remove("show", "tappable"); }
+  }
+
+  // The history read lands after the first screen is drawn: the lines that quote
+  // it and the button's weight are refilled where they stand, rather than the
+  // screen being drawn again under someone's thumb.
+  function woLate() {
+    var line = $("wlast"), goal = $("wgoal"), s = wo.screens[wo.i], e = wo.entries[wo.i];
+    if (line) line.textContent = lastLine(e);
+    if (goal && s) goal.textContent = goalText(s, e);
+    ssPrime();
+    paintGo();
+    // Last time's weight is the button's now, and the Lock Screen's dose with it.
+    liveSoon();
   }
 
   var setCtx = { idx: 0, reps: 10, weight: 0 };
@@ -8543,6 +8807,10 @@ export const APP = String.raw`
     setCtx.weight = Math.round(setCtx.weight * 10) / 10;
     animateNumber($("repsval"), String(setCtx.reps), animate);
     animateNumber($("wtval"), setCtx.weight.toLocaleString(), animate);
+    // Turned in a superset's open panel, these are the figures the big button
+    // logs, and it follows them at once, the Lock Screen and the wrist a beat
+    // later. A redraw docking them paints its own.
+    if (animate) { paintGo(1); liveSoon(); }
   }
 
   function animateNumber(node, value, animate) {
@@ -8632,6 +8900,64 @@ export const APP = String.raw`
     var v = parseFloat(e.input.value);
     if (!isNaN(v)) e.commit(v);
     if (document.activeElement === e.input) e.input.blur();
+  }
+
+  // ---------- the next set, one answer ----------
+  //
+  // Which set the session is up to, and the figures it would be logged on, for
+  // the three places that say it or do it: the big button's label (goState), the
+  // tap (logNextSet) and the Lock Screen and the wrist (liveState). Each used to
+  // work it out for itself, which is how the Lock Screen came to read "Set 2 ·
+  // 95 lb" over a tap that logged set 1 bare. The set is the first one not yet
+  // done on the movement the session stands on, so one logged out of order off
+  // its pill leaves no hole behind it. The figures are the open superset panel's
+  // own steppers while they hold that set — dialled there, they are what the
+  // button says — or, while the set sheet has borrowed them for a moment, what
+  // they will be handed back with (stepDock); else setPrefill's, the numbers the
+  // sheet would open on.
+  function nextSet() {
+    var s = wo.screens[wo.i], idx = ssIdx(wo.entries[wo.i]), f = null;
+    var dock = s && s.ss && stepRows ? stepRows[0].parentNode : null;
+    if (dock && dock._wo === wo && dock._k === wo.i && dock._idx === idx) f = setCtx;
+    else if (s && s.ss && ssHeld && ssHeld.wo === wo && ssHeld.key === wo.i + ":" + idx) f = ssHeld;
+    f = f || setPrefill(idx);
+    return { idx: idx, reps: f.reps, weight: f.weight };
+  }
+
+  // ---------- one way to log the next set (seam) ----------
+  //
+  // Workout Mode's big button, the Lock Screen's Log set and the watch's all come
+  // through here, so the three can never log different numbers for the same set.
+  // The set and its figures are nextSet's, with any figure the caller sent (a
+  // dial turned on the wrist) in place of its own: one left alone is the one the
+  // card was showing. It goes through saveSet, the one place a set is written,
+  // rested, buzzed and checked for a best.
+  //
+  // Nothing here asks which screen is up: the next cycle's native session core
+  // replays taps made on the Lock Screen and the watch through this door. An
+  // event id makes a replay harmless — a second delivery of the same tap is
+  // answered "seen", not logged twice. A hold and an unresolved complex are not
+  // logged with reps and a weight, and are answered "screen" for the caller to
+  // handle (the phone's own button starts the hold or counts the round).
+  var setEvents = [];
+
+  function logNextSet(opts) {
+    opts = opts || {};
+    if (opts.id && setEvents.indexOf(opts.id) >= 0) return { ok: false, why: "seen" };
+    if (!wo || wo.finished) return { ok: false, why: "idle" };
+    var s = wo.screens[wo.i], entry = wo.entries[wo.i];
+    if (!s || (s.cx && !s.ei) || isTimed(s.ex)) return { ok: false, why: "screen" };
+    // Through the stepper's own setters, so a figure from off the phone meets the
+    // clamp a thumb does; on the figures the steppers already hold, nothing moves.
+    var n = nextSet(), idx = n.idx;
+    setCtx.idx = idx;
+    setReps(typeof opts.reps === "number" && isFinite(opts.reps) ? opts.reps : n.reps);
+    setWeight(typeof opts.weight === "number" && isFinite(opts.weight) ? opts.weight : n.weight);
+    var reps = setCtx.reps, weight = setCtx.weight;
+    saveSet();
+    if (opts.id) { setEvents.push(opts.id); if (setEvents.length > 64) setEvents.shift(); }
+    var done = entry.sets[idx];
+    return { ok: true, idx: idx, reps: reps, weight: weight, pr: !!(done && done.pr) };
   }
 
   function saveSet() {
@@ -8924,15 +9250,17 @@ export const APP = String.raw`
   // At the end of a lap the gap is the block's rest, not the move's: one pause.
   function restAfter(s) { return restOf(s.ex, s.block, atRoundEnd()).secs; }
 
+  // The ring is the dial and its own tap; the big button under the screen is
+  // the hold's Start, Pause and Resume (paintPhase words both).
   function timedBody(main, s, entry) {
     // The idle number is the clock the countdown will show: a twenty minute bike
     // opens on 20:00, not on 1200.
-    var t = el("div", "wtimer"), ring = el("button", "ring"), go = el("button", "btn wstart"),
+    var t = el("div", "wtimer"), ring = el("button", "ring"),
       num = el("span", null, s.ex.duration_seconds >= 60 ? clock(s.ex.duration_seconds) : String(s.ex.duration_seconds)),
       word = el("div", "wblock wphase");
-    t.id = "wtimer"; ring.id = "wring"; num.id = "wnum"; word.id = "wphase"; go.id = "wgobtn";
+    t.id = "wtimer"; ring.id = "wring"; num.id = "wnum"; word.id = "wphase";
     ring.setAttribute("aria-label", "Start or pause the countdown");
-    ring.onclick = go.onclick = ringTap;
+    ring.onclick = ringTap;
     ring.appendChild(num);
     t.appendChild(ring);
     t.appendChild(word);
@@ -8942,7 +9270,6 @@ export const APP = String.raw`
     var nx = wo.screens[atRoundEnd() ? wo.i - s.ei : wo.i + 1];
     if (nx) main.appendChild(el("div", "wnote wup", "Next: " + nx.ex.name));
     if (!isCircuit(s.block) && targetOf(s) > 1) renderSetPills(main, entry, s.ex, targetOf(s));
-    main.appendChild(go);
     paintPhase();
   }
 
@@ -8955,7 +9282,8 @@ export const APP = String.raw`
       : woPhase === "ready" ? "Get ready"
       : woPhase === "rest" ? (atRoundEnd() ? "Round done" : "Rest")
       : woPhase === "work" ? "Work" : "Tap to start";
-    $("wgobtn").textContent = woPhase === "idle" ? "Start" : held ? "Resume" : "Pause";
+    // The big button is the ring's words: Start 0:45, Pause, Resume.
+    paintGo();
     // A redraw builds a fresh ring; put the countdown back on it.
     if (restUntil && restFace) drawRest(restHeld || restUntil - Date.now());
   }
@@ -9184,7 +9512,7 @@ export const APP = String.raw`
     beep(1318.5, .34, .13);
     haptic("done");
     renderWorkout(1);
-    toast("Time — save the session when you are ready.");
+    toast("Time — finish when you are ready.");
   }
 
   // Whatever the clock is now — running, paused, never started or spent — and the
@@ -9373,12 +9701,8 @@ export const APP = String.raw`
     line.appendChild(el("span", null, cxScore(a.rounds, extra, 1)));
     head.appendChild(line);
     main.appendChild(head);
-    if (s.block.rounds > 0) {
-      var hit = a.rounds >= s.block.rounds;
-      var roundGoal = el("div", "set-goal" + (hit ? " reached" : ""),
-        (hit ? "Goal reached · " : "") + a.rounds + " / " + s.block.rounds + " rounds" + (hit ? " · Extras welcome" : " completed"));
-      roundGoal.setAttribute("role", "status"); main.appendChild(roundGoal);
-    }
+    if (s.block.rounds > 0) main.appendChild(el("div", "wgoal", a.rounds >= s.block.rounds
+      ? "Goal reached · extras welcome" : "Goal " + s.block.rounds + (s.block.rounds === 1 ? " round" : " rounds")));
 
     var list = el("div", "cxlist");
     (s.block.exercises || []).forEach(function (ex, j) {
@@ -9397,10 +9721,8 @@ export const APP = String.raw`
     });
     main.appendChild(list);
 
-    var go = el("button", "btn cxdone", "Round " + (a.rounds + 1) + " done");
-    go.onclick = function () { cxRound(s.bi, cx); };
-    main.appendChild(go);
-
+    // "Round 4 done" is the big button under the screen, 60px and full width —
+    // tapped mid-effort by someone not looking at it. Undo stays here, small.
     if (a.rounds || extra) {
       var un = el("button", "btn ghost cxundo", extra
         ? "Undo " + extra + (extra === 1 ? " movement" : " movements")
@@ -9711,10 +10033,11 @@ export const APP = String.raw`
   // The open panel: the set to do, drawn as the pager draws a movement — the
   // last-time line, the cue when it is short enough to read mid-set, the set pills
   // (a done one opens the sheet to be corrected, as everywhere) — then the sheet's
-  // own steppers and the button that logs it through saveSet.
+  // own steppers. The big button under the screen logs the set on their figures
+  // (logNextSet reads the dock), and says them: one button, not one per panel.
   function ssLive(p, k) {
     var box = p._in, s = wo.screens[k], e = wo.entries[k], ex = s.ex, idx = ssIdx(e), due = targetOf(s);
-    var cue = cueOf(ex), last, dock, go;
+    var cue = cueOf(ex), last, dock;
     box.innerHTML = "";
     if (ex.recommendation) box.appendChild(el("div", "wnote", ex.recommendation.note));
     // A hold is the pager's countdown; its "Next" line is hidden (see style.ts),
@@ -9730,9 +10053,6 @@ export const APP = String.raw`
     dock._wo = wo; dock._k = k; dock._idx = idx; dock._key = k + ":" + idx;
     // Under an open set sheet the rows stay in it; its closing brings them here.
     if (!$("setsheet").classList.contains("open")) stepDock(dock);
-    go = el("button", "btn sslog", idx < due ? "Log set " + (idx + 1) : "Log extra set");
-    go.onclick = saveSet;
-    box.appendChild(go);
   }
 
   // The panel that just logged folds with its last look still on it — the new pill
@@ -9837,6 +10157,7 @@ export const APP = String.raw`
     // second of it, so offer that too. Emptied with the iframe on close.
     var s = wo.screens[wo.i], b = bitBtn(w, ex || (s && s.ex));
     if (b) body.appendChild(b);
+    $("watchtitle").textContent = "Watch original";
     // The wake lock is kept: a screen asleep during a form check is the complaint.
     openSheet("watchsheet");
   }
@@ -9990,12 +10311,9 @@ export const APP = String.raw`
       if (wo) wo.logId = payload.id;
       sumLanded(payload);
       invalidateLogs();
-      // The today card was drawn before this session existed. Retire it now,
-      // and redraw at once if the library is the page underneath.
-      today.at = 0;
-      renderToday();
-      // The week just changed and the widget is the one reader that cannot ask.
-      if (native && native.live) loadLogs().then(function () { publishSummary(); });
+      // The week just changed: Up next, the strip, the ring, the statuses on
+      // Workouts and the widget all read these logs, and the widget cannot ask.
+      quietly(loadLogs().then(function () { publishSummary(); if (drawn.train) renderTrain(); renderGrid(); }));
     });
     clearInterval(woTimer);
     cxOff();
@@ -10016,7 +10334,7 @@ export const APP = String.raw`
     var openedFromDetail = $("detail").classList.contains("open");
     exitWorkout(pause);
     history.go(-((extra || 0) + (openedFromDetail ? 2 : 1)));
-    renderResume();
+    sessionChanged();
   }
 
   // ---------- pausing, and coming back ----------
@@ -10026,8 +10344,8 @@ export const APP = String.raw`
   // nothing. So here. The X asks which of the two, a back gesture takes the safe
   // one, and a draft the process was killed on comes back paused. A paused session
   // is a draft on disk and nothing in memory — wo is null — so the rest of the
-  // engine keeps its one rule, "wo means a session is running", and the Library
-  // leads with a card that says what is waiting.
+  // engine keeps its one rule, "wo means a session is running", and a bar above
+  // the tab bar says what is waiting.
 
   function loggedSets() {
     var n = 0;
@@ -10035,8 +10353,13 @@ export const APP = String.raw`
     return n;
   }
 
-  function openLeave() {
-    var n = loggedSets();
+  // The X asks how to leave. The Finish pill asks only when planned sets are
+  // left (left: how many), and leads with the answer it was asked for. Neither
+  // door has a Discard: finishing saves what was logged, pausing keeps it all.
+  function openLeave(left) {
+    var n = loggedSets(), fin = $("wend"), pause = $("wpause");
+    $("wleavetitle").textContent = left ? left + (left === 1 ? " set" : " sets") + " not logged" : "Leave this workout?";
+    fin.parentNode.insertBefore(left ? fin : pause, left ? pause : fin);
     $("wendsub").textContent = n
       ? "Saves " + n + (n === 1 ? " set" : " sets") + " to your history."
       : "Nothing logged yet — closes without saving.";
@@ -10049,14 +10372,14 @@ export const APP = String.raw`
   function resumeWorkout() {
     var d = pausedDraft(), w = d && srcById(d.workoutId), gap;
     if (!d) return;
-    if (!w) { if (state.workouts.length) clearDraft(); renderResume(); return; }
+    if (!w) { draftCheck(d, resumeWorkout); return; }
     if (d.pausedAt) {
       gap = Date.now() - new Date(d.pausedAt).getTime();
       if (gap > 0) d.startedAt = new Date(new Date(d.startedAt).getTime() + gap).toISOString();
     }
     d.paused = false; d.pausedAt = null; d.rest = null;
     startWorkout(w, d);
-    renderResume();
+    sessionChanged();
   }
 
   // After boot. A draft still marked running belongs to a process that ended
@@ -10066,54 +10389,145 @@ export const APP = String.raw`
     if (wo) return;
     var d = readDraft(), w = d && srcById(d.workoutId);
     if (!d) return;
-    if (!w) { if (state.workouts.length) clearDraft(); return; }
+    if (!w) { draftCheck(d, restoreSession); return; }
     if (!d.paused) {
       d.paused = true; d.pausedAt = d.savedAt || new Date().toISOString(); d.rest = null;
       writeDraft(d);
     }
     if (native && native.live) try { native.live.update(pausedState(d, w)); } catch (e) { /* ignore */ }
-    renderResume();
+    sessionChanged();
   }
 
-  // Minutes for the first hour, hours for the first day: what "how long ago" means
-  // to somebody deciding whether to go back to a workout.
-  function pausedAgo(iso) {
-    var m = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-    if (m < 1) return "just now";
-    if (m < 60) return m + " min ago";
-    var h = Math.round(m / 60);
-    return h + (h === 1 ? " hour ago" : " hours ago");
+  // A session's card missing from the list on screen is not proof it is gone:
+  // the list can be the cache from before the card was saved (a paste read in
+  // over Realtime never reaches it), a Remove still offering Undo, or older than
+  // the 200 cards the library reads. So the server is asked, and the session goes
+  // only on its word. A card it still has joins the list and then runs (then);
+  // a failed ask keeps everything, and the next open asks again.
+  var draftAsked = "";
+
+  function draftCheck(d, then) {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    if (!uid || draftAsked === d.workoutId) return;
+    draftAsked = d.workoutId;
+    sb.from("workouts").select(CARD_COLS).eq("user_id", uid).eq("id", d.workoutId).maybeSingle().then(function (r) {
+      draftAsked = "";
+      if (!accountNow(epoch, uid) || r.error) return;
+      if (!r.data) return dropDraftOf(d.workoutId);
+      onWorkoutChange({ eventType: "UPDATE", new: r.data });
+      if (srcById(d.workoutId) && then) then();
+    }, function () { draftAsked = ""; });
   }
 
-  var resumeBox = el("div", "resumewrap hide"), resumeShown = false;
-  resumeBox.id = "resume";
-  $("chips").parentNode.insertBefore(resumeBox, $("chips"));
+  // A session on a card that no longer exists can never be saved (a log needs
+  // its card), so it goes with the card: from a Remove once the delete has
+  // landed, not while its Undo stands, and from draftCheck on the server's word.
+  // Its Lock Screen card is ended too, or it would sit there paused for hours
+  // with nothing behind a tap.
+  function dropDraftOf(id) {
+    var d = readDraft();
+    if (!d || d.workoutId !== id || (wo && !wo.finished)) return;
+    clearDraft();
+    if (native && native.live) try {
+      native.live.end({ v: 1, title: d.title || "Workout", startedAt: d.startedAt, endedAt: new Date().toISOString(),
+        sets: draftSets(d), prs: 0, completed: false });
+    } catch (e) { /* the activity may already be gone */ }
+    sessionChanged();
+  }
 
-  function renderResume() {
-    var d = pausedDraft(), w = d && srcById(d.workoutId);
-    resumeBox.innerHTML = "";
-    if (!d || !w || wo) { resumeBox.classList.add("hide"); resumeShown = false; return; }
-    var card = el("div", "daycard"), head = el("div", "dayhead"), n = draftSets(d);
-    var secs = Math.max(0, Math.floor((new Date(d.pausedAt || d.savedAt).getTime() - new Date(d.startedAt).getTime()) / 1000));
-    head.appendChild(el("div", "dayname", "Paused"));
-    head.appendChild(el("div", "tclock", clock(secs)));
-    card.appendChild(head);
-    var t = el("button", "ttitle", d.title || w.title || "Workout");
-    t.onclick = function () { openDetail(w); };
-    card.appendChild(t);
-    card.appendChild(el("div", "tdose", (n ? n + (n === 1 ? " set logged" : " sets logged") : "No sets logged yet")
-      + " · paused " + pausedAgo(d.pausedAt || d.savedAt)));
-    var btns = el("div", "tbtns"), go = icon(el("button", "btn tstart"), "play", "Resume");
-    go.onclick = resumeWorkout;
-    // End from here saves what was logged, exactly as End inside the session
-    // does: the session comes back for the moment it takes to be written down.
-    var end = el("button", "btn ghost tend", "End");
-    end.onclick = function () { resumeWorkout(); finishWorkout(); };
-    btns.appendChild(go); btns.appendChild(end);
-    card.appendChild(btns);
-    resumeBox.appendChild(card);
-    resumeBox.classList.remove("hide");
-    if (!resumeShown) { resumeShown = true; viewIn(resumeBox); }
+  // ---------- the paused bar (seam) ----------
+  //
+  // A session's state changed — paused, resumed, finished, or found on disk at
+  // boot — and two things say so: the bar above the tab bar on every tab, and
+  // Up next on Train. One call for both, so neither can be left saying the old
+  // thing. pausedBar.sync() is the bar's own (sb-library); drawDay is Train's
+  // day card (sb-train).
+  var pausedBar = { sync: syncPausedBar };
+
+  function sessionChanged() {
+    pausedBar.sync();
+    if (drawn.train && trainLean) drawDay();
+    if (current) paintDock(current);
+  }
+
+  // A session paused and walked away from waits in one bar above the tab bar, on
+  // every tab: the shelf iOS 26 keeps over a tab bar for its one accessory, and
+  // the shape Apple Music's mini player and Hevy's minimised workout both take —
+  // what is waiting, how far it got, and the way back in, wherever the reader
+  // has wandered off to. The body and Resume both go back in. Finish is the
+  // session's own: with planned sets left (or none logged) it opens the session
+  // and its leave sheet, which asks what Up next's and the pill's ask; with every
+  // planned set in it would finish at once, so here it takes two taps — the bar
+  // sits a thumb above the tabs, and a thumb on its way to one must not end it.
+  // Never over Workout Mode, where the session is not waiting for anybody. Its
+  // height joins the tab bar's in every page's bottom inset (--pbar), so it
+  // covers nothing that cannot be scrolled clear of it, Pumpy's composer included.
+  var pbSig = "", pbOut = 0, pbArm = 0;
+
+  function syncPausedBar() {
+    // No card in the list, no bar — but the session stays: the list may be a stale
+    // cache or a Remove waiting on its Undo (draftCheck decides, not the bar).
+    var bar = $("pausedbar"), d = pausedDraft(), w = d && srcById(d.workoutId);
+    var show = !!w && !wo && !$("workout").classList.contains("open");
+    if (show) drawPausedBar(bar, d, w);
+    if (show === bar.classList.contains("on")) return;
+    clearTimeout(pbOut);
+    // Drawn where it rests, below, before it rises; gone from the layout only once
+    // it has sunk.
+    if (show) { bar.classList.remove("hide"); void bar.offsetWidth; }
+    else pbOut = setTimeout(function () { bar.classList.add("hide"); pbSig = ""; }, 240);
+    bar.classList.toggle("on", show);
+  }
+
+  // What the bar takes from the foot of every page: measured, because it grows
+  // with the text size, and nothing once it has sunk out of the layout.
+  if (window.ResizeObserver) new ResizeObserver(function () {
+    document.documentElement.style.setProperty("--pbar", $("pausedbar").offsetHeight + "px");
+  }).observe($("pausedbar"));
+
+  function drawPausedBar(bar, d, w) {
+    var n = draftSets(d), title = d.title || w.title || "Workout";
+    var secs = Math.max(0, Math.floor((new Date(d.pausedAt || d.savedAt) - new Date(d.startedAt)) / 1000));
+    var line = "Paused · " + n + (n === 1 ? " set · " : " sets · ") + clock(secs);
+    if (pbSig === title + line && bar.firstChild) return;
+    pbSig = title + line;
+    bar.innerHTML = "";
+    var box = el("div", "pbin"), body = el("button", "pbbody"), tx = el("span", "pbtx");
+    var sub = el("span", null, line), live = el("span", "sr-only");
+    // Finish is the leave sheet's flag, lit while it waits for its second tap: lit
+    // by the bar's class, not its own "on", which wireIconMotion would animate;
+    // with that icon animating, the iPhone Air drew the rest of the change late.
+    var fin = icon(el("button", "iconbtn"), "flag"), go = el("button", "btn", "Resume");
+    body.appendChild(icon(el("span", "addbtn ghost"), "pause"));
+    tx.appendChild(el("b", null, title));
+    tx.appendChild(sub);
+    body.appendChild(tx);
+    // In words: "8:00" read aloud is a time of day.
+    body.setAttribute("aria-label", "Resume " + title + ", paused, " + n + (n === 1 ? " set, " : " sets, ") +
+      Math.max(1, Math.round(secs / 60)) + " min");
+    fin.setAttribute("aria-label", "Finish workout");
+    live.setAttribute("aria-live", "polite");
+    function disarm() { clearTimeout(pbArm); box.seen = 0; box.classList.remove("armed"); sub.textContent = line; }
+    fin.onclick = function () {
+      if (!n || draftLeft(d, w)) { disarm(); woForward(); woFinish(); return; }
+      if (box.seen && Date.now() - box.seen > 300) { disarm(); resumeWorkout(); finishWorkout(); return; }
+      clearTimeout(pbArm);
+      box.classList.add("armed");
+      sub.textContent = live.textContent = "Tap again to save " + n + (n === 1 ? " set" : " sets");
+      haptic("select");
+      // Only a question that reached the screen, and stayed longer than a double
+      // tap takes, can be answered. The iPhone Air once armed this without drawing
+      // it, and the next tap ended a session nobody had seen asked about. Two
+      // frames drawn means it showed (a web view drawing nothing runs none); a
+      // tap sooner than that, or than 300ms after, only asks again.
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { box.seen = box.classList.contains("armed") && (box.seen || Date.now()); });
+      });
+      pbArm = setTimeout(disarm, 4000);
+    };
+    body.onclick = go.onclick = function () { resumeWorkout(); };
+    box.appendChild(body); box.appendChild(fin); box.appendChild(go); box.appendChild(live);
+    bar.appendChild(box);
   }
 
   // ---------- the session summary ----------
@@ -10196,6 +10610,10 @@ export const APP = String.raw`
 
     main.appendChild(sum.prs = el("div", "setpills sumprs"));
     sumBests(prs);
+
+    // What next (sumNext), then the one thing that sells, and only under it — a
+    // live session's, since a past one's next step is long gone.
+    if (!past) [sumNext(w), sumOffer(w)].forEach(function (n) { if (n) main.appendChild(n); });
 
     // The card, and every way off this phone with it.
     main.appendChild(shareRow(payload, logged, past));
@@ -10358,10 +10776,10 @@ export const APP = String.raw`
         tagPaint(tag, pair ? 2 : 1);
       }
     }
-    // The last set of a session is not deleted from here: that is the session,
-    // and Delete session is where that lives.
+    // The last set of a session is not removed from here: that is the session,
+    // and Remove session is where that lives.
     if (total > 1) {
-      del = acts.appendChild(icon(el("button", "sedel"), "trash", "Delete"));
+      del = acts.appendChild(icon(el("button", "sedel"), "trash", "Remove"));
       del.onclick = function () {
         var gone = e.sets.splice(si, 1)[0];
         c.open = null;
@@ -10369,7 +10787,7 @@ export const APP = String.raw`
         sumMorph(ed, ed.offsetHeight, function () { sumPaint(c); });
         // Undoable the way a deleted session is: the row goes on the tap, the write
         // that carries it waits for the toast to go, and any write between carries it.
-        offerUndo("Set deleted", function () { sumWrite(c); }, function () {
+        offerUndo("Set removed", function () { sumWrite(c); }, function () {
           e.sets.splice(Math.min(si, e.sets.length), 0, gone);
           sumPaint(c);
           sumWrite(c);
@@ -10474,7 +10892,7 @@ export const APP = String.raw`
   // than keep one it may not have earned.
   function sumStill(c, e, s) {
     var k = exKey(e), at = new Date(c.payload.started_at).getTime(), was = 0;
-    if (state.logs) {
+    if (fullLogs()) {
       state.logs.forEach(function (l) {
         if (l.id === c.payload.id || !(new Date(l.started_at).getTime() < at)) return;
         (l.entries || []).forEach(function (x) {
@@ -10557,7 +10975,7 @@ export const APP = String.raw`
   function sealAwards(payload, main) {
     // With nothing loaded there is no way to tell a new award from an old one, and
     // a seal for one earned in March is a lie. Progress backfills instead.
-    if (!state.awards || !state.logs) return;
+    if (!state.awards || !fullLogs()) return;
     var logs = state.logs.concat([payload]);
     var st = weekStats(logs, state.plan, goalSetting(), new Date());
     var won = grantAwards(awardsFor(logs, st, wo && wo.prs))
@@ -10606,6 +11024,7 @@ export const APP = String.raw`
     // must not end a rest or throw away the draft of a workout somebody paused
     // this morning — which is what the old history sheet was kept separate for.
     if (wo) {
+      undoOff();
       var keep = pause && !wo.finished, at = new Date().toISOString(), w = wo.workout;
       clearInterval(woTimer);
       cxOff();
@@ -11684,9 +12103,9 @@ export const APP = String.raw`
 
   // ---------- train · where you are looking ----------
   //
-  // Two anchors, because the page shows two spans at once: the strip is a week
-  // and the Calendar segment is the month that week belongs to. Move either and
-  // the other follows, so they can never describe different places.
+  // Two anchors, because the calendar is two spans at once: the strip is a week
+  // and, pulled down, the month that week belongs to. Move either and the other
+  // follows, so they can never describe different places.
   var monthStart = null;
   // The week that speaks for a month: today's when today is in it, else the first.
   function weekInMonth(m) {
@@ -11699,7 +12118,11 @@ export const APP = String.raw`
   function monthOfWeek(w) { return firstOf(addDays(w, 3)); }
 
   function restorePlan() {
-    // Open on this week, including after a tab visit or a new calendar day.
+    // Open on this week and on today, as a week, including after a tab visit or
+    // a new calendar day. The plan link asks for the month itself (trainWantMonth).
+    calOpen = false;
+    selDay = null;
+    if (cal) { calRest(); cal.box.className = "tcal wk"; }
     state.weekStart = mondayOf(new Date());
     monthStart = monthOfWeek(state.weekStart);
   }
@@ -11714,14 +12137,17 @@ export const APP = String.raw`
     return { from: mondayOf(monthStart), to: addDays(mondayOf(last), 6) };
   }
 
-  // The ISO week number, for the subtitle. Thursday is the day that decides which
-  // year a week belongs to, which is the whole rule: the week holding 1 January's
-  // Thursday is week 1, and 31 December can therefore be week 1 of the next year.
-  function isoWeek(d) {
-    var t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    t.setDate(t.getDate() + 3 - ((t.getDay() + 6) % 7));
-    var jan4 = new Date(t.getFullYear(), 0, 4);
-    return 1 + Math.round(((t - jan4) / 86400000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+  // What is READ is wider than what is shown: the month on screen, plus this week
+  // and the thirteen days after today, whatever month is being browsed. Up next,
+  // the ring, "Planned Thu" on a Workouts card and the widgets all ask about now
+  // and the next fortnight, and they must get their answer from the same rows the
+  // strip draws — one read, one source of truth — rather than each keeping a
+  // snapshot of its own. Plan rows are tiny; a range of a few months is nothing.
+  var AHEAD_DAYS = 13;
+
+  function fetchRange() {
+    var r = planRange(), now = new Date(), from = mondayOf(now), to = addDays(now, AHEAD_DAYS);
+    return { from: ymd(r.from) < ymd(from) ? r.from : from, to: ymd(r.to) > ymd(to) ? r.to : to };
   }
 
   // What the visible range actually holds, cheaply. Arriving on a tab must not
@@ -11730,7 +12156,7 @@ export const APP = String.raw`
   var planSig = "";
 
   function planShape() {
-    var r = planRange();
+    var r = fetchRange();
     return JSON.stringify([state.plan, ymd(state.weekStart), ymd(r.from), ymd(r.to),
       trainSeg, state.logs && state.logs.length, state.workouts.length]);
   }
@@ -11739,7 +12165,7 @@ export const APP = String.raw`
     if (!state.user) return Promise.resolve();
     if (!state.weekStart) state.weekStart = mondayOf(new Date());
     if (!monthStart) monthStart = monthOfWeek(state.weekStart);
-    var r = planRange(), from = ymd(r.from), to = ymd(r.to);
+    var r = fetchRange(), from = ymd(r.from), to = ymd(r.to);
     var uid = state.user.id, epoch = accountEpoch, rev = planRev;
     // One query, not two. The second one used to fetch a slim list of logs just
     // for the ticks, which meant the strip, the grid and the ring could each hold
@@ -11749,12 +12175,15 @@ export const APP = String.raw`
       return sb.from("plan").select("*").eq("user_id", uid).gte("day", from).lte("day", to)
         .then(function (r0) {
         if (!accountNow(epoch, uid) || rev !== planRev) return;
-        var nowRange = planRange();
+        var nowRange = fetchRange();
         if (from !== ymd(nowRange.from) || to !== ymd(nowRange.to)) return;
         if (r0.error) throw new Error("Plan unavailable");
-        state.plan = r0.data || [];
-        today.at = 0;
+        // A row whose Remove is still offering Undo stays off everything that
+        // reads the plan — widgets, the cache, card statuses — not just Train.
+        state.plan = (r0.data || []).filter(function (p) { return !planGone[p.id]; });
         publishSummary();
+        writeTrainCache();
+        libStatusesChanged();
         var shape = planShape();
         if (silent && shape === planSig) return;
         planSig = shape; renderTrain();
@@ -11767,8 +12196,8 @@ export const APP = String.raw`
   // A change already true on the screen: loadPlan's two chores, no round trip.
   function repaintPlan() {
     planRev++;
-    today.at = 0;
     publishSummary();
+    libStatusesChanged();
     planSig = planShape();
     renderTrain();
   }
@@ -11784,8 +12213,6 @@ export const APP = String.raw`
       return isSession(l) && l.started_at && ymd(new Date(l.started_at)) === key;
     });
   }
-
-  function loggedOn(key) { return sessionsOn(key).length > 0; }
 
   // state.logs is the newest 400. Past that horizon a day the plan asked for and
   // no log answers is not a failure, it is a question we cannot answer — so it
@@ -11818,24 +12245,39 @@ export const APP = String.raw`
     return state.workouts.filter(function (x) { return x.id === id; })[0];
   }
 
-  // ---------- train · the band ----------
+  // ---------- train · the page ----------
   //
-  // Built once and kept, unlike the body under it: a node replaced rather than
-  // moved cannot slide, and the slide is the point of these controls.
+  // Option B, 25 Sept: Train is the page the app opens on, and it answers "what
+  // now?" with one card. Top to bottom: the week strip, which pulls down into the
+  // month in place; the day card (Up next for today, any other day's own card
+  // once that day is tapped); the saves never trained yet; Progress and Records.
+  // The ring and the streak moved up into the header's corner (#trainstat).
   //
   // Research, 16 Sept: Apple Fitness, Garmin Connect, Runna and Peloton all put
   // a seven-day strip at the top of the training screen and let it carry the
   // whole page under it. Runna and Garmin swipe it; Apple Fitness and Peloton
   // tap it. Apple's own guidance is that a gesture supplements a control rather
-  // than replacing it, so this does both: swipe the band, or press an arrow.
+  // than replacing it, so this does both: the strip swipes and pulls, and the
+  // same moves are buttons (the month's arrows, the handle, and a pair of week
+  // buttons only VoiceOver sees).
 
   var trainSeg = null, heroPct = 0;
-  var trainBar = null, trainLean = null, trainBody = null, stripRow = null;
-  var cardBox = null, heroBox = null, segTrack = null, trainSwap = false;
-  var barTitle = null, barPrev = null, barNext = null, barToday = null;
+  // trainLean is the page under the calendar, the sheet the month opens out from
+  // under, and as before the sign that Train has been built at all.
+  var trainLean = null, trainBody = null, cardBox = null, shelfBox = null, segTrack = null, trainSwap = false;
+  // The calendar's nodes and its fold; the day the card is showing (null is
+  // today, which moves at midnight on its own); whether the month is out. What
+  // the day card and the shelf last drew, so a refresh that changes nothing on
+  // them rebuilds nothing; the side the next day's card arrives from.
+  var cal = null, selDay = null, calOpen = false, daySig = "", shelfSig = "", daySlide = 0;
 
   var DOW = ["M", "T", "W", "T", "F", "S", "S"];
-  var SEGS = [["calendar", "Calendar"], ["progress", "Progress"], ["records", "Records"]];
+  // The month left the segments for the strip (it opens out of the week in
+  // place), so two are left. A stored "calendar" reads as Progress.
+  var SEGS = [["progress", "Progress"], ["records", "Records"]];
+  // Set by the plan link (setView("plan")) and spent by the strip, which opens
+  // the month the next time it is drawn.
+  var trainWantMonth = false;
 
   // ---------- train · which segment ----------
   //
@@ -11843,12 +12285,13 @@ export const APP = String.raw`
   // were last on, and coming back to a different one is the small daily tax that
   // makes people stop opening a tab. The profile is the truth so a second device
   // opens where the first one left off; localStorage answers before the profile
-  // has landed, and an unknown word is not an error, it is just Calendar.
+  // has landed, and an unknown word is not an error, it is just Progress — which
+  // is also what a "calendar" stored before the month moved into the strip reads as.
   function readTrainSeg() {
     var s = state.profile && state.profile.settings, v = s && s.trainSeg;
     if (!v) { try { v = localStorage.getItem("spotter_trainseg"); } catch (e) { /* ignore */ } }
     for (var i = 0; i < SEGS.length; i++) if (SEGS[i][0] === v) return v;
-    return "calendar";
+    return "progress";
   }
 
   function curSeg() {
@@ -11880,101 +12323,347 @@ export const APP = String.raw`
     countStats();
   }
 
-  // ---------- train · the page ----------
-
+  // ---------- train · the build ----------
+  //
+  // The page's frame is constant markup, parsed once per account: nothing in it
+  // comes from a person, and a string is a quarter of the page weight of the
+  // same nodes built one call at a time. Kept, not rebuilt, between renders: a
+  // node replaced rather than moved cannot slide, and the slides are the point.
+  // data-go is what a calendar button does: a step, "t" today, "m" the ⋯.
   function buildTrain(v) {
-    v.innerHTML = "";
-    heroBox = el("div", "trainhero");
-    v.appendChild(heroBox);
-
-    trainBar = el("div", "weekbar");
-    barTitle = el("b");
-    trainBar.appendChild(barTitle);
-    // Google Calendar keeps a way back to today in reach; it earns its place only
-    // while today is off screen, so it comes and goes.
-    barToday = el("button", "planbtn", "Today");
-    barToday.onclick = function () {
-      state.weekStart = mondayOf(new Date());
-      monthStart = monthOfWeek(state.weekStart);
-      loadPlan();
+    var go = function (n, text, cls, label, glyph) {
+      return '<button class="' + cls + '" data-go="' + n + '"' + (label ? ' aria-label="' + label + '"' : "") + ">" +
+        (text || "") + (glyph ? '<svg class="ic"><use href="#i-' + glyph + '"></use></svg>' : "") + "</button>";
     };
-    trainBar.appendChild(barToday);
-    var nav = el("div", "wbnav");
-    barPrev = icon(el("button", "iconbtn"), "arrow-left");
-    barPrev.setAttribute("aria-label", "The week before");
-    barPrev.onclick = function () { stepWeek(-1); };
-    barNext = icon(el("button", "iconbtn"), "arrow-right");
-    barNext.setAttribute("aria-label", "The week after");
-    barNext.onclick = function () { stepWeek(1); };
-    nav.appendChild(barPrev);
-    nav.appendChild(barNext);
-    trainBar.appendChild(nav);
-    // The one word that keeps the pager off this band, so the drag below can have
-    // it. Everything else about the pager is left alone.
-    trainBar.setAttribute("data-noswipe", "");
-    v.appendChild(trainBar);
-
-    // Everything the week owns leans together, because it is one week: the days,
-    // the card and whichever segment is open. The hero above stays put — its ring
-    // is always the calendar week, whatever week is being read.
-    trainLean = el("div", "trainlean");
-    stripRow = el("div", "wstrip");
-    stripRow.setAttribute("data-noswipe", "");
-    trainLean.appendChild(stripRow);
-    cardBox = el("div", "tcardwrap");
-    trainLean.appendChild(cardBox);
-
-    var segWrap = el("div", "trainseg");
-    segTrack = el("div", "seg");
+    selDay = null; calOpen = false; daySig = ""; shelfSig = "";
+    v.innerHTML = '<div class="tcal wk" data-noswipe><div class="tcalhead"><div class="tctitle">' +
+      go("o", "<span></span>", "tcrange cw", "", "chev") + '<h3 class="tcmonth cm" tabindex="-1" aria-live="polite"></h3></div>' +
+      '<div class="tcacts">' + go("t", "Back to today", "planbtn cw") + '<div class="wbnav cm">' +
+      go(-1, "", "iconbtn", "Previous month", "arrow-left") + go(1, "", "iconbtn", "Next month", "arrow-right") +
+      go("t", "Today", "planbtn") + go("m", "", "iconbtn", "More", "more") + "</div>" +
+      go(-1, "Previous week", "sr-only cw") + go(1, "Next week", "sr-only cw") +
+      '</div></div><div class="cdow" aria-hidden="true"><span>M</span><span>T</span><span>W</span><span>T</span>' +
+      '<span>F</span><span>S</span><span>S</span></div><div class="crows" id="tcalrows"><div class="cblock"></div></div></div>' +
+      '<div class="tbelow"><button class="thandle" aria-controls="tcalrows" data-noswipe></button><div></div>' +
+      '<div class="tshelf hide"></div><div class="trainseg"><div class="seg" role="tablist" ' +
+      'aria-label="What to show for this week"><span class="segpill"></span></div></div><div class="trainbody"></div></div>';
+    var q = function (s) { return v.querySelector(s); };
+    trainLean = q(".tbelow");
+    cardBox = trainLean.children[1];
+    shelfBox = q(".tshelf");
+    trainBody = q(".trainbody");
+    segTrack = q(".seg");
+    cal = { box: q(".tcal"), rows: q(".crows"), block: q(".cblock"), range: q(".tcrange"), month: q(".tcmonth"),
+      handle: q(".thandle"), weeks: [], cells: [], raf: 0 };
+    cal.box.onclick = function (e) {
+      var n = e.target.closest("[data-go]");
+      n = n && n.getAttribute("data-go");
+      if (n === "o") calSet(true);
+      else if (n === "t") backToToday();
+      else if (n === "m") {
+        openMore("Plan", [["Copy week", openCopy, null, 0, "calendar"],
+          ["Build with Pumpy", programWithPumpy, state.weekStart, 0, "chats"], ["What counts", openCounts, null, 0, "help"]]);
+      } else if (n) calStep(+n);
+    };
+    cal.handle.onclick = function () { calSet(!calOpen); };
     segTrack.style.setProperty("--n", String(SEGS.length));
-    segTrack.setAttribute("role", "tablist");
-    segTrack.setAttribute("aria-label", "What to show for this week");
-    segTrack.appendChild(el("span", "segpill"));
     SEGS.forEach(function (s) {
-      var b = el("button", "segbtn", s[1]);
-      b.setAttribute("role", "tab");
-      b.onclick = function () { setTrainSeg(s[0]); };
-      segTrack.appendChild(b);
+      segTrack.appendChild(tbtn("segbtn", s[1], setTrainSeg, s[0])).setAttribute("role", "tab");
     });
-    segWrap.appendChild(segTrack);
-    trainLean.appendChild(segWrap);
-
-    trainBody = el("div", "trainbody");
-    trainLean.appendChild(trainBody);
-    v.appendChild(trainLean);
-
-    var ctx = { bar: trainBar, lean: trainLean, title: barTitle, step: stepWeek };
-    wireWeekBar(trainBar, ctx);
-    wireWeekBar(stripRow, ctx);
+    var ctx = { bar: cal.box, lean: cal.rows, title: q(".tctitle"), step: calStep, pull: calPull };
+    wireWeekBar(cal.box, ctx);
+    wireWeekBar(cal.handle, ctx);
   }
 
-  function stepWeek(n) {
-    state.weekStart = addDays(state.weekStart, 7 * n);
-    monthStart = monthOfWeek(state.weekStart);
-    loadPlan();
+  // ---------- train · the calendar ----------
+  //
+  // One grid, two heights. Collapsed it is the week strip: every row of the
+  // month is there, and a one-row window shows the week's. Pulled down it is the
+  // month, in place. Research (briefs/simplify-b/RESEARCH-MONTH-PULLDOWN.md):
+  // FSCalendar's scope pan is the model — the finger tracked 1:1, the row on
+  // screen staying in view and sliding to its slot (rowIndex x rowHeight x
+  // progress) while the other rows fade in — with the platform's numbers: the
+  // axis chosen at 10px, a release at 150px/s or else the nearer end, and the
+  // pager's critically damped spring to land; a crossfade in place of all of it
+  // under reduced motion.
+  //
+  // Only transform and opacity move per frame. The month is laid out at full
+  // height once, when a fold begins, and everything under the calendar — the day
+  // card, the shelf, the segments — is one opaque sheet (.tbelow) held up by
+  // exactly the height the month gained, then let down. The rows it has not
+  // uncovered yet are simply under it, and the rows above the week slide in from
+  // under the weekday letters, because the grid moves as one block.
+  var ROW_PITCH = 52;   // a row's 48px and the 4px under it (style.ts, .cweek)
+  var calTimer = 0;
+
+  function selKey() { return selDay || ymd(new Date()); }
+
+  // Which row of the month on screen holds a week.
+  function weekRow(w) {
+    return clamp(Math.round((mondayOf(w) - planRange().from) / WEEK_MS), 0, cal.weeks.length - 1);
   }
 
-  function stepMonth(n) {
-    monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1);
-    state.weekStart = weekInMonth(monthStart);
-    loadPlan();
+  // The week a closing month folds onto: the selected day's, else today's, else
+  // the month's first — whichever of them the grid on screen holds. Opening, it
+  // is the week already on screen, so there is nothing to choose.
+  function foldKey(sel, today, from, to) {
+    return sel >= from && sel <= to ? sel : today >= from && today <= to ? today : from;
   }
 
-  // ---------- train · the band is the control ----------
+  // Where a released drag lands: thrown at 150px/s or more it goes the way it was
+  // thrown; slower, whichever end is nearer.
+  function foldTo(p, v) {
+    return Math.abs(v) >= 150 ? +(v > 0) : +(p >= 0.5);
+  }
+
+  // The fold under a finger dy px from where the drag locked at p0: 1:1 across
+  // the month's extra height, half speed past it (the give iOS puts at the end of
+  // a scroll), and nothing past the week, which has nowhere further to go.
+  function foldP(p0, dy, extra) {
+    var p = p0 + dy / extra;
+    return p > 1 ? (p + 1) / 2 : Math.max(0, p);
+  }
+
+  // The month on screen, every day a button: its number, its dot, and one
+  // sentence for VoiceOver. A redraw under VoiceOver's finger puts the focus back
+  // on the day that had it (f). The ways back to today earn their place only
+  // while today is not what is showing (Google Calendar's rule).
+  function drawCal() {
+    var c = cal, r = planRange(), today = ymd(new Date()), sel = selKey(), f = document.activeElement._k, i = 0, d, row;
+    // A fold in progress owns the rows; a read landing mid-fold is drawn when it settles.
+    if (c.moving) return;
+    c.block.innerHTML = "";
+    c.weeks = []; c.cells = [];
+    for (d = r.from; ymd(d) <= ymd(r.to); d = addDays(d, 1)) {
+      var k = ymd(d), m = dayMark(k), b = tbtn("cday" + (d.getMonth() !== monthStart.getMonth() ? " out" : "") +
+        (k === today ? " today" : "") + (k === sel ? " sel" : ""), null, pickDay, k);
+      if (!(i++ % 7)) c.weeks.push(row = c.block.appendChild(el("div", "cweek")));
+      b._k = k;
+      b.appendChild(el("span", "cdn", d.getDate()));
+      b.appendChild(el("span", "dmark " + m));
+      b.setAttribute("aria-label", dayLabel(d) + markWord(m) + (k === sel ? ", selected" : ""));
+      if (k === today) b.setAttribute("aria-current", "date");
+      c.cells.push(row.appendChild(b));
+      if (k === f) b.focus({ preventScroll: true });
+    }
+    c.block.appendChild(c.legend = markLegend());
+    c.a = weekRow(state.weekStart);
+    c.weeks[c.a].classList.add("anchor");
+    c.block.style.setProperty("--a", c.a);
+    c.range.firstChild.textContent = weekLabel(state.weekStart);
+    c.range.setAttribute("aria-label", "Show month, " + weekLabel(state.weekStart));
+    c.month.textContent = monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    c.box.className = "tcal " + (calOpen ? "mo" : "wk");
+    c.handle.setAttribute("aria-expanded", calOpen);
+    c.handle.setAttribute("aria-label", calOpen ? "Collapse month" : "Expand month");
+    d = c.box.querySelectorAll(".planbtn");
+    d[0].classList.toggle("hide", sel === today && showingToday());
+    d[1].classList.toggle("hide", sel === today && +monthStart === +firstOf(new Date()));
+  }
+
+  // A tap on a day selects it; it opens nothing. Picked in the month it is also
+  // how the month closes, onto that day's week; picked off the strip (a card's
+  // Next row), the strip goes to that week.
+  function pickDay(k) {
+    var was = selKey();
+    if (cal.moving) return;
+    if (k !== was) { daySlide = k > was ? 1 : -1; selDay = k; haptic("select"); }
+    if (calOpen) { drawDay(); cal.pick = k; drawCal(); calSet(false); }
+    else if (k < ymd(state.weekStart) || k > ymd(addDays(state.weekStart, 6))) {
+      state.weekStart = mondayOf(dayDate(k));
+      monthStart = monthOfWeek(state.weekStart);
+      calGo(daySlide);
+    } else { drawDay(); drawCal(); }
+  }
+
+  // A step sideways: a week while the strip is a week, a month while it is the month.
+  function calStep(n, swiped) {
+    if (calOpen) {
+      monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1);
+      state.weekStart = weekInMonth(monthStart);
+    } else {
+      state.weekStart = addDays(state.weekStart, 7 * n);
+      monthStart = monthOfWeek(state.weekStart);
+    }
+    calGo(n, swiped && !lessMotion() ? 120 : 0);
+  }
+
+  // The week belongs to the finger, not to the fetch: what is now on screen is
+  // drawn from the rows already in hand (after ms, the time a swipe's lean takes
+  // to carry the old week out), arriving from side n, and again only if the read
+  // brings something new.
+  function calGo(n, ms) {
+    planSlide = n;
+    clearTimeout(calTimer);
+    calTimer = setTimeout(function () { planSig = planShape(); renderTrain(); loadPlan(true); }, ms || 0);
+  }
+
+  function backToToday() {
+    var now = new Date(), k = ymd(now), was = ymd(state.weekStart);
+    daySlide = selKey() > k ? -1 : 1;
+    selDay = null;
+    state.weekStart = mondayOf(now);
+    monthStart = calOpen ? firstOf(now) : monthOfWeek(state.weekStart);
+    calGo(was > k ? -1 : was < ymd(state.weekStart) ? 1 : 0);
+  }
+
+  // A tap on the handle or the week's name, VoiceOver, a pick in the month or the
+  // plan link: the fold a drag makes. Scrolled down, the page goes to its top
+  // first (--t-3), so the fold happens where it can be seen.
+  function calSet(open) {
+    var pg = $("trainview");
+    if (open === calOpen && !cal.moving) return;
+    if (pg.scrollTop > 1 && !cal.moving) {
+      pg.scrollTo({ top: 0, behavior: lessMotion() ? "auto" : "smooth" });
+      setTimeout(function () { pg.scrollTop = 0; calSet(open); }, lessMotion() ? 0 : 320);
+      return;
+    }
+    calBegin();
+    calTo(+open, null);
+  }
+
+  // The month laid out at full height and measured, once, with the sheet under
+  // it held where it was: the start of every fold, whichever way it goes. A fold
+  // already running is caught where it is.
+  function calBegin() {
+    var c = cal, r = planRange();
+    cancelAnimationFrame(c.raf);
+    c.raf = 0;
+    if (c.moving) return;
+    if (calOpen) c.a = weekRow(dayDate(foldKey(selKey(), ymd(new Date()), ymd(r.from), ymd(r.to))));
+    c.moving = true;
+    c.opening = !calOpen;
+    c.calm = lessMotion();
+    c.box.className = "tcal moving";
+    c.extra = Math.max(1, c.block.offsetHeight - 48);
+    // Under reduced motion the rows fade where they stand; nothing slides.
+    c.block.style.transform = "translateY(" + (calOpen ? 0 : -c.a * ROW_PITCH) + "px)";
+    calPaint(+calOpen);
+  }
+
+  // One frame of the fold, p from 0 (the week) to 1 (the month), past 1 while a
+  // finger overpulls. The row on screen slides to its slot with the block; the
+  // other rows fade in with the fold, and out a little ahead of it, so the week
+  // is alone before the window closes on it; the sheet under the calendar moves
+  // by the height the month has so far; the header crosses over in the second half.
+  function calPaint(p) {
+    var c = cal, q = clamp(p, 0, 1), f = c.opening ? q : Math.max(0, 1.1 * q - 0.1);
+    c.p = p;
+    if (!c.calm) c.block.style.transform = "translateY(" + -c.a * ROW_PITCH * (1 - q) + "px)";
+    c.weeks.concat(c.legend).forEach(function (n, i) { if (i !== c.a) n.style.opacity = f; });
+    trainLean.style.transform = "translateY(" + c.extra * (p - 1) + "px)";
+    c.box.style.setProperty("--cw", clamp(1 - 2 * q, 0, 1));
+    c.box.style.setProperty("--cm", clamp(2 * q - 1, 0, 1));
+  }
+
+  // Lands the fold at 0 or 1 on the pager's spring: 0.42s, critically damped,
+  // from v (folds per second at the release), and stopped at the target rather
+  // than let through it. A tap starts it at the speed that makes it a pure
+  // ease-out, x0 e^(-wt), settled inside --t-3. Reduced motion lands at once and
+  // crossfades.
+  function calTo(to, v) {
+    var c = cal, x0 = c.p - to, t0 = 0, W = 2 * Math.PI / 0.42;
+    cancelAnimationFrame(c.raf);
+    if (c.calm) {
+      calEnd(to);
+      c.rows.classList.remove("xfade");
+      void c.rows.offsetWidth;
+      c.rows.classList.add("xfade");
+      return;
+    }
+    if (v === null) v = -W * x0;
+    c.raf = requestAnimationFrame(function frame(t) {
+      var s = (t - (t0 = t0 || t)) / 1000, x = (x0 + (v + W * x0) * s) * Math.exp(-W * s);
+      if (x * x0 <= 0 || Math.abs(x * c.extra) < 0.5) calEnd(to);
+      else { calPaint(to + x); c.raf = requestAnimationFrame(frame); }
+    });
+  }
+
+  // Everything a fold put on the page, taken off in one style change.
+  function calRest() {
+    var c = cal;
+    cancelAnimationFrame(c.raf);
+    c.raf = 0;
+    c.moving = false;
+    c.box.style.cssText = c.block.style.transform = trainLean.style.transform = "";
+    c.weeks.concat(c.legend || []).forEach(function (n) { n.style.opacity = ""; });
+  }
+
+  // The fold has landed. Open, the month is the page's; closed, the week it
+  // folded onto is the strip, in the month the Thursday rule gives it, and the
+  // page under it is that week's. VoiceOver goes where the eye does: the
+  // month's name, or the day just picked.
+  function calEnd(to) {
+    var c = cal, wk = ymd(state.weekStart), k = c.pick;
+    calRest();
+    calOpen = !!to;
+    c.pick = null;
+    haptic("tap");
+    c.box.className = "tcal " + (calOpen ? "mo" : "wk");
+    if (!to) {
+      state.weekStart = addDays(planRange().from, c.a * 7);
+      monthStart = monthOfWeek(state.weekStart);
+      trainSwap = ymd(state.weekStart) !== wk;
+      calGo(0);
+    }
+    drawCal();
+    if (to) c.month.focus({ preventScroll: true });
+    else c.cells.forEach(function (b) { if (b._k === k) b.focus({ preventScroll: true }); });
+  }
+
+  // The vertical half of the calendar's drag; wireWeekBar owns the touch.
+  //   can    asked on the first touchmove, the only one WebKit lets decide whether
+  //          the page scrolls: the drag is the calendar's only with the page at its
+  //          top (anywhere else it is the page scrolling), down (or level) to open
+  //          and up to close; a fold still settling is caught whichever way the
+  //          finger goes. Not the research note's 2px: a finger starts from rest,
+  //          so a deliberate pull's first move is often under a pixel, and asking
+  //          for two gave the page the pull instead. The cost is a scroll up that
+  //          starts on the strip with a pixel's settle downward — rarer, and a
+  //          second try scrolls.
+  //   grab   a finger landing on a fold still settling stops it where it is...
+  //   drop   ...and if it turns out not to be a drag, lets it finish
+  //   end    the speed is the last 100ms of travel, and none from a finger that
+  //          rested 50ms before it lifted; a cancel is an interruption, not a throw
+  // (Comments in here would ship: the build keeps them inside an object literal.)
+  var calPull = {
+    can: function (dy) {
+      return $("trainview").scrollTop <= 0 && (cal.moving || (calOpen ? dy <= 0 : dy >= 0));
+    },
+    grab: function () {
+      var r = cal.raf;
+      cancelAnimationFrame(r);
+      cal.raf = 0;
+      return !!r;
+    },
+    drop: function () { if (cal.moving && !cal.raf) calTo(foldTo(cal.p, 0), 0); },
+    start: function () { calBegin(); cal.p0 = cal.p; },
+    move: function (dy) { calPaint(foldP(cal.p0, dy, cal.extra)); },
+    end: function (s, cancelled) {
+      var a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
+      var v = !cancelled && dt > 0.004 && now() - b.t < 50 ? (b.y - a.y) / dt : 0;
+      calTo(foldTo(cal.p, v), v / cal.extra);
+    }
+  };
+
+  // ---------- train · the calendar is the control ----------
   //
   // Material lets a tab strip and the content under it each answer a sideways
   // drag and mean different things by it. Here the content is the app's three
-  // tabs, so data-noswipe hands every drag starting on this band to the code
-  // below and the pager never sees one; a drag anywhere else still pages. The
-  // arrows stay: Apple asks a gesture to supplement a control, not replace it.
+  // tabs, so data-noswipe hands every drag starting on the calendar (or on its
+  // handle) to the code below and the pager never sees one; a drag anywhere
+  // else still pages.
   //
-  // Nothing is fetched for the week arriving, so the body leans the way the
-  // finger goes rather than pretending to be two weeks side by side, and the
-  // title follows a fifth of that. On release the lean carries out and the week
-  // that lands slides in from the far side. Discipline and constants are the
-  // pager's: slop before an axis, one verdict, the touch cancelled only while we
-  // hold it, a fling or two fifths of the bar to commit.
-  var WB_LEAD = 64, planSlide = 0;
+  // Two axes, one verdict, taken once the finger has gone 10px (iOS waits
+  // "usually 10 points"). Sideways steps the week, or the month while the month
+  // is open: nothing is fetched for the one arriving, so the rows lean the way
+  // the finger goes rather than pretending to be two weeks side by side, the
+  // title follows a fifth of that, and on release the lean carries out and the
+  // week that lands slides in from the far side. Up or down is the fold
+  // (calPull), and only if the touch's first move claimed it. Discipline and
+  // constants are the pager's: one verdict, the touch cancelled only while we
+  // hold it, a fling or two fifths of the width to commit.
+  var WB_LEAD = 64, WB_SLOP = 10, planSlide = 0;
 
   function wireWeekBar(node, ctx) {
     var wd = null;
@@ -11994,11 +12683,12 @@ export const APP = String.raw`
       if (!wd || (e && e.pointerId !== wd.id)) return;
       var d = wd;
       wd = null;
-      if (!d.lock) return;
+      if (!d.lock) { if (d.caught) ctx.pull.drop(); return; }
       try { node.releasePointerCapture(d.id); } catch (err) { /* already gone */ }
-      // One click follows the finger up, and it belongs to whichever arrow or day
-      // the drag started on. Not after a lost lift: the next tap is its own.
+      // One click follows the finger up, and it belongs to whichever day or
+      // button the drag started on. Not after a lost lift: the next tap is its own.
       if (!lost) swallowClick();
+      if (d.lock === "y") { ctx.pull.end(d.s, cancelled); return; }
       var s = d.s, a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
       var v = dt > 0.004 ? (b.x - a.x) / dt : 0;
       var far = Math.abs(d.dx) > node.offsetWidth * PART;
@@ -12008,15 +12698,13 @@ export const APP = String.raw`
         : (v > FLING || (far && d.dx > 0)) ? -1 : 0;
       rest(!!n);
       if (!n) return;
-      // The week belongs to the finger, not to the fetch — the rule the segmented
-      // control already follows when it paints before it loads.
       planSlide = n;
       if (!d.calm) {
         ctx.lean.classList.add("pbmove");
         ctx.lean.style.transform = "translateX(" + (n > 0 ? -WB_LEAD : WB_LEAD) + "px)";
         ctx.lean.style.opacity = "0";
       }
-      ctx.step(n);
+      ctx.step(n, true);
       paintTrainBar();
       haptic("tap");
     }
@@ -12027,31 +12715,34 @@ export const APP = String.raw`
       // Safari's back gesture owns the very edge inside a browser tab.
       if (!standalone() && e.clientX < 24) return;
       wd = { id: e.pointerId, x: e.clientX, y: e.clientY, dx: 0, lock: false, seen: now(),
-        calm: lessMotion(), s: [{ t: now(), x: e.clientX }] };
+        calm: lessMotion(), s: [{ t: now(), x: e.clientX, y: e.clientY }],
+        first: false, claim: false, caught: !!(ctx.pull && ctx.pull.grab()) };
       holdDrag(loose);
     });
 
     node.addEventListener("pointermove", function (e) {
       if (!wd || e.pointerId !== wd.id) return;
       wd.seen = now();
-      var dx = e.clientX - wd.x, dy = e.clientY - wd.y;
+      var dx = e.clientX - wd.x, dy = e.clientY - wd.y, up = Math.abs(dy) > Math.abs(dx);
       if (!wd.lock) {
-        if (dx * dx + dy * dy < SLOP * SLOP) return;
-        // Forty-five degrees and no wider. The pager leans to 65 because a page
-        // that will not turn is the worse fault there; this band sits where people
-        // start a scroll, so a drag that leans down is theirs.
-        if (Math.abs(dy) > Math.abs(dx)) { wd = null; return; }
-        wd.lock = true;
-        // Re-datum on the lock point so the week does not jump the slop.
-        wd.x = e.clientX;
-        dx = 0;
-        ctx.bar.classList.add("wbdrag");
-        ctx.lean.classList.remove("pbmove");
+        if (dx * dx + dy * dy < WB_SLOP * WB_SLOP) return;
+        // Forty-five degrees and no wider. Up or down is the fold only if the
+        // touch was claimed for it (claim, below) — otherwise the page is
+        // already scrolling. Sideways is the week's, unless the finger landed
+        // on a fold still settling, which it lets finish instead.
+        if (up ? !claim(dy, dx) : wd.caught) { if (wd.caught) ctx.pull.drop(); wd = null; return; }
+        wd.lock = up ? "y" : "x";
+        // Re-datum on the lock point so nothing jumps the slop.
+        wd.x = e.clientX; wd.y = e.clientY;
+        dx = dy = 0;
+        if (up) ctx.pull.start();
+        else { ctx.bar.classList.add("wbdrag"); ctx.lean.classList.remove("pbmove"); }
         try { node.setPointerCapture(wd.id); } catch (err) { /* not fatal */ }
       }
-      wd.dx = dx;
-      wd.s.push({ t: now(), x: e.clientX });
+      wd.s.push({ t: now(), x: e.clientX, y: e.clientY });
       while (wd.s.length > 2 && wd.s[wd.s.length - 1].t - wd.s[0].t > VWIN) wd.s.shift();
+      if (wd.lock === "y") { ctx.pull.move(dy); return; }
+      wd.dx = dx;
       if (wd.calm) return;
       var lead = clamp(dx / 2, -WB_LEAD, WB_LEAD);
       ctx.lean.style.transform = "translateX(" + lead + "px)";
@@ -12059,11 +12750,21 @@ export const APP = String.raw`
       ctx.title.style.transform = "translateX(" + (lead * 0.18) + "px)";
     });
 
-    // The page under this band scrolls, and WebKit settles that on the touch, not
-    // on the pointer event before it: cancelling the touch while we hold the axis
-    // is the whole reason the band can declare no touch-action, as the pager does.
+    // WebKit settles on the FIRST touchmove whether the page may scroll: cancel
+    // that one or none after it counts (webkit.org/b/182521). So the touch is
+    // claimed for the fold, once, when it can only be the fold's (calPull.can),
+    // and on whichever comes first: its first touchmove (WebKit sends one for
+    // every pixel) or the lock (Chrome holds touchmoves back until the finger is
+    // past its slop). Once an axis is held every move is cancelled — the whole
+    // reason the calendar can declare no touch-action, as the pager does.
+    function claim(dy, dx) {
+      if (!wd.first) { wd.first = true; wd.claim = !!(ctx.pull && ctx.pull.can(dy, dx)); }
+      return wd.claim;
+    }
+
     node.addEventListener("touchmove", function (e) {
-      if (wd && wd.lock && e.cancelable) e.preventDefault();
+      var t = e.touches && e.touches.length === 1 && e.touches[0];
+      if (wd && e.cancelable && (wd.lock || (t && claim(t.clientY - wd.y, t.clientX - wd.x)))) e.preventDefault();
     }, { passive: false });
 
     node.addEventListener("pointerup", function (e) { stop(e, false); });
@@ -12079,7 +12780,12 @@ export const APP = String.raw`
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   }
 
-  function weekLabel(w) { return shortDate(w) + " – " + shortDate(addDays(w, 6)); }
+  // "Sep 21–27", or "Sep 28 – Oct 4" across two months: a week's name, wherever
+  // it is written (the wording table).
+  function weekLabel(w) {
+    var e = addDays(w, 6);
+    return shortDate(w) + (w.getMonth() === e.getMonth() ? "–" + e.getDate() : " – " + shortDate(e));
+  }
 
   function dayLabel(d) {
     return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -12093,9 +12799,8 @@ export const APP = String.raw`
   }
 
   function paintTrainBar() {
-    barTitle.textContent = weekLabel(state.weekStart);
-    barToday.classList.toggle("hide", showingToday());
-    $("count1").textContent = "Week " + isoWeek(state.weekStart);
+    // Today's date, the one thing the eyebrow can say that nothing under it does.
+    $("counttrain").textContent = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   }
 
   function paintSeg() {
@@ -12108,71 +12813,39 @@ export const APP = String.raw`
     }
   }
 
-  // ---------- train · the hero ----------
+  // ---------- train · the header's corner ----------
   //
-  // The streak in weeks on the left, the ring on the right. A week is the unit
-  // everywhere in this app, and the ring is ALWAYS this calendar week however far
-  // back the strip is reading: a number that changed as you browsed would answer
-  // a question nobody asked.
-  function drawHero(st) {
-    heroBox.innerHTML = "";
-    heroBox.className = "trainhero" + (st.done >= st.goal ? " full" : "") +
-      (st.atRisk ? " risk" : "") + (st.unreachable ? " miss" : "");
-    var left = el("div", "wkleft");
-    if (st.streakWeeks > 0) {
-      left.appendChild(el("div", "wkbig", st.streakWeeks + " wk"));
-      var fz = (st.frozen || []).length;
-      left.appendChild(el("div", "wksub",
-        "streak" + (fz ? " · " + fz + (fz === 1 ? " freeze" : " freezes") : "")));
-    } else {
-      // No run to name yet. The ring beside it already says "1 of 4", so the line
-      // only speaks when it has something the ring does not: a week at risk, a
-      // week that can no longer be met, a week already done.
-      left.appendChild(el("div", "wksub",
-        st.done >= st.goal || st.atRisk || st.unreachable ? ringLabel(st) : "This week"));
-    }
-    heroBox.appendChild(left);
-
-    var ring = el("button", "ringwrap rsm");
-    ring.setAttribute("aria-label", "What counts as a session");
-    // The arc sweeps once, the first time it has something to say. A week swipe
-    // or a quiet refresh redraws this row and must not replay it: a ring that
-    // fills itself again on every render is a fidget, not a result.
-    var pct = st.goal ? st.done / st.goal : 0;
+  // The streak and the ring, up in the bar since Option B: the two things a
+  // training week is judged by, in sight at every scroll position. The ring is
+  // ALWAYS this calendar week however far the strip has been paged — a number
+  // that changed as you browsed would answer a question nobody asked — and it
+  // is the door to what counts, which also says how the week stands and whether
+  // a freeze has been spent. The streak's hyphen does not break (U+2011), so it
+  // folds as "3-week / streak".
+  function drawStat() {
+    var box = $("trainstat"), st = thisWeek(), pct = st && st.done / st.goal, sw = st && st.streakWeeks, ring;
+    box.innerHTML = "";
+    if (!st) return;
+    box.className = "trainstat" + (pct >= 1 ? " full" : st.atRisk ? " risk" : "");
+    if (sw) box.appendChild(el("span", "tsk", sw + "‑week streak"));
+    ring = box.appendChild(tbtn("ringwrap", null, openCounts));
+    // The arc sweeps once, the first time it has something to say, and a refresh
+    // redraws it from where it was: a ring that refills on every render is a
+    // fidget, not a result.
     ring.appendChild(ringSvg(pct, null, heroPct));
     heroPct = pct;
-    var mid = el("div", "rmid");
-    if (st.done >= st.goal) mid.appendChild(icon(el("div", "rcheck"), "check"));
-    else {
-      mid.appendChild(el("div", "rnum", String(st.done)));
-      mid.appendChild(el("div", "rof", "of " + st.goal));
-    }
-    ring.appendChild(mid);
-    ring.onclick = function () { openSheet("countsheet"); };
-    heroBox.appendChild(ring);
+    ring.appendChild(pct >= 1 ? icon(el("span", "rmid rcheck"), "check") : el("span", "rmid rnum", st.done + "/" + st.goal));
+    ring.setAttribute("aria-label", st.done + " of " + st.goal + " this week" + (sw ? ", " + sw + "-week streak" : "") + ". What counts");
   }
 
-  // ---------- train · the seven days ----------
-
-  function drawStrip() {
-    stripRow.innerHTML = "";
-    var todayStr = ymd(new Date());
-    for (var i = 0; i < 7; i++) {
-      (function (i) {
-        var d = addDays(state.weekStart, i), key = ymd(d);
-        var cell = el("button", "wday" + (key === todayStr ? " today" : ""));
-        cell.appendChild(el("span", "wdl", DOW[i]));
-        cell.appendChild(el("span", "wdn", String(d.getDate())));
-        var m = dayMark(key);
-        cell.appendChild(el("span", "dmark" + (m ? " " + m : "")));
-        cell.setAttribute("aria-label", dayLabel(d) + markWord(m));
-        cell.onclick = function () { openDay(key); };
-        stripRow.appendChild(cell);
-      })(i);
-    }
+  function openCounts() {
+    var st = thisWeek(), fz = st && st.frozen.length;
+    $("countnow").textContent = st ? [ringLabel(st), st.streakWeeks ? st.streakWeeks + "-week streak" : "",
+      fz ? fz + (fz > 1 ? " freezes" : " freeze") + " used" : ""].filter(Boolean).join(" · ") : "";
+    openSheet("countsheet");
   }
 
-  // done / planned / as planned / missed, spelled out once under the grid. Four
+  // done / planned / as planned / missed, spelled out once under the month. Four
   // shapes carrying four meanings need a key, and a key is cheaper than four
   // words in every cell.
   function markLegend() {
@@ -12187,86 +12860,255 @@ export const APP = String.raw`
     return row;
   }
 
-  // ---------- train · today ----------
+  // ---------- train · the day card ----------
   //
-  // Always today, whatever week the strip is showing: the question the app is
-  // opened with does not move when you go looking at October.
-  function todayRows() {
-    var key = ymd(new Date()), r = planRange();
-    if (key >= ymd(r.from) && key <= ymd(r.to)) return rowsFor(key);
-    // Paged away to another month, so the range no longer holds today. The
-    // Library's card reads the same two rows and keeps its own snapshot of them.
-    if (today.day === key) return today.rows;
-    loadToday();
-    return [];
+  // Today's is Up next: upNext() is the rule, and this only draws its answer.
+  // Any other day's is what happened on it and what is or was planned, with the
+  // plan's actions on each row. It replaces the Today card, the day sheet and
+  // the Resume card, and it is the only place Start appears on Train.
+  //
+  // Cheap to call at any moment — sessionChanged calls it on every pause, resume
+  // and finish, and on every render of the library, which is also when a save
+  // lands, so the shelf under the card is kept with it — and it rebuilds only
+  // what has changed. A new day arrives from the side the day moved to, the same
+  // day saying something new crossfades, and the box eases to the new height.
+  function drawDay() {
+    if (!cardBox) return;
+    planHide();
+    drawShelf();
+    var k = selKey(), u = k === ymd(new Date()) ? upNext() : dayState(k), sig = k + JSON.stringify(u), h = cardBox.offsetHeight;
+    if (sig === daySig) return;
+    var card = u.key ? dayCard(u) : upCard(u);
+    cardBox.innerHTML = "";
+    cardBox.appendChild(card);
+    if (daySig && !quiet) {
+      card.style.setProperty("--pin", (daySlide < 0 ? -26 : 26) + "px");
+      card.classList.add(daySlide ? "planin" : "planswap");
+      if (h !== cardBox.offsetHeight) sizeMotion(cardBox, h, cardBox.offsetHeight);
+    }
+    daySig = sig;
+    daySlide = 0;
   }
 
-  function todayMeta(w, extra) {
-    return [w.author, fmtDur(w.duration_minutes), (w.equipment || [])[0] || w.category, extra]
+  // A button whose tap calls fn with one argument: the shape nearly every
+  // control on these cards takes.
+  function tbtn(cls, text, fn, arg) {
+    var b = el("button", cls, text);
+    b.onclick = function () { fn(arg); };
+    return b;
+  }
+
+  function wMeta(w, more) {
+    var n = exerciseNames(w).length;
+    return [w.author && "@" + w.author, fmtDur(w.duration_minutes), n && n + (n > 1 ? " exercises" : " exercise"), more]
       .filter(Boolean).join(" · ");
   }
 
-  function drawToday(st) {
-    var d = new Date(), key = ymd(d);
-    cardBox.innerHTML = "";
-    var list = [];
-    todayRows().forEach(function (p) {
-      var w = planWorkout(p.workout_id);
-      if (w) list.push({ row: p, w: w });
-    });
-    var done = loggedOn(key);
-    var card = el("div", "daycard today tcard" + (done && !list.length ? " done" : ""));
-    var head = el("div", "dayhead");
-    head.appendChild(el("div", "dayname", "Today · " +
-      d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })));
-    var more = icon(el("button", "iconbtn tmore"), "more");
-    more.setAttribute("aria-label", "More");
-    more.onclick = function () { openSheet("trainmore"); };
-    head.appendChild(more);
-    card.appendChild(head);
+  function setsWord(n) { return n + (n === 1 ? " set" : " sets"); }
 
-    if (list.length) {
-      var w = list[0].w;
-      var body = el("div", "tbody");
-      var thumb, art = cardArt(w);
-      if (art) { thumb = el("img", "tthumb"); thumb.src = art; thumb.alt = ""; }
-      else thumb = el("div", "tthumb");
-      body.appendChild(thumb);
-      var txt = el("div", "ttxt");
-      var t = el("button", "ttitle", w.title || "Workout");
-      t.onclick = function () { openDetail(w); };
-      txt.appendChild(t);
-      var meta = todayMeta(w, list.length > 1
-        ? "+" + (list.length - 1) + " more today" : null);
-      if (meta) txt.appendChild(el("div", "tdose", meta));
-      body.appendChild(txt);
-      card.appendChild(body);
-      var row = el("div", "tbtns");
-      // The detail overlay's own start call, so finishing lands in the same place.
-      var go = el("button", "btn" + (done ? " ghost" : ""),
-        done ? "Log another" : "Start workout");
-      go.onclick = function () { startWorkout(w); };
-      row.appendChild(go);
-      var mv = el("button", "btn ghost tmove", "Move");
-      mv.onclick = function () { scheduleWorkout(w, list[0].row); };
-      row.appendChild(mv);
-      card.appendChild(row);
-    } else if (done) {
-      card.appendChild(el("div", "tdose",
-        "Done for today." + (st ? " " + weekLine(st) : "")));
-    } else {
-      // Nothing planned is not a problem to solve, but it is worth two doors.
-      card.appendChild(el("div", "tdose", "Rest day — add one, or ask Pumpy."));
-      var rest = el("div", "tbtns");
-      var add = el("button", "btn ghost", "Add a workout");
-      add.onclick = function () { openPicker(key, dayLabel(d)); };
-      rest.appendChild(add);
-      var ask = el("button", "btn ghost", "Ask Pumpy");
-      ask.onclick = function () { programWithPumpy(state.weekStart); };
-      rest.appendChild(ask);
-      card.appendChild(rest);
+  // The card: the saved video's frame (or Pumpy's drawing) across the top — a
+  // second door to the workout for a thumb; the title is the one VoiceOver and a
+  // keyboard use — then the card's word, the title (w without an id is only a
+  // name), one line of facts, and the buttons, [class, words, fn, argument].
+  // act: it asks for something, and wears the ember edge.
+  function tcard(cls, kick, w, meta, btns) {
+    var card = el("div", "daycard tcard " + cls), art = w && w.id && cardArt(w), row = el("div", "tbtns"), cov;
+    if (art) {
+      cov = card.appendChild(el("div", "tcover"));
+      cov.onclick = function () { openDetail(w); };
+      var img = cov.appendChild(el("img"));
+      img.alt = "";
+      img.onerror = function () { cov.remove(); };
+      img.src = art;
     }
-    cardBox.appendChild(card);
+    card.appendChild(el("div", "dayname", kick));
+    if (w) card.appendChild(w.id ? tbtn("ttitle", w.title || "Workout", openDetail, w) : el("div", "ttitle", w.title));
+    if (meta) card.appendChild(el("div", "tdose", meta));
+    (btns || []).forEach(function (b) { row.appendChild(tbtn(b[0], b[1], b[2], b[3])); });
+    if (row.firstChild) card.appendChild(row);
+    return card;
+  }
+
+  // A row of the history's shape, "title / line ›": a session (its recap) or
+  // what is next ("Next: Sat · Leg Day", which selects that day).
+  function histRow(title, line, fn, arg) {
+    var b = tbtn("histrow dayses", null, fn, arg), n = b.appendChild(el("div", "n"));
+    n.appendChild(el("b", null, title));
+    n.appendChild(el("span", null, line));
+    b.appendChild(ic("chev"));
+    return b;
+  }
+
+  function nextRow(nx) {
+    var d = aheadWord(nx.day, new Date());
+    return histRow("Next: " + d.charAt(0).toUpperCase() + d.slice(1), nx.w.title || "Workout", pickDay, nx.day);
+  }
+
+  // Up next, in the order upNextOf decides it (S0 to S6).
+  function upCard(u) {
+    var w = u.w, n = u.sessions && u.sessions.length, card, go;
+    if (!u.s) {
+      // S0: the planned card's shape in sand, so the page does not jump when the answer lands.
+      card = el("div", "daycard tcard tskel");
+      card.innerHTML = '<div class="tcover"></div><div class="sk"></div><div class="sk st"></div><div class="sk sm"></div><div class="sk sb"></div>';
+      return card;
+    }
+    if (u.s > 5) return firstCard(u.pending);
+    // Paused or still running: the way back in, and Finish workout, which is the
+    // session's own Finish pill — at once when every planned set is in, else the
+    // leave sheet asks first, over the session it would end.
+    if (u.s < 2) {
+      // Whole seconds counted down, as the paused bar counts them, so the two
+      // never disagree by one on the same screen.
+      return tcard("act", u.running ? "In progress" : "Paused", w, setsWord(u.sets) + " · " +
+        clock(Math.max(0, Math.floor(((u.pausedAt ? new Date(u.pausedAt) : new Date()) - new Date(u.startedAt)) / 1000))),
+        [["btn", "Resume", woForward], ["btn ghost tmove", "Finish workout", function () { woForward(); woFinish(); }]]);
+    }
+    if (u.s < 3) {
+      card = tcard("act", "Planned today", w, wMeta(w, u.more && "+" + u.more + " more today"),
+        [["btn", "Start workout", startWorkout, w]]);
+      if (u.done.length) {
+        card.insertBefore(el("div", "tdose", "Also done today: " +
+          u.done.map(function (l) { return l.workout_title || "Workout"; }).join(", ")), card.lastChild);
+      }
+      go = card.lastChild.appendChild(icon(el("button", "iconbtn"), "more"));
+      // Move, Swap and Remove act on the row by its id, which a row just planned
+      // is still waiting for: offered once the server has given it one.
+      go.disabled = String(u.row.id).indexOf("tmp-") === 0;
+      go.setAttribute("aria-label", go.disabled ? "Saving the plan…" : "More for this plan");
+      go.onclick = function () {
+        openMore(w.title || "Workout", [["Move", openPlanSheet, { w: w, row: u.row, from: "upnext" }, 0, "calendar"],
+          ["Swap", planSwap, u.row, 0, "swap"], ["Remove from plan", planRemove, u.row, 1, "trash"]]);
+      };
+      return card;
+    }
+    if (u.s < 4) {
+      card = tcard("good", "Done today ✓", w || { title: u.session.workout_title || "Workout" },
+        Math.max(1, Math.round(u.secs / 60)) + " min · " + setsWord(u.sets) + (n > 1 ? " · " + n + " sessions" : ""),
+        [["btn ghost", "View recap", openRecap, u.session]]);
+      if (u.next) card.appendChild(nextRow(u.next));
+      card.appendChild(tbtn("linkbtn", "Log another", setView, "library"));
+      return card;
+    }
+    if (u.s < 5) {
+      // A rest day in a planned week: what is next, and a way in anyway — the
+      // next planned workout, or with nothing ahead the one Try next would pick.
+      go = u.next ? u.next.w : u.pick;
+      card = tcard("rest", "Rest day", null, u.next ? null : "Nothing else planned this week." +
+        (go ? " Or try " + (go.title || "a saved workout") + "." : ""), go && [["btn ghost", "Start it now", startWorkout, go]]);
+      if (u.next) card.insertBefore(nextRow(u.next), card.lastChild);
+      card.appendChild(tbtn("linkbtn", "Plan a workout today", planPick, ymd(new Date())));
+      card.appendChild(tbtn("linkbtn", "Build this week with Pumpy", programWithPumpy, mondayOf(new Date())));
+      return card;
+    }
+    return tcard("act", u.again ? "Do it again" : "Try next", w, wMeta(w),
+      [["btn", "Start workout", startWorkout, w], ["btn ghost tmove", "Plan it", openPlanSheet, { w: w, from: "upnext" }]]);
+  }
+
+  // S6: nothing on the shelf to do yet. The lesson is the add sheet's own share
+  // row, the one used every day after this, as the empty library shows it.
+  function firstCard(n) {
+    var card = el("div", "daycard tcard empty");
+    card.appendChild(pumpyArt("coach", false));
+    card.appendChild(el("h2", null, n ? "Spotter is reading " + n + (n > 1 ? " videos" : " video") : "Save your first workout video"));
+    card.appendChild(el("p", null, n ? "It lands here the moment it is ready." : "Found one on TikTok, Instagram or YouTube? Share it to Spotter."));
+    if (!n) paintSaveOn(card.appendChild($("addsheet").querySelector(".shareflow").cloneNode(true)));
+    card.appendChild(tbtn("btn firstsave", "Add video", function () { $("addbtn").click(); }));
+    return card;
+  }
+
+  // Any other day. Past: the sessions finished on it (each opens its recap), and
+  // what was planned and not done, which can be done today instead. Ahead: what
+  // is planned, to start now. Either way a planned row can be moved (Move works
+  // on any planned row, a missed one included) or removed, and a workout added.
+  function dayCard(d) {
+    var card = el("div", "daycard tcard");
+    card.appendChild(el("div", "dayname", dayDate(d.key).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })));
+    d.sessions.forEach(function (l) {
+      card.appendChild(histRow(l.workout_title || "Workout", setsWord(setsIn(l.entries)) +
+        (l.duration_seconds ? " · " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : ""), openRecap, l));
+    });
+    // A planned row is the picker's row (the workout, its word and length), with
+    // the plan's actions under it, the first of them a button. A row planWrite has
+    // drawn before the server gave it an id says so, and its plan actions wait
+    // for the id: there is nothing yet to take off a day or move by.
+    d.missed.concat(d.planned).forEach(function (it) {
+      var miss = d.missed.indexOf(it) >= 0, w = it.w, head = card.appendChild(tbtn("pickrow", null, openDetail, w));
+      var t = el("span", "pt"), row = card.appendChild(el("div", "piacts")), wait = String(it.row.id).indexOf("tmp-") === 0;
+      if (cardArt(w)) { var img = head.appendChild(el("img")); img.alt = ""; img.src = cardArt(w); }
+      t.appendChild(el("b", null, w.title || "Workout"));
+      t.appendChild(el("span", null, [wait ? "Saving…" : miss ? "Missed" : "Planned", fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
+      head.appendChild(t);
+      [miss ? ["btn ghost", "Do it today", doToday, it] : ["btn ghost", "Start now", startWorkout, w],
+        ["linkbtn", "Move", openPlanSheet, { w: w, row: it.row, from: "day" }], ["linkbtn", "Remove", planRemove, it.row]]
+        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])).disabled = wait && a[2] !== startWorkout; });
+    });
+    if (d.empty) card.appendChild(el("div", "tdose", d.when === "past" ? "Nothing logged or planned." : "Nothing planned yet."));
+    // A day already gone takes no plan: it would only be a missed day at once.
+    if (d.when !== "past") card.appendChild(tbtn("planadd", "+ Plan a workout", planPick, d.key));
+    return card;
+  }
+
+  // Train paints from lite logs before the real ones land (fullLogs), and a recap
+  // needs every figure — it is also where a set is corrected, and a correction
+  // writes the whole list back over the session — so it waits for them and opens
+  // only the full row. Offline the lite row is all there is, and it is no recap.
+  function openRecap(l) {
+    loadLogs().then(function () {
+      var full = (fullLogs() || []).filter(function (x) { return x.id === l.id; })[0];
+      if (full) openSession(full); else toast("Could not load that session — check your connection.");
+    });
+  }
+
+  // The one ⋯ sheet Train owns, filled per opening: rows of [words, fn, argument,
+  // danger, glyph], drawn as the ⋯ Workout sheet draws its own — grouped rows a
+  // thumb high, and the one that takes something away alone in a group of its
+  // own, in the app's red. Handed over rather than stacked: whatever a row opens
+  // opens first, and this closes behind it, so the one history entry never falls
+  // between them.
+  function openMore(title, rows) {
+    var list = $("tmlist"), keep = null, drop = null;
+    $("tmtitle").textContent = title;
+    list.innerHTML = "";
+    rows.forEach(function (r) {
+      var box = r[3] ? (drop = drop || el("div", "mlist")) : (keep = keep || list.appendChild(el("div", "mlist")));
+      var b = box.appendChild(tbtn("pickrow" + (r[3] ? " del" : ""), null, function () { r[1](r[2]); closeSheet("trainmore"); }));
+      if (r[4]) b.appendChild(ic(r[4]));
+      b.appendChild(document.createTextNode(r[0]));
+    });
+    if (drop) list.appendChild(drop);
+    openSheet("trainmore");
+  }
+
+  // ---------- train · ready to try ----------
+  //
+  // The saves never part of a finished session, newest first (readyToTry, the one
+  // list the Workouts chip and Up next read too): the landing page's promise,
+  // "actually do the workout", as a row of things to do. A card opens; Start is
+  // the day card's alone. Hidden when there is nothing — and until the logs are
+  // in, because before then every save looks untried.
+  function drawShelf() {
+    var all = state.logs && state.libReady ? readyToTry() : [], list = all.slice(0, 10), row = el("div", "shelfrow"), head;
+    var sig = all.length + JSON.stringify(list.map(function (w) { return [w.id, w.title, cardArt(w), w.duration_minutes]; }));
+    if (sig === shelfSig) return;
+    shelfSig = sig;
+    shelfBox.innerHTML = "";
+    shelfBox.classList.toggle("hide", !list.length);
+    head = shelfBox.appendChild(el("div", "secthead"));
+    head.appendChild(el("b", null, "Ready to try"));
+    head.appendChild(el("span", "shelfn", all.length + " saved, not done yet"));
+    head.appendChild(tbtn("linkbtn", "See all", function () {
+      // At the top, where the narrow's chip and its line say what is showing.
+      state.filter = "ready"; render(); $("libpage").scrollTop = 0; setView("library");
+    }));
+    list.forEach(function (w) {
+      var b = row.appendChild(tbtn("shelfitem", null, openDetail, w)), art = b.appendChild(el("span", "shelfart")), img;
+      if (cardArt(w)) { img = art.appendChild(el("img")); img.alt = ""; img.loading = "lazy"; img.src = cardArt(w); }
+      else art.appendChild(noArt(w));
+      if (w.duration_minutes) art.appendChild(el("span", "durbadge", fmtDur(w.duration_minutes)));
+      b.appendChild(el("span", "shelft", w.title || "Workout"));
+    });
+    shelfBox.appendChild(row);
   }
 
   // ---------- train · the render ----------
@@ -12279,32 +13121,42 @@ export const APP = String.raw`
   }
 
   function renderTrain() {
-    if (!state.user) return;
-    var v = $("trainview");
+    // Painted from the cache before the token is back (earlyUid) as well: nothing
+    // below reads the network, and Train is the page the app opens on.
+    if (!state.user && !earlyUid) return;
+    var v = $("trainview"), slide = planSlide, r;
     if (!trainLean || trainLean.parentNode !== v) buildTrain(v);
+    r = cal.rows;
+    planHide();
     paintTrainBar();
-    var st = state.logs ? weekStats(state.logs, state.plan, goalSetting(), new Date()) : null;
-    if (st) drawHero(st); else heroBox.innerHTML = "";
-    drawStrip();
-    drawToday(st);
+    drawStat();
+    drawCal();
+    // The plan link asks for the month, and the strip spends the ask the first
+    // time it can answer: in front of the reader it unfolds, arriving it is open.
+    if (trainWantMonth) {
+      trainWantMonth = false;
+      if (!quiet && v.offsetHeight) calSet(true);
+      else { calOpen = true; drawCal(); }
+    }
+    drawDay();
     paintSeg();
-    // Whatever a swipe left on it, taken back without animating the way back: the
-    // entrance below is the move, and a transition under it would fight it.
-    trainLean.classList.remove("planin", "pbmove");
-    trainLean.style.transform = "";
-    trainLean.style.opacity = "";
+    planSlide = 0;
+    // Whatever a swipe left on the rows, taken back without animating the way
+    // back: the entrance below is the move, and a transition would fight it.
+    r.classList.remove("planin", "pbmove");
+    trainBody.classList.remove("planin");
+    r.style.transform = r.style.opacity = "";
     drawTrainBody();
-    // A second window onto these same rows; redrawn here so the two agree.
-    if ($("daysheet").classList.contains("open")) renderDay();
     guidePage("train");
-    void trainLean.offsetWidth;
-    // A swipe said which way time went, so the week arrives from that side. A tap
-    // on the segmented control did not, and gets the crossfade instead.
-    if (planSlide) {
-      trainLean.style.setProperty("--pin", (planSlide > 0 ? 26 : -26) + "px");
-      planSlide = 0;
-      trainLean.classList.add("planin");
-    } else viewIn(trainLean);
+    // A swipe or an arrow said which way time went, so the week (or the month)
+    // arrives from that side, and the week's Progress with it.
+    if (slide) {
+      [r, trainBody].forEach(function (n) {
+        void n.offsetWidth;
+        n.style.setProperty("--pin", slide * 26 + "px");
+        n.classList.add("planin");
+      });
+    }
     countStats();
   }
 
@@ -12312,196 +13164,79 @@ export const APP = String.raw`
     var seg = curSeg();
     trainBody.innerHTML = "";
     trainBody.classList.remove("planswap");
-    if (seg === "progress") drawProgressSeg(trainBody);
-    else if (seg === "records") drawRecordsSeg(trainBody);
-    else drawCalendarSeg(trainBody);
+    if (seg === "records") drawRecordsSeg(trainBody);
+    else drawProgressSeg(trainBody);
     if (!trainSwap) return;
     trainSwap = false;
     void trainBody.offsetWidth;
     trainBody.classList.add("planswap");
   }
 
-  // ---------- train · one row of a plan ----------
+  // ---------- train · one day's plan, written ----------
 
-  // One row, drawn the same on the today card's sheet and in the day sheet.
-  function planItem(p) {
-    var w = planWorkout(p.workout_id);
-    if (!w) return null;
-    var item = el("div", "planitem"), art = cardArt(w);
-    if (art) {
-      var img = el("img");
-      img.src = art;
-      img.alt = "";
-      item.appendChild(img);
-    }
-    var t = el("div", "pt", w.title || "Workout");
-    t.onclick = function () { openDetail(w); };
-    item.appendChild(t);
-    var x = icon(el("button", "planx"), "x");
-    x.setAttribute("aria-label", "Take this off the day");
-    x.onclick = function () { planDrop(p); };
-    item.appendChild(x);
-    return item;
-  }
-
-  // The two single-day writes, each behind one door — the speed pass wants
-  // these lines optimistic and can have them here.
+  // The two plan writes, each behind one door — the speed pass wants these lines
+  // optimistic and can have them here. day may be a list: the Plan sheet puts one
+  // workout on several days in one request. The ids come back so an Undo can take
+  // exactly those rows off again.
   function planAdd(day, workoutId) {
     planRev++;
-    return sb.from("plan").insert({ user_id: state.user.id, day: day, workout_id: workoutId })
-      .then(function (r) { planRev++; return r; });
+    return sb.from("plan").insert([].concat(day).map(function (k) {
+      return { user_id: state.user.id, day: k, workout_id: workoutId };
+    })).select("id").then(function (r) { planRev++; return r; });
   }
 
-  // Off the day on the tap. A row the server has not confirmed yet has no id to
-  // delete by; it goes on its own when loadPlan lands. This was also the one write
-  // in the file that never looked at r.error, so a refused delete quietly redrew
-  // the row; now it is put back and said.
-  function planDrop(p) {
-    if (String(p.id).indexOf("tmp-") === 0) return Promise.resolve();
+  // Rows whose Remove is waiting on its Undo toast. A read landing in between
+  // brings them back from the server, where they still are; they stay off the
+  // screen until the delete lands or the Undo puts them back.
+  var planGone = {};
+  function planHide() {
+    // Reassigned only when a row goes: a new array is how every reader of the
+    // plan (the card statuses' memo) learns it changed.
+    if (state.plan && state.plan.some(function (p) { return planGone[p.id]; })) {
+      state.plan = state.plan.filter(function (p) { return !planGone[p.id]; });
+    }
+  }
+
+  // Off the day on the tap, on the delayed commit this file uses everywhere: the
+  // row leaves the screen now and the database when the toast offering Undo
+  // does, so nothing can half-fail. (A move is planWrite's, which deletes only
+  // once the new row is in.) A row the server has not confirmed yet has no id to
+  // delete by, so nothing offers this on one (dayCard, upCard) until it has.
+  function planDrop(p, msg) {
     planRev++;
-    var epoch = accountEpoch, uid = state.user.id;
-    var range = JSON.stringify(planRange());
-    var kept = state.plan;
     state.plan = (state.plan || []).filter(function (q) { return q.id !== p.id; });
-    today.at = 0;
-    renderTrain();
-    return sb.from("plan").delete().eq("id", p.id).then(function (r) {
-      if (!accountNow(epoch, uid)) return;
-      planRev++;
-      if (range !== JSON.stringify(planRange())) { loadPlan(true); return; }
-      if (r && r.error) {
-        state.plan = kept;
-        renderTrain();
-        toast("That did not come off the day — it is still planned.");
-        return;
-      }
-      loadPlan(true);
+    planGone[p.id] = 1;
+    repaintPlan();
+    offerUndo(msg, function () {
+      sb.from("plan").delete().eq("id", p.id).then(function (r) {
+        delete planGone[p.id];
+        if (r && r.error) toast("That did not come off the day — it is still planned.");
+        loadPlan(true);
+      });
+    }, function () {
+      delete planGone[p.id];
+      state.plan = state.plan.concat([p]);
+      repaintPlan();
     });
   }
 
-  // ---------- train · the calendar segment ----------
-  //
-  // iOS Calendar's compact month: one cell a day, one mark, today ringed, the
-  // days either side present but quiet. The thumbnails that used to fill a cell
-  // are gone: with a legend under the grid one dot says more than three pictures,
-  // and past and future finally read in the same language.
-  function drawCalendarSeg(v) {
-    var head = el("div", "weekbar");
-    head.appendChild(el("b", null,
-      monthStart.toLocaleDateString(undefined, { month: "long", year: "numeric" })));
-    var nav = el("div", "wbnav");
-    var prev = icon(el("button", "iconbtn"), "arrow-left");
-    prev.setAttribute("aria-label", "The month before");
-    prev.onclick = function () { stepMonth(-1); };
-    var next = icon(el("button", "iconbtn"), "arrow-right");
-    next.setAttribute("aria-label", "The month after");
-    next.onclick = function () { stepMonth(1); };
-    nav.appendChild(prev);
-    nav.appendChild(next);
-    head.appendChild(nav);
-    v.appendChild(head);
+  function planRemove(p) { planDrop(p, "Removed from plan"); }
 
-    var acts = el("div", "planacts");
-    // Boostcamp duplicates a week; TrainHeroic and TrueCoach copy and ask where
-    // to paste. Copy is the word all three answer to.
-    var copy = el("button", "planbtn", "Copy week");
-    copy.onclick = function () { openCopy(); };
-    acts.appendChild(copy);
-    acts.appendChild(pumpyProgramBtn(el("button", "planbtn"), state.weekStart, "Build with Pumpy"));
-    v.appendChild(acts);
-
-    renderMonth(v);
-    v.appendChild(markLegend());
-    // Under the plan, not in the bar: it is what you do once you have looked.
-    v.appendChild(pumpyProgramBtn(el("button", "planbtn wide"), state.weekStart));
+  // Missed, and done today instead: the row moves to today through planWrite,
+  // the Plan sheet's own write — today's row goes in first and the missed one
+  // comes off only once it has, so a failed write leaves the workout where it
+  // was, and one Undo takes back both. Already planned today, there is nothing
+  // to move: the missed row only comes off, with its Undo, rather than putting
+  // the workout on today twice.
+  function doToday(it) {
+    var key = ymd(new Date());
+    if (planned(it.w.id, key)) planDrop(it.row, "Already planned today — removed from " + pdWord(it.row.day));
+    else planWrite(it.w, [key], it.row, "Moved to today");
   }
 
-  function renderMonth(v) {
-    var r = planRange();
-    var grid = el("div", "mgrid");
-    for (var h = 0; h < 7; h++) {
-      var head = el("div", "mdow", DOW[h]);
-      head.setAttribute("aria-hidden", "true");
-      grid.appendChild(head);
-    }
-    var todayStr = ymd(new Date());
-    var days = Math.round((r.to.getTime() - r.from.getTime()) / 86400000) + 1;
-
-    for (var i = 0; i < days; i++) {
-      (function (i) {
-        var d = addDays(r.from, i);
-        var key = ymd(d);
-        var out = d.getMonth() !== monthStart.getMonth();
-        var cell = el("button", "mcell" + (out ? " out" : "") + (key === todayStr ? " today" : ""));
-        cell.appendChild(el("span", "mnum", String(d.getDate())));
-        var m = dayMark(key);
-        cell.appendChild(el("span", "dmark" + (m ? " " + m : "")));
-        // One dot and nothing a screen reader could read.
-        cell.setAttribute("aria-label", dayLabel(d) + markWord(m));
-        cell.onclick = function () { openDay(key); };
-        grid.appendChild(cell);
-      })(i);
-    }
-    v.appendChild(grid);
-  }
-
-  // ---------- plan · one day ----------
-  //
-  // Apple's Calendar in List density answers a tapped day in place, and Google's
-  // month does the same — tap a date, see that date. A sheet gives the day back
-  // without taking the month away.
-
-  var dayKey = null;
-
-  function openDay(key) {
-    dayKey = key;
-    renderDay();
-    openSheet("daysheet");
-  }
-
-  function renderDay() {
-    if (!dayKey) return;
-    var d = dayDate(dayKey);
-    var label = dayLabel(d);
-    $("daytitle").textContent = label;
-    var list = $("daylist");
-    list.innerHTML = "";
-    // What happened, before what is meant to happen: "what did I do on the 15th"
-    // is the question a past day is tapped with, and the answer used to live two
-    // tabs away. Handed over rather than stacked — the recap pushes its own
-    // history entry, exactly as dayadd hands over to the picker: the new screen
-    // opens FIRST and the sheet closes behind it. Closing first gave the entry
-    // back and pushed the recap's in the same task, and a queued traversal plus a
-    // pushState cancel each other out — the recap ended up sitting on the app's
-    // own entry, so the X and the phone's back gesture left Spotter instead of
-    // the recap. Order is the whole fix; every other sheet here is already
-    // balanced because it never hands over at all.
-    var done = sessionsOn(dayKey);
-    done.forEach(function (l) {
-      var b = el("button", "histrow dayses"), n = el("div", "n"), sets = 0;
-      (l.entries || []).forEach(function (e) { sets += (e.sets || []).filter(Boolean).length; });
-      n.appendChild(el("b", null, l.workout_title || "Workout"));
-      n.appendChild(el("span", null, sets + (sets === 1 ? " set" : " sets") +
-        (l.duration_seconds ? " · " + Math.max(1, Math.round(l.duration_seconds / 60)) + " min" : "")));
-      b.appendChild(n);
-      b.appendChild(ic("chev"));
-      b.onclick = function () { openSession(l); closeSheet("daysheet"); };
-      list.appendChild(b);
-    });
-    var rows = rowsFor(dayKey);
-    if (!rows.length && !done.length) list.appendChild(el("p", "lede", "Nothing planned for this day."));
-    rows.forEach(function (row) {
-      var item = planItem(row);
-      if (item) list.appendChild(item);
-    });
-    // Handed over rather than stacked: the picker opens first, so the one
-    // history entry never falls to the floor between them.
-    $("dayadd").onclick = function () {
-      var key = dayKey;
-      openPicker(key, label);
-      closeSheet("daysheet");
-    };
-  }
+  // The picker, for a day ("+ Plan a workout"), or in place of a planned row (Swap).
+  function planPick(key) { openPicker(key, dayLabel(dayDate(key))); }
+  function planSwap(row) { openPicker(row.day, dayLabel(dayDate(row.day)), { replace: row }); }
 
   // ---------- programs ----------
   //
@@ -12648,7 +13383,6 @@ export const APP = String.raw`
     var go = $("copygo");
     go.textContent = "Copy to " + copyPlural(copyReps);
     go.disabled = !srcRows.length;
-    pumpyProgramBtn($("copypumpy"), copySrc);
     var clear = $("copyclear");
     clear.textContent = "Clear " + weekLabel(copySrc);
     clear.disabled = !srcRows.length;
@@ -12713,19 +13447,6 @@ export const APP = String.raw`
     if (NO_TOUCH) box.focus();
   }
 
-  // Three places, one function, whichever node it is handed. The label is short
-  // where the button sits in a row of pills and long where it is the wide one.
-  function pumpyProgramBtn(node, week, label) {
-    if (!node.childNodes.length) {
-      var mark = el("span", "pumpmark");
-      mark.innerHTML = PUMPY_MARK;
-      node.appendChild(mark);
-      node.appendChild(document.createTextNode(label || "Build a program with Pumpy"));
-    }
-    node.onclick = function () { programWithPumpy(week); };
-    return node;
-  }
-
   function clearWeek() {
     var w = copySrc, label = weekLabel(w);
     var rows = weekRows(state.plan, w);
@@ -12740,95 +13461,223 @@ export const APP = String.raw`
     }, function () { loadPlan(); });
   }
 
-  // Named the way the card that opened it names the day — "Add to Thursday 3",
-  // not the yyyy-mm-dd key the row is stored under.
-  function openPicker(day, label) {
-    var list = $("picklist");
-    list.innerHTML = "";
-    $("picktitle").textContent = "Add to " + (label || day);
-    if (!state.workouts.length) {
-      list.appendChild(el("p", "lede", "Save a workout first, then you can plan it."));
-    }
-    state.workouts.forEach(function (w) {
-      var row = el("button", "pickrow"), art = cardArt(w);
-      if (art) {
-        var img = el("img");
-        img.src = art;
-        img.alt = "";
-        row.appendChild(img);
-      }
-      var t = el("div", "pt");
-      t.appendChild(el("b", null, w.title || "Workout"));
-      t.appendChild(el("span", null, [w.category, fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
-      row.appendChild(t);
-      row.onclick = function () {
-        // The sheet closes and the day fills in on the tap; it used to take two
-        // serial round trips — the insert, then a whole week re-read — before
-        // anything moved. The row wears a temporary id until the real one lands.
-        closeSheet("picksheet");
-        var kept = state.plan;
-        state.plan = (state.plan || []).concat([
-          { id: "tmp-" + Date.now(), day: day, workout_id: w.id, user_id: state.user.id }
-        ]);
-        today.at = 0;
-        renderTrain();
-        planAdd(day, w.id).then(function (r) {
-          if (r.error) {
-            state.plan = kept;
-            renderTrain();
-            toast("Could not add it to that day. Try again in a moment.");
-            return;
-          }
-          loadPlan();
-        });
-      };
-      list.appendChild(row);
-    });
+  // ---------- plan · a workout for a day ----------
+  //
+  // "+ Plan a workout" on an empty day, and Swap on a planned one. The field leads,
+  // as the exercise bank's does, because forty saves are found faster by a word
+  // than by a scroll; under it the three answers a person is usually after, in the
+  // order they ask: the saves still waiting to be tried, what was trained lately,
+  // then everything A–Z. Typing folds the three into one list of matches, the way
+  // a search field does everywhere on iOS. A workout already on that day is marked
+  // and not added twice.
+  // opts.replace: a plan row the pick takes the place of (Up next's Swap).
+  var pickCtx = null;
+
+  function openPicker(day, label, opts) {
+    var when = pdWord(day);
+    pickCtx = { day: day, rep: opts && opts.replace || null };
+    // "today" and "tomorrow" say it best; any other day by the caller's own name for it.
+    $("picktitle").textContent = pickCtx.rep ? "Swap" : "Plan for " + (/^to/.test(when) ? when : label || dayLabel(dayDate(day)));
+    $("pickq").value = "";
+    $("picksheet").firstElementChild.style.minHeight = "";
+    pickPaint();
     openSheet("picksheet");
   }
 
-  // One sheet, two errands. Handed a plan row it is a move — same date picker,
-  // and the old row goes only once the new one is in, so a failed write leaves
-  // the workout where it was rather than nowhere.
-  var scheduleCtx = null;
-  function scheduleWorkout(w, from) {
-    var row = from && from.id && String(from.id).indexOf("tmp-") !== 0 ? from : null;
-    scheduleCtx = { w: w, from: row, uid: state.user.id, epoch: accountEpoch };
-    $("scheduletitle").textContent = row ? "Move workout" : "Schedule workout";
-    $("schedulename").textContent = w.title || "Workout";
-    $("scheduledate").value = row ? row.day : ymd(new Date());
-    $("scheduleerror").textContent = "";
-    $("schedulego").disabled = false;
-    $("schedulego").textContent = row ? "Move" : "Add to plan";
-    openSheet("schedulesheet");
-  }
-  $("schedulego").onclick = function () {
-    var ctx = scheduleCtx, day = $("scheduledate").value, b = this;
-    if (!ctx || !accountNow(ctx.epoch, ctx.uid) || b.disabled) return;
-    var word = ctx.from ? "Move" : "Add to plan";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { $("scheduleerror").textContent = "Choose a day first."; return; }
-    // Moved to the day it is already on: nothing to write, and writing it would
-    // be an insert and a delete of the same row.
-    if (ctx.from && day === ctx.from.day) { closeSheet("schedulesheet"); return; }
-    b.disabled = true; b.textContent = ctx.from ? "Moving…" : "Adding…";
-    planAdd(day, ctx.w.id).then(function (r) {
-      if (!accountNow(ctx.epoch, ctx.uid) || scheduleCtx !== ctx) return;
-      b.disabled = false; b.textContent = word;
-      if (r.error) { $("scheduleerror").textContent = "Could not " + (ctx.from ? "move" : "add") + " it. Try again."; return; }
-      if (ctx.from) planDrop(ctx.from);
-      closeSheet("schedulesheet"); today.at = 0; loadPlan(); loadToday();
-      toast(ctx.from ? "Moved to another day." : "Added to your plan.");
-    }).catch(function () {
-      if (scheduleCtx !== ctx || !accountNow(ctx.epoch, ctx.uid)) return;
-      b.disabled = false; b.textContent = word;
-      $("scheduleerror").textContent = "Could not connect. Try again.";
+  function pickPaint() {
+    var c = pickCtx, list = $("picklist"), q = $("pickq").value.toLowerCase().trim(), on = {}, seen = {}, recent = [];
+    if (!c) return;
+    rowsFor(c.day).forEach(function (p) { on[p.workout_id] = 1; });
+    var all = state.workouts.filter(function (w) { return !isFailed(w); });
+    list.innerHTML = "";
+    if (!all.length) { list.appendChild(el("p", "lede", "Add a workout video first, then you can plan it.")); return; }
+    function part(head, ws) {
+      if (!ws.length) return;
+      if (head) list.appendChild(el("div", "woahead", head));
+      ws.forEach(function (w) { list.appendChild(pickRow(w, !!on[w.id])); });
+    }
+    if (q) {
+      part(null, all.filter(function (w) { return searchHay(w).indexOf(q) >= 0; }));
+      if (!list.firstChild) list.appendChild(el("p", "lede", "No workout matches that."));
+      return;
+    }
+    part("Ready to try", readyToTry().slice(0, 6));
+    (state.logs || []).forEach(function (l) {
+      var w = srcById(l.workout_id);
+      if (w && !seen[w.id] && recent.length < 4 && isSession(l) && !isFailed(w)) { seen[w.id] = 1; recent.push(w); }
     });
+    part("Recent", recent);
+    part("All (A–Z)", all.slice().sort(function (a, b) { return String(a.title || "").localeCompare(String(b.title || "")); }));
+  }
+
+  function pickRow(w, on) {
+    var row = el("button", "pickrow" + (on ? " on" : "")), art = cardArt(w), t = el("div", "pt");
+    if (art) {
+      var img = el("img");
+      img.loading = "lazy";
+      img.alt = "";
+      img.src = art;
+      row.appendChild(img);
+    } else row.appendChild(noArt(w));
+    t.appendChild(el("b", null, w.title || "Workout"));
+    t.appendChild(el("span", null, [w.category, fmtDur(w.duration_minutes),
+      isPending(w) ? stageOf(w).kick : statusLabel(cardStatus(w), new Date())].filter(Boolean).join(" · ")));
+    row.appendChild(t);
+    if (on) row.appendChild(icon(el("span", "ck"), "check"));
+    row.onclick = function () {
+      var c = pickCtx;
+      if (on) { toast("Already planned for that day."); return; }
+      closeSheet("picksheet");
+      planWrite(w, [c.day], c.rep, c.rep ? "Swapped for " + (w.title || "another workout") : "Planned for " + pdWord(c.day));
+    };
+    return row;
+  }
+
+  // Filtering starts on the first keystroke, as the bank's does. The sheet keeps
+  // the height it opened at while it filters: a sheet that shrank under the
+  // typing would pull the field down with it, away from the thumb.
+  $("pickq").addEventListener("input", function () {
+    var b = $("picksheet").firstElementChild;
+    if (!b.style.minHeight) b.style.minHeight = b.offsetHeight + "px";
+    pickPaint();
+  });
+  $("pickq").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); this.blur(); } });
+
+  // ---------- plan · the fortnight ----------
+  //
+  // The one way to put a workout on a day, from the card's Plan, Up next's "Plan
+  // it", the ready sheet and the recap: the next fourteen days, two rows of seven,
+  // in the week strip's own cell and dot, so what is already on a day reads the
+  // way it does on Train. A tap toggles a day and any number can be on, as UIKit's
+  // multi-date calendar picks; the date wheel this replaces took Monday, Wednesday
+  // and Friday as three trips through it, and a calendar popover five taps for
+  // one Thursday. Days this workout is already on say so and cannot be picked
+  // twice. Handed a plan row it is Move: the same days, one of them.
+  // o: { w, row (a plan row to move), days (keys to preselect), from }
+  var planCtx = null;
+
+  function openPlanSheet(o) {
+    if (!o || !o.w || !state.user) return;
+    var w = o.w, box = $("plandaysbody"), keys = planDays(new Date()), mine = {};
+    var row = o.row || null;
+    (state.plan || []).forEach(function (p) { if (p.workout_id === w.id) mine[p.day] = 1; });
+    planCtx = { w: w, row: row, sel: {}, epoch: accountEpoch, uid: state.user.id };
+    $("plandaystitle").textContent = row ? "Move" : "Plan";
+    $("plandayssub").textContent = w.title || "Workout";
+    box.innerHTML = "";
+    keys.forEach(function (key, i) {
+      var d = dayDate(key), m = dayMark(key), cell = el("button", "wday pday" + (i ? "" : " today") + (mine[key] ? " has" : ""));
+      cell.setAttribute("data-k", key);
+      cell.appendChild(el("span", "wdl", i ? d.toLocaleDateString(undefined, { weekday: "short" }) : "Today"));
+      // The first of a month names it: a fortnight crosses one more often than not.
+      cell.appendChild(el("span", "wdn", (d.getDate() === 1 ? d.toLocaleDateString(undefined, { month: "short" }) + " " : "") + d.getDate()));
+      cell.appendChild(el("span", "dmark" + (m ? " " + m : "")));
+      cell.appendChild(ic("check"));
+      cell.setAttribute("aria-label", dayLabel(d) + (mine[key] ? ", already planned" : markWord(m)));
+      if (mine[key]) cell.setAttribute("aria-disabled", "true");
+      cell.onclick = function () {
+        if (mine[key]) { haptic("tap"); return; }
+        var on = !planCtx.sel[key];
+        if (planCtx.row) planCtx.sel = {};
+        if (on) planCtx.sel[key] = 1; else delete planCtx.sel[key];
+        haptic("select");
+        planPaint();
+      };
+      box.appendChild(cell);
+    });
+    (o.days || []).forEach(function (k) {
+      if (keys.indexOf(k) >= 0 && !mine[k] && !(row && Object.keys(planCtx.sel).length)) planCtx.sel[k] = 1;
+    });
+    planPaint();
+    openSheet("plandays");
+  }
+
+  // The picks, drawn, and said twice: in the button, and in words under the days.
+  function planPaint() {
+    var c = planCtx, days = Object.keys(c.sel).sort(), n = days.length, go = $("plandaysgo");
+    [].forEach.call($("plandaysbody").children, function (cell) {
+      var on = !!c.sel[cell.getAttribute("data-k")];
+      cell.classList.toggle("on", on);
+      if (!cell.getAttribute("aria-disabled")) cell.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    go.disabled = !n;
+    go.textContent = c.row ? (n ? "Move to " + pdWord(days[0]) : "Move")
+      : n > 1 ? "Plan " + n + " days" : n ? "Plan for " + pdWord(days[0]) : "Plan";
+    var said = days.map(pdWord).join(" · ");
+    $("plandayssum").textContent = n ? said.charAt(0).toUpperCase() + said.slice(1)
+      : c.row ? "Pick the day to move it to." : "Pick one day or several.";
+  }
+
+  $("plandaysgo").onclick = function () {
+    var c = planCtx, days = c ? Object.keys(c.sel).sort() : [];
+    if (!days.length || !accountNow(c.epoch, c.uid)) return;
+    planCtx = null;
+    closeSheet("plandays");
+    planWrite(c.w, days, c.row, c.row ? "Moved to " + pdWord(days[0])
+      : "Planned for " + (days.length > 1 ? days.length + " days" : pdWord(days[0])));
   };
+
+  // A day the way people say one: today, tomorrow, then the weekday and the date.
+  function pdWord(key) {
+    var d = dayDate(key), n = Math.round((d - dayDate(ymd(new Date()))) / 86400000);
+    return n === 0 ? "today" : n === 1 ? "tomorrow"
+      : d.toLocaleDateString(undefined, { weekday: "short" }) + " " + d.getDate();
+  }
+
+  // The one write behind the Plan sheet and the picker: w onto each of days, and old
+  // (a row being moved or swapped) off, on the screen at once and behind one Undo.
+  // The insert goes first and the old row comes off only once it is in, so a failed
+  // write leaves the workout where it was rather than nowhere. The rows are really
+  // written straight away and an Undo takes them back off, unlike the deletes'
+  // delayed commit: a plan row that existed only on this screen for five seconds
+  // would vanish under any plan read that landed meanwhile — arriving on Train is one.
+  function planWrite(w, days, old, msg) {
+    var epoch = accountEpoch, uid = state.user.id, tag = "tmp-" + Date.now() + "-", ids = [], off = false, undone = false;
+    function show(plan) { state.plan = plan; repaintPlan(); render(); }
+    // The screen as it was: this write's rows gone, the moved one back (once).
+    function unshow() {
+      var plan = (state.plan || []).filter(function (p) { return ids.indexOf(p.id) < 0 && String(p.id).indexOf(tag) !== 0; });
+      show(old && !plan.filter(function (p) { return p.id === old.id; }).length ? plan.concat([old]) : plan);
+    }
+    show((state.plan || []).filter(function (p) { return !old || p.id !== old.id; }).concat(days.map(function (k, i) {
+      return { id: tag + i, day: k, workout_id: w.id, user_id: uid };
+    })));
+    // What was written is noted before anything else, Undo or not, so an Undo that
+    // lands while a request is out still knows what to take back.
+    var put = planAdd(days, w.id).then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      if (r.error) {
+        if (!undone) { unshow(); toast("Could not plan that. Try again in a moment."); }
+        return;
+      }
+      ids = (r.data || []).map(function (x) { return x.id; });
+      if (undone) return;
+      if (!old) { loadPlan(true); return; }
+      return sb.from("plan").delete().eq("id", old.id).then(function (x) {
+        if (!accountNow(epoch, uid)) return;
+        off = !x.error;
+        if (undone) return;
+        if (x.error) toast("That did not come off " + pdWord(old.day) + " — it is on both days.");
+        loadPlan(true);
+      });
+    });
+    offerUndo(msg, function () {}, function () {
+      undone = true;
+      unshow();
+      put.then(function () {
+        if (!accountNow(epoch, uid)) return;
+        var back = [];
+        if (ids.length) back.push(sb.from("plan").delete().in("id", ids));
+        if (off) back.push(planAdd(old.day, old.workout_id));
+        Promise.all(back).then(function () { loadPlan(true); });
+      });
+    });
+  }
 
   // ---------- logs, progress, history ----------
 
   function loadLogs() {
-    if (state.logs) return Promise.resolve(state.logs);
+    if (state.logs && !state.logsLite) return Promise.resolve(state.logs);
     if (!state.user) return Promise.resolve([]);
     var uid = state.user.id, epoch = accountEpoch, rev = logsRev;
     return readOnce("logs:" + rev, function () {
@@ -12838,8 +13687,10 @@ export const APP = String.raw`
           if (rev !== logsRev) return loadLogs();
           if (r.error) throw r.error;
           state.logs = r.data || [];
+          state.logsLite = false;
           publishSummary();
-          if (today.shown) renderToday();
+          writeTrainCache();
+          libStatusesChanged();
           return state.logs;
         }).catch(function () {
           if (accountNow(epoch, uid)) toast("Could not load your history. Open Train to try again.");
@@ -12869,12 +13720,14 @@ export const APP = String.raw`
   function goalSetting() {
     if (state.goal) return state.goal;
     var s = state.profile && state.profile.settings;
+    // Before the profile lands, the goal Train's cache was drawn with, so a ring
+    // painted from the cache does not read "2 of 3" and then jump to "2 of 4".
+    if (!state.profile) return trainCacheGoal || null;
     return (s && s.goal) || null;
   }
 
-  // Which days of a Mon-Sun week the plan has something on. state.plan holds only
-  // the range the Plan tab is looking at, so this answers 0 once the user pages
-  // away, and the goal falls back to the setting rather than to nothing.
+  // Which days of a Mon-Sun week the plan has something on. state.plan always
+  // holds this week (fetchRange), whatever month the strip is showing.
   function planMap(plan, monday) {
     var days = {}, n = 0, i;
     for (i = 0; i < 7; i++) days[ymd(addDays(monday, i))] = false;
@@ -12962,6 +13815,240 @@ export const APP = String.raw`
     return weekStats(logs, state.plan, goalSetting(), new Date());
   }
 
+  // ---------- up next (seam) ----------
+  //
+  // "What do I do now?" had three answers on two tabs: a Resume card and a Today
+  // card for the same workout on the Library, and Train's own Today card, which
+  // said Start for a workout that was paused. One rule now, in one place, and
+  // pure — handed everything it reads — so tools/simplify-b-harness.mjs can hold
+  // it to its truth table. The first state that applies wins:
+  //   1  a session paused or running: Resume
+  //   2  planned today and not done: Start
+  //   3  done today, planned or not: the recap, and what is next
+  //   4  a rest day in a week that has a plan: what is next, and a way in anyway
+  //   5  nothing planned this week: the newest save never done, else the last one done
+  //   6  nothing on the shelf to do: how to save the first video
+  // 0 is "not known yet". The library, the plan or the logs have not arrived,
+  // and a guess painted now would be taken back a moment later.
+  //
+  // A planned row counts as done when a session today trained that workout; one
+  // trained instead of the plan leaves the plan standing, and says so (done).
+  //
+  // d: { now, draft (pausedDraft), running (wo while live), workouts, logs, plan,
+  //      libReady, planReady }
+  function upNextOf(d) {
+    var key = ymd(d.now), ws = d.workouts || [], byId = {}, i;
+    for (i = 0; i < ws.length; i++) byId[ws[i].id] = ws[i];
+    if (d.running) {
+      return { s: 1, kind: "paused", running: true, w: d.running.workout, draft: null,
+        sets: setsIn(d.running.entries), startedAt: d.running.startedAt, pausedAt: null };
+    }
+    if (d.draft && byId[d.draft.workoutId]) {
+      return { s: 1, kind: "paused", running: false, w: byId[d.draft.workoutId], draft: d.draft,
+        sets: setsIn(d.draft.entries), startedAt: d.draft.startedAt, pausedAt: d.draft.pausedAt || d.draft.savedAt };
+    }
+    if (!d.libReady || !d.planReady || !d.logs) return { s: 0, kind: "loading" };
+    if (!ws.length) return { s: 6, kind: "empty", pending: 0 };
+    var done = daySessions(d.logs, key), left = [];
+    dayRows(d.plan, key, byId).forEach(function (r) { if (!sessionFor(done, r.workout_id)) left.push(r); });
+    if (left.length) {
+      return { s: 2, kind: "planned", w: byId[left[0].workout_id], row: left[0], more: left.length - 1, done: done };
+    }
+    var next = nextPlanned(d.plan, key, byId);
+    if (done.length) {
+      var secs = 0, sets = 0;
+      done.forEach(function (l) { secs += l.duration_seconds || 0; sets += setsIn(l.entries); });
+      return { s: 3, kind: "done", session: done[0], sessions: done, secs: secs, sets: sets,
+        w: byId[done[0].workout_id] || null, next: next };
+    }
+    var pick = tryNext(ws, d.logs, byId), mon = mondayOf(d.now), planned = false;
+    for (i = 0; i < 7 && !planned; i++) planned = dayRows(d.plan, ymd(addDays(mon, i)), byId).length > 0;
+    if (planned) return { s: 4, kind: "rest", next: next, pick: pick.w, again: pick.again };
+    if (pick.w) return { s: 5, kind: "try", w: pick.w, again: pick.again, session: pick.session, next: next };
+    var pending = 0;
+    ws.forEach(function (w) { if (isPending(w)) pending++; });
+    return { s: 6, kind: "empty", pending: pending };
+  }
+
+  function upNext() {
+    return upNextOf({ now: new Date(), draft: pausedDraft(), running: wo && !wo.finished ? wo : null,
+      workouts: state.workouts, logs: state.logs, plan: state.plan,
+      libReady: !!state.libReady, planReady: !!state.plan });
+  }
+
+  // Any day but today, as the card under the strip shows it: what happened on
+  // it (a finished session opens its summary), and what was or is planned. A
+  // planned day behind today is "missed" only inside the logs' horizon, the rule
+  // dayMark keeps: silence past the newest 400 logs is not evidence.
+  function dayOf(key, d) {
+    var today = ymd(d.now), ws = d.workouts || [], byId = {}, logs = d.logs || [], i;
+    for (i = 0; i < ws.length; i++) byId[ws[i].id] = ws[i];
+    var oldest = logs.length >= 400 ? logs[logs.length - 1] : null;
+    var horizon = oldest && oldest.started_at ? ymd(new Date(oldest.started_at)) : null;
+    var done = daySessions(logs, key), planned = [], missed = [];
+    dayRows(d.plan, key, byId).forEach(function (r) {
+      if (sessionFor(done, r.workout_id)) return;
+      var item = { row: r, w: byId[r.workout_id] };
+      if (key < today && (!horizon || key >= horizon)) missed.push(item); else planned.push(item);
+    });
+    return { key: key, when: key < today ? "past" : key > today ? "future" : "today",
+      sessions: done, planned: planned, missed: missed,
+      empty: !done.length && !planned.length && !missed.length };
+  }
+
+  function dayState(key) {
+    return dayOf(key, { now: new Date(), workouts: state.workouts, logs: state.logs, plan: state.plan });
+  }
+
+  function setsIn(entries) {
+    var n = 0;
+    (entries || []).forEach(function (e) { n += ((e && e.sets) || []).filter(Boolean).length; });
+    return n;
+  }
+
+  // The finished sessions of one local day, newest first.
+  function daySessions(logs, key) {
+    return (logs || []).filter(function (l) {
+      return isSession(l) && l.started_at && ymd(new Date(l.started_at)) === key;
+    }).sort(function (a, b) { return new Date(b.started_at).getTime() - new Date(a.started_at).getTime(); });
+  }
+
+  // A day's plan rows whose workout is still on the shelf.
+  function dayRows(plan, key, byId) {
+    return (plan || []).filter(function (p) { return p.day === key && !!byId[p.workout_id]; });
+  }
+
+  function sessionFor(sessions, workoutId) {
+    for (var i = 0; i < sessions.length; i++) {
+      if (sessions[i].workout_id && sessions[i].workout_id === workoutId) return sessions[i];
+    }
+    return null;
+  }
+
+  // The first planned day after key, as far ahead as the plan read reaches.
+  function nextPlanned(plan, key, byId) {
+    var best = null;
+    (plan || []).forEach(function (p) {
+      if (!p.day || p.day <= key || !byId[p.workout_id]) return;
+      if (!best || p.day < best.day) best = p;
+    });
+    return best ? { day: best.day, row: best, w: byId[best.workout_id] } : null;
+  }
+
+  // With nothing planned: the newest save never done, else the workout trained
+  // most recently that is still on the shelf.
+  function tryNext(ws, logs, byId) {
+    var fresh = readyList(ws, logs), ls = logs || [], i;
+    if (fresh.length) return { w: fresh[0], again: false, session: null };
+    for (i = 0; i < ls.length; i++) {
+      var w = byId[ls[i].workout_id];
+      if (isSession(ls[i]) && w && !isPending(w) && !isFailed(w)) return { w: w, again: true, session: ls[i] };
+    }
+    return { w: null, again: false, session: null };
+  }
+
+  // ---------- ready to try (seam) ----------
+  //
+  // Saves that have never been part of a finished session — the landing page's
+  // promise, "save any workout video, actually do the workout", made into a list.
+  // Newest first, which is the order the library is read in. A card still being
+  // read, or one that could not be, is not ready to try. One list for the shelf
+  // on Train, the chip on Workouts, the picker's top section and Up next, so the
+  // four can never disagree about what counts. (Past the newest 400 logs a
+  // workout done long ago reads as never done — the same horizon the strip has.)
+  function readyList(ws, logs) {
+    var done = {};
+    (logs || []).forEach(function (l) { if (l.workout_id && isSession(l)) done[l.workout_id] = 1; });
+    return (ws || []).filter(function (w) { return !done[w.id] && !isPending(w) && !isFailed(w); });
+  }
+
+  function readyToTry() { return readyList(state.workouts, state.logs); }
+
+  // ---------- one status per card (seam) ----------
+  //
+  // Planned beats done beats new: what will happen to a workout next is worth
+  // more than what happened last. "Planned" looks as far ahead as the plan read
+  // does (AHEAD_DAYS), and a row for today stops counting once today trained it.
+  function workoutStatus(w, logs, plan, now) {
+    var key = ymd(now), end = ymd(addDays(now, AHEAD_DAYS)), n = 0, last = null, next = null, trained = false;
+    (logs || []).forEach(function (l) {
+      if (l.workout_id !== w.id || !isSession(l)) return;
+      n++;
+      if (!last || new Date(l.started_at).getTime() > new Date(last).getTime()) last = l.started_at;
+      if (l.started_at && ymd(new Date(l.started_at)) === key) trained = true;
+    });
+    (plan || []).forEach(function (p) {
+      if (p.workout_id !== w.id || !p.day || p.day < key || p.day > end) return;
+      if (p.day === key && trained) return;
+      if (!next || p.day < next) next = p.day;
+    });
+    if (next) return { kind: "planned", day: next, n: n, last: last };
+    if (n) return { kind: "done", n: n, last: last };
+    return { kind: "new", n: 0, last: null };
+  }
+
+  // The status in words. Days close by are named the way people say them;
+  // further out, a date.
+  function statusLabel(st, now) {
+    if (st.kind === "new") return "New";
+    if (st.kind === "planned") return "Planned " + aheadWord(st.day, now);
+    var d = new Date(st.last), ago = Math.round((dayDate(ymd(now)) - dayDate(ymd(d))) / 86400000);
+    var when = ago === 0 ? "today" : ago === 1 ? "yesterday"
+      : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return (st.n > 1 ? "Done " + st.n + "× · " : "Done · ") + when;
+  }
+
+  function aheadWord(key, now) {
+    var days = Math.round((dayDate(key) - dayDate(ymd(now))) / 86400000), d = dayDate(key);
+    if (days <= 0) return "today";
+    if (days === 1) return "tomorrow";
+    if (days < 7) return d.toLocaleDateString(undefined, { weekday: "short" });
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+
+  // Every card on Workouts asks this on every redraw, and a search redraws on each
+  // keystroke: 200 cards against 400 logs was 80,000 comparisons a key. So the
+  // logs and the plan are sorted by workout once per change (a new array, or a
+  // length that moved) and per day, and each card asks only its own rows.
+  var statusMemo = {};
+
+  function cardStatus(w) {
+    var now = new Date(), m = statusMemo, day = ymd(now), ls = state.logs || [], ps = state.plan || [];
+    if (m.logs !== state.logs || m.plan !== state.plan || m.nl !== ls.length || m.np !== ps.length || m.day !== day) {
+      m = statusMemo = { logs: state.logs, plan: state.plan, nl: ls.length, np: ps.length, day: day, lg: {}, pl: {}, by: {} };
+      ls.forEach(function (l) { if (l.workout_id) (m.lg[l.workout_id] = m.lg[l.workout_id] || []).push(l); });
+      ps.forEach(function (p) { if (p.workout_id) (m.pl[p.workout_id] = m.pl[p.workout_id] || []).push(p); });
+    }
+    return m.by[w.id] || (m.by[w.id] = workoutStatus(w, m.lg[w.id], m.pl[w.id], now));
+  }
+
+  // The Plan sheet's days: a fortnight starting today, as the plan's own keys.
+  // addDays builds each day at local midnight, so a daylight-saving change in
+  // the middle of the two weeks moves nothing.
+  function planDays(now) {
+    var out = [];
+    for (var i = 0; i < 14; i++) out.push(ymd(addDays(now, i)));
+    return out;
+  }
+
+  // Which card the ready sheet greets an opening app with: the newest one saved in
+  // the last day that is ready, has never been trained or started, and has not had
+  // its sheet already — once per card, whichever way it was shown. Nothing while a
+  // workout is up: a sheet over a set is an interruption, not news.
+  // seen: { id: 1 } of cards whose sheet has shown. busy: Workout Mode is open.
+  function readyPick(ws, logs, draft, seen, now, busy) {
+    if (busy) return null;
+    var done = {}, best = null, t0 = now.getTime() - 86400000;
+    (logs || []).forEach(function (l) { if (l.workout_id) done[l.workout_id] = 1; });
+    if (draft && draft.workoutId) done[draft.workoutId] = 1;
+    (ws || []).forEach(function (w) {
+      var at = new Date(w.created_at).getTime();
+      if (!(at >= t0) || isPending(w) || isFailed(w) || done[w.id] || (seen && seen[w.id])) return;
+      if (!best || at > new Date(best.created_at).getTime()) best = w;
+    });
+    return best;
+  }
+
   // ---------- what the Home Screen knows ----------
   //
   // The widgets show the week, the streak and what is planned next, and they read
@@ -12981,7 +14068,6 @@ export const APP = String.raw`
     var wk = state.user ? thisWeek() : null;
     if (!wk) return;
     var key = ymd(new Date()), rows = rowsFor(key), i, w;
-    if (!rows.length) rows = today.rows || [];
     var now = null, soon = null, last = null;
     // Two passes over the SAME dot row the week strip draws, so a Home Screen
     // widget and the Progress tab cannot disagree about a Thursday: filled is a
@@ -13070,14 +14156,14 @@ export const APP = String.raw`
     if (st.unreachable) return "Next week starts Monday.";
     if (st.atRisk) return st.needed + " to go · " + st.daysLeft +
       (st.daysLeft === 1 ? " day left" : " days left");
-    // The eyebrow says "This week" when there is no streak; do not say it twice.
-    return st.done + " of " + st.goal + (st.streakWeeks > 0 ? " this week" : "");
+    return st.done + " of " + st.goal + " this week";
   }
 
-  // The compact form: one line, no ring, for the today card and the summary.
+  // The compact form: one line, no ring, for the end of a session. A streak is
+  // "3-week streak" wherever it is written (the wording table), never "Week 3".
   function weekLine(st) {
     if (st.streakWeeks > 0) {
-      return "Week " + st.streakWeeks + " · " + st.done + " of " + st.goal +
+      return st.streakWeeks + "-week streak · " + st.done + " of " + st.goal +
         (st.done >= st.goal ? " — week complete" : "");
     }
     return st.done + " of " + st.goal + " this week";
@@ -13497,7 +14583,9 @@ export const APP = String.raw`
   }
 
   function drawProgressSeg(v) {
-    if (!state.logs) return;
+    // Lite logs carry no figures to chart; the real ones are on their way and
+    // redraw this segment when they land.
+    if (!fullLogs()) return;
     if (!state.logs.length) { v.appendChild(emptyLogs()); return; }
     v.appendChild(musclesCard());
     v.appendChild(setsCard());
@@ -13526,7 +14614,9 @@ export const APP = String.raw`
   // The lifetime numbers, and the only place in the app where a figure is meant
   // to be read as a total rather than as this week.
   function drawRecordsSeg(v) {
-    var logs = state.logs || [];
+    // Nothing until the real logs are in: a best read off lite logs is no best.
+    if (!fullLogs()) return;
+    var logs = state.logs;
     if (!logs.length) { v.appendChild(emptyLogs()); return; }
     var st = weekStats(logs, state.plan, goalSetting(), new Date());
 
@@ -13580,7 +14670,10 @@ export const APP = String.raw`
           wtText(p.weight) + " " + setUnit(p) + " × " + p.reps + " · " +
           new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })));
         r.appendChild(nm);
-        r.appendChild(el("div", "v", Math.round(p.est) + " " + state.unit));
+        // An Epley estimate, not a lift anybody did, and it says so.
+        var est = el("div", "v", Math.round(p.est) + " " + state.unit);
+        est.appendChild(el("small", null, "est. max"));
+        r.appendChild(est);
         pc.appendChild(r);
       });
       v.appendChild(pc);
@@ -13634,7 +14727,7 @@ export const APP = String.raw`
     var box = $("recapopts"), l = recapLog;
     box.innerHTML = "";
     if (!l) return;
-    var del = el("button", "pickrow danger", "Delete session");
+    var del = el("button", "pickrow danger", "Remove session");
     del.onclick = function () {
       // Everything on this screen is derived from state.logs, so taking the
       // session out of that array and redrawing IS the optimistic update.
@@ -13645,10 +14738,10 @@ export const APP = String.raw`
       var at = state.logs.indexOf(l);
       state.logs = state.logs.filter(function (x) { return x.id !== l.id; });
       renderTrain();
-      offerUndo("Session deleted", function () {
+      offerUndo("Session removed", function () {
         sb.from("workout_logs").delete().eq("id", l.id).then(function (r) {
           if (!r || !r.error) return;
-          toast("That did not delete. The session is still here.");
+          toast("That did not come off. The session is still here.");
           invalidateLogs();
           loadLogs().then(renderTrain);
         });
@@ -14496,7 +15589,7 @@ export const APP = String.raw`
     });
     if (!rows.length) {
       list.appendChild(el("p", "lede", state.workouts.length ? "Nothing by that name."
-        : "Save a workout first, then you can point Pumpy at it."));
+        : "Add a workout video first, then you can point Pumpy at it."));
     }
     rows.forEach(function (w) {
       var on = pumpy.refs.indexOf(w.id) >= 0;
@@ -15941,7 +17034,7 @@ export const APP = String.raw`
     // The shelf is a stock, not a month, so it never says "this month" and never
     // carries a reset date. A plan with no ceiling has nothing to count.
     if (lim && capNum(lim.library) !== null && num(r.library_count) !== null) {
-      n.appendChild(useRow("Library", r.library_count + " of " + capNum(lim.library), " saved", null,
+      n.appendChild(useRow("Workouts", r.library_count + " of " + capNum(lim.library), " saved", null,
         r.library_count >= capNum(lim.library)));
     }
     if (m) {
@@ -16024,13 +17117,13 @@ export const APP = String.raw`
     // The app saves from the share sheet, so that is what its tip teaches first.
     save: { title: "Save it now. Train it later.", art: "coach",
       text: native ? "Share it from TikTok or Instagram, or paste its link below. You can leave while I read it."
-        : "Paste the workout link, then tap Save workout. You can leave while I read it." },
+        : "Paste the workout link, then tap Add video. You can leave while I read it." },
     detail: { title: "Make this workout yours", art: "coach",
-      text: "Use Review / Edit to check an exercise, Demo to see it, and Options for a swap." },
+      text: "Tap an exercise to watch that part, see a demo, edit it or swap it." },
     set: { title: "Your numbers go here", art: "coach",
       text: "Tap a number to type your reps or weight. Save set logs it and starts your rest." },
     train: { title: "Your week, in one place", art: "plan",
-      text: "Swipe the days to change week, tap one to plan it. Calendar, Progress and Records live under the strip." },
+      text: "Swipe the days to change week, pull the strip down for the month. Progress and Records live below." },
     refs: { title: "Show me what you have in mind", art: "coach",
       text: "Tap + beside the message box to choose workouts. I’ll use them in my answer and show changes before saving." }
   };
@@ -16299,7 +17392,7 @@ export const APP = String.raw`
       : "Paste a TikTok, Instagram, or YouTube link. Check the exercises, then start when you’re ready."));
     stage.appendChild(page);
     $("welcomecount").textContent = "Save · check · train";
-    $("welcomenext").textContent = "Save a workout";
+    $("welcomenext").textContent = "Add a video";
     openSheet("welcomesheet");
     $("welcomenext").focus({ preventScroll: true });
   }
@@ -16324,7 +17417,7 @@ export const APP = String.raw`
     if (e.matches) guideStill(); else guideWake();
   });
   document.addEventListener("click", function (e) {
-    if (e.target.closest(".exercise-actions button")) guideLearn("detail");
+    if (e.target.closest("#dinner .exercise-main")) guideLearn("detail");
   });
 
 
@@ -16355,7 +17448,7 @@ export const APP = String.raw`
     // free and Settings needs at its top. Before .open, so its transition is honest.
     if (b) { b.classList.remove("dragging"); b.style.transform = ""; b.scrollTop = 0; }
     n.classList.add("open");
-    if (["workoptions", "filtersheet", "schedulesheet"].indexOf(id) >= 0) {
+    if (["workoptions", "filtersheet", "plandays"].indexOf(id) >= 0) {
       n._returnFocus = document.activeElement;
       var first = n.querySelector("button, input");
       if (first) first.focus({ preventScroll: true });
@@ -16528,9 +17621,9 @@ export const APP = String.raw`
 
   ["addsheet", "setsheet", "watchsheet", "exsheet", "exeditsheet", "explainsheet", "picksheet",
    "settingssheet", "colsheet", "renamesheet", "swapsheet", "pumpysheet", "capsheet", "plansheet",
-   "daysheet", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
-   "workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet", "ordersheet"]
+   "trainmore", "copysheet", "sortsheet", "refsheet", "countsheet", "guidesheet", "welcomesheet",
+   "workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet", "pausedask"]
     .forEach(wireSheet);
 
   function overlayShowing() {
@@ -16620,6 +17713,205 @@ export const APP = String.raw`
    * once it has been taken off the address bar, so a failed share puts it back in
    * the add sheet instead of dropping it.
    */
+  // ---------- ready ----------
+  //
+  // A saved video has become a workout. The moment a save turns into a first set
+  // or a planned day is where a new person is won or lost — they shared it from
+  // TikTok a minute ago and went back to scrolling — so it gets a sheet of its
+  // own: Start now, a day to plan it for, or a look first. Apple's rule for news
+  // that lands while the app is up is "discoverable but not distracting" (HIG,
+  // Notifications), and the rules below are that rule: never over a set, never
+  // over another sheet (it waits for that one to close), once per card, and not
+  // at all for the card already being read.
+  //
+  // Four doors, one sheet: a card turning ready with the app up (onWorkoutChange),
+  // a save that came back ready at once (doAdd), the app opening on one that
+  // turned ready while it was away (readyOnOpen, the seam's readyPick), and the
+  // notification (spotter://ready, push.ts).
+  //
+  // "Once per card" is kept in localStorage, per account, not in
+  // profiles.settings: it is a moment on this screen rather than a preference,
+  // and settings is written whole — a write per sheet would race every other
+  // setting, and a stale copy of that column is how it loses the AI consent.
+  // Forty ids is days of saves; readyPick looks back one.
+
+  var READY_KEY = "spotter_ready_seen:", linkAt = 0;
+
+  function seenReady() {
+    try { return JSON.parse(localStorage.getItem(READY_KEY + state.user.id)) || []; } catch (e) { return []; }
+  }
+
+  function readyMark(id) {
+    var list = seenReady();
+    if (list.indexOf(id) < 0) {
+      try { localStorage.setItem(READY_KEY + state.user.id, JSON.stringify(list.concat([id]).slice(-40))); } catch (e) { /* this launch */ }
+    }
+  }
+
+  // The quiet door: shown if it is still news and the screen is free — no other
+  // sheet, no keyboard over a field — and otherwise tried again until it is, for
+  // two minutes; two cards waiting take turns. Workout Mode drops it rather than
+  // holding it: the next open asks again (readyOnOpen).
+  function offerReady(w, at) {
+    var a = document.activeElement;
+    if (!w || isPending(w) || isFailed(w) || $("workout").classList.contains("open") || seenReady().indexOf(w.id) >= 0) return;
+    if (current && current.id === w.id && $("detail").classList.contains("open")) readyMark(w.id);
+    else if (!anySheet() && !(a && /^(INPUT|TEXTAREA)$/.test(a.tagName))) showReadySheet(w);
+    else if (Date.now() - (at = at || Date.now()) < 120000) setTimeout(function () { offerReady(planWorkout(w.id), at); }, 1500);
+  }
+
+  // A card that turned ready with the app up. The sheet if it is news — the
+  // seam's own rule, a save from the last day nobody has started — and the old
+  // line for a second read of a card already known.
+  function readyArrived(w) {
+    if (seenReady().indexOf(w.id) >= 0) return;
+    if (readyPick([w], state.logs, pausedDraft(), null, new Date(), false)) offerReady(w);
+    else toast("Ready: " + (w.title || "your workout"));
+  }
+
+  // The sheet: the picture the card will wear, what it is in one line, the one
+  // thing to do now, the days to do it instead, and the way to look first. Every
+  // way on is handed over, not stacked: the next screen opens first and the sheet
+  // closes behind it, so the history entry it held becomes that screen's (the
+  // order openMore explains).
+  function showReadySheet(w) {
+    if (!w || isPending(w) || isFailed(w)) return;
+    readyMark(w.id);
+    var box = $("readybody"), art = cardArt(w), n = exerciseNames(w).length, h;
+    box.innerHTML = "";
+    if (art) {
+      var img = box.appendChild(el("img", "readycover"));
+      img.alt = "";
+      img.onload = function () { img.classList.add("in"); };
+      img.onerror = function () { img.remove(); };
+      img.src = art;
+    }
+    box.appendChild(el("p", "readykick", "Ready to train")).id = "readykick";
+    h = box.appendChild(el("h2", null, w.title || "Workout"));
+    h.id = "readytitle";
+    h.tabIndex = -1;
+    box.appendChild(el("p", "readymeta", [n && n + (n === 1 ? " exercise" : " exercises"),
+      w.duration_minutes && "~" + w.duration_minutes + " min", (w.equipment || [])[0]].filter(Boolean).join(" · ")));
+    box.appendChild(icon(el("button", "btn"), "play", "Start now")).onclick = function () { startWorkout(w); closeSheet("readysheet"); };
+    box.appendChild(el("p", "readylabel", "Or plan it"));
+    box.appendChild(dayChips(w, planDays(new Date()).slice(0, 7), "More", function () {
+      openPlanSheet({ w: w, from: "ready" });
+      closeSheet("readysheet");
+    }, function () { closeSheet("readysheet"); }));
+    // The way out is a button as well as a swipe: VoiceOver cannot reach the scrim.
+    var foot = box.appendChild(el("div", "readyfoot"));
+    foot.appendChild(el("button", "readylook", "Look it over first")).onclick = function () { showCard(w); closeSheet("readysheet"); };
+    foot.appendChild(el("button", "readylook", "Not now")).onclick = function () { closeSheet("readysheet"); };
+    openSheet("readysheet");
+    // Where VoiceOver starts: what this is, then what to do about it.
+    h.focus({ preventScroll: true });
+  }
+
+  // The notification's door. Tapped — the banner, or Plan It — it was asked for,
+  // so it moves what is in the way (never Workout Mode) and shows even for a card
+  // already offered. Arriving while the app is up (?auto=1, NotificationsHost) it
+  // is the quiet door instead.
+  function readyLink(w, auto) {
+    var open = document.querySelectorAll(".sheet.open"), i;
+    if (auto) return offerReady(w);
+    if ($("workout").classList.contains("open")) return toast("Pause or finish this workout to plan it.");
+    showReadySheet(w);
+    for (i = 0; i < open.length; i++) if (open[i].id !== "readysheet") closeSheet(open[i].id);
+  }
+
+  // Opening on a card that turned ready while the app was away: once, for the
+  // newest, once the library and the logs are in — and not when the open came
+  // with an errand of its own (a notification, a widget, a link). One greeting
+  // per open: the rest of what arrived meanwhile is on the shelf marked New, and
+  // three shares must not become three opens that each start with a sheet.
+  function readyOnOpen() {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    loadLogs().then(function () {
+      idle(function () {
+        var seen = {}, now = new Date(), busy = !!(wo && !wo.finished), w;
+        if (!accountNow(epoch, uid) || !fullLogs() || Date.now() - linkAt < 5000) return;
+        seenReady().forEach(function (id) { seen[id] = 1; });
+        w = readyPick(state.workouts, state.logs, pausedDraft(), seen, now, busy);
+        if (!w) return;
+        state.workouts.forEach(function (x) {
+          if (x !== w && readyPick([x], state.logs, pausedDraft(), seen, now, busy)) readyMark(x.id);
+        });
+        offerReady(w);
+      }, 600);
+    });
+  }
+
+  function cardLink(u) {
+    openDeepLink(u);
+    // Start Now with the ready sheet up: the session is open, so the sheet goes.
+    if (wo && !wo.finished && $("readysheet").classList.contains("open")) closeSheet("readysheet");
+  }
+
+  // Days to put w on, one tap each — the ready sheet's "Or plan it" and the
+  // recap's "Plan your next one" — named as the card statuses name them (today,
+  // tomorrow, then the weekday). A day with something on it already wears a dot.
+  // The last cell is the way to everything else (More, Pick another).
+  function dayChips(w, keys, last, lastFn, then) {
+    var box = el("div", "scchips daychips"), now = new Date();
+    box.setAttribute("role", "group");
+    box.setAttribute("aria-label", "Plan it for a day");
+    keys.forEach(function (key) {
+      var a = aheadWord(key, now), b = box.appendChild(el("button", "scchip" + (rowsFor(key).length ? " has" : ""),
+        a.charAt(0).toUpperCase() + a.slice(1)));
+      b.setAttribute("aria-label", "Plan for " + dayLabel(dayDate(key)));
+      b.setAttribute("aria-pressed", String(planned(w.id, key)));
+      b.onclick = function () { planOn(w, key, b, then); };
+    });
+    box.appendChild(el("button", "scchip", last)).onclick = lastFn;
+    return box;
+  }
+
+  function planned(id, key) {
+    return rowsFor(key).some(function (p) { return p.workout_id === id; });
+  }
+
+  // One day, one tap, and Undo: planWrite, the Plan sheet's and the picker's one
+  // write, so a day planned from here reads and undoes exactly as one planned there.
+  function planOn(w, key, chip, then) {
+    var said = "Planned " + aheadWord(key, new Date());
+    if (planned(w.id, key)) return toast("Already " + said.toLowerCase() + ".");
+    haptic("tap");
+    if (chip) chip.setAttribute("aria-pressed", "true");
+    if (then) then();
+    planWrite(w, [key], null, said);
+  }
+
+  // The recap's next step: the same workout on a day of the coming week, or
+  // another one on the first free day of it (the picker's title names it). Today
+  // has just been done, so the week is the seven days after it, tomorrow to the
+  // same weekday next week (named by its date), and Pick another the eighth cell.
+  function sumNext(w) {
+    var card = planWorkout(w.id), keys = planDays(new Date()).slice(1, 8), wrap = el("div", "sumnext");
+    if (!card) return null;
+    wrap.appendChild(el("p", "readylabel", "Plan your next one"));
+    wrap.appendChild(dayChips(card, keys, "Pick another", function () {
+      var key = keys.filter(function (k) { return !rowsFor(k).length; })[0] || keys[0];
+      openPicker(key, dayLabel(dayDate(key)));
+    }));
+    return wrap;
+  }
+
+  // The read offer the card no longer puts between a new user and Start: after
+  // the workout, under the next step and never above the figures, and only the
+  // first time the card is done — after that the card has made its case, and its
+  // own "Improve this read" is where the offer lives. Out of Plus reads, the
+  // server's answer opens the Plus page (readVideo, limitHit).
+  function sumOffer(w) {
+    var card = planWorkout(w.id), box = el("div", "reader-offer");
+    if (!card || card.platform !== "tiktok" || card.kind === "photo" || card.read_quality === "premium" ||
+      (state.logs || []).some(function (l) { return l.workout_id === card.id && isSession(l); })) return null;
+    box.appendChild(el("b", null, "Basic read"));
+    box.appendChild(el("p", null, "Plus reads the video’s movements, spoken cues and on-screen details to build a more complete workout."));
+    var b = box.appendChild(el("button", "btn ghost", isFree() ? "Try a Plus read" : "Read with Plus"));
+    b.onclick = function () { readVideo(card, b, isFree()); };
+    return box;
+  }
+
   function doAdd(fromShare) {
     var url = $("addurl").value.trim();
     if (!url) { toast("Paste a link first."); return Promise.resolve(false); }
@@ -16641,12 +17933,14 @@ export const APP = String.raw`
     return deviceFrames({ url: url }).then(function (frames) {
       var body = { url: url };
       if (frames) body.frames = frames;
+      // From another app: the server says so when it is ready (push.ts, sendReady).
+      if (fromShare) body.source = "share";
       btn.textContent = "Saving…";
       return api("ingest", { method: "POST", body: JSON.stringify(body) });
     })
       .then(function (r) {
         btn.disabled = false;
-        btn.textContent = "Save workout";
+        btn.textContent = "Add video";
         // One share at a time, not one per launch: the flag used to stay set, so
         // a second link shared into an open app waited for the next cold start.
         if (fromShare) sharing = false;
@@ -16665,24 +17959,19 @@ export const APP = String.raw`
 
         if (r.status === "saved") {
           $("addurl").value = "";
+          $("addurl").blur();
           closeSheet("addsheet");
-          // The cache hit is a good fact — somebody else already paid to read this
-          // video — so the receipt says the fact instead of a lightning bolt.
-          // The row is not in state.workouts until load() comes back, so the
-          // count this save makes is asked for one ahead.
-          if (r.cached) toast(withShelf(fromShare
-            ? "Saved from the share sheet — someone had already read this one, so it is ready"
-            : "Saved — someone had already read this one, so it is ready", 1), 3400);
-          else toast(withShelf(fromShare ? "Saved from the share sheet — read and ready"
-            : "Saved — read and ready", 1), 3400);
-          load().then(function () {
-            var w = state.workouts.filter(function (x) { return x.id === r.id; })[0];
-            if (w) openDetail(w);
-          });
+          // Ready at once, so the ready sheet is the receipt and the next step in
+          // one. The only thing left to say is how full the shelf is getting — and
+          // the row is not in state.workouts until load() comes back, so the count
+          // this save makes is asked for one ahead.
+          var full = withShelf("Saved", 1);
+          if (full !== "Saved") toast(full, 3400);
+          load().then(function () { offerReady(planWorkout(r.id)); });
           return true;
         } else if (r.status === "exists") {
           closeSheet("addsheet");
-          toast("Already in your library.");
+          toast("Already in Workouts.");
           load();
           return true;
         } else {
@@ -16695,7 +17984,7 @@ export const APP = String.raw`
         }
       }).catch(function (e) {
         btn.disabled = false;
-        btn.textContent = "Save workout";
+        btn.textContent = "Add video";
         if (fromShare) sharing = false;
         // Declined AI permission: the link stays in the box, unsaved, with no error.
         if (!aiDeclined(e)) toast("Could not reach Spotter — check your connection.");
@@ -17086,7 +18375,7 @@ export const APP = String.raw`
       if (r.status === "exists") {
         closeSheet("addsheet");
         resetUpload();
-        toast("Already in your library.");
+        toast("Already in Workouts.");
         load();
         return;
       }
@@ -17488,6 +18777,10 @@ export const APP = String.raw`
     // open on the right words rather than on Off while it waits for its own row.
     s.remind = { plan: remind.plan, risk: remind.risk };
     s.remindAt = remind.at;
+    // "When a saved video is ready" is read by the server, and absent is on, so it
+    // is written only to say Off — and left as it was until the profile has said
+    // which (null), so an early write cannot flip it either way.
+    if (remind.ready === false) s.notifyReady = false; else if (remind.ready) delete s.notifyReady;
     s.tz = tzName();
     if (state.profile) state.profile.settings = s;
     // The then() is what sends it. A supabase-js builder is lazy — it only runs
@@ -17527,7 +18820,6 @@ export const APP = String.raw`
     saveSettings();
     // The ring, its label, the streak and the today card all read this number.
     if (drawn.train && state.logs) renderTrain();
-    if (today.shown) renderToday();
   }
 
   function toggleSounds() { setSounds(!state.sounds); }
@@ -17572,7 +18864,7 @@ export const APP = String.raw`
   // policy itself is never written twice.
 
   var remind = { plan: false, risk: false, at: 1050, sub: null, key: null, busy: false,
-    cfg: null, apns: false, perm: "unsupported", env: "sandbox", bundle: "", tok: null };
+    cfg: null, apns: false, perm: "unsupported", env: "sandbox", bundle: "", tok: null, ready: null };
 
   // The device token is the row's identity, and iOS reissues it — a restore from
   // backup, a long enough gap between launches. So the enrolment is remembered
@@ -17666,8 +18958,22 @@ export const APP = String.raw`
     // The time belongs to the reminder it sets, so it is live only while that is.
     t.disabled = !can || !remind.plan;
     t.value = hhmm(remind.at);
+    // The ready switch is the app's only (the web app it would open is retired),
+    // and it is On only while this install has a row to be reached at.
+    var rr = $("remready"), on = readyOn();
+    $("remreadyrow").classList.toggle("hide", !native);
+    rr.textContent = on ? "On" : "Off";
+    rr.classList.toggle("active", on);
+    rr.disabled = !can;
     $("setremnote").textContent = remindNote();
   }
+
+  // "When a saved video is ready": not a reminder but the answer to a share, and
+  // the one switch here that starts On once there is permission. It needs this
+  // install's row as the reminders do, so switching it on can be the tap that
+  // asks for permission (toggleRemind), and it keeps the row while no reminder
+  // does.
+  function readyOn() { return !!native && remind.ready !== false && !!(remind.tok || enrolled()); }
 
   // What this browser is actually subscribed to, which is the only thing the
   // sender reads. Drawn first from the profile so the group never opens blank,
@@ -17737,7 +19043,7 @@ export const APP = String.raw`
         // goes, so a failure between the two leaves a reminder that still
         // arrives rather than one that has quietly stopped.
         if (g.token === was) return;
-        if (remind.plan || remind.risk) saveRemind();
+        if (remind.plan || remind.risk || remind.ready !== false) saveRemind();
         sb.from("push_devices").delete().eq("token", was);
       });
     }).catch(paintRemind);
@@ -17840,12 +19146,13 @@ export const APP = String.raw`
 
   function toggleRemind(kind) {
     if (remind.busy || !pushable() || denied()) return;
-    if (remind[kind]) {
+    if (kind === "ready" ? readyOn() : remind[kind]) {
       remind[kind] = false;
       haptic("tap");
       paintRemind();
       saveSettings();
-      if (remind.plan || remind.risk) saveRemind(); else offRemind();
+      // The ready switch keeps an install's row too (readyOn).
+      if (remind.plan || remind.risk || readyOn()) saveRemind(); else offRemind();
       return;
     }
     remind.busy = true;
@@ -17857,7 +19164,8 @@ export const APP = String.raw`
         // the toast is only for the case where nothing was refused and nothing
         // worked either — no VAPID keys on the deployment, most likely.
         paintRemind();
-        if (!denied()) toast("Reminders are not switched on for this app yet.");
+        // Worded for all three switches: the ready one is not a reminder.
+        if (!denied()) toast("Notifications are not switched on for this app yet.");
         return;
       }
       remind.sub = sub;
@@ -17869,7 +19177,7 @@ export const APP = String.raw`
     }, function () {
       remind.busy = false;
       paintRemind();
-      toast("Could not switch that reminder on \u2014 try again in a moment.");
+      toast("Could not switch that on \u2014 try again in a moment.");
     });
   }
 
@@ -18249,8 +19557,10 @@ export const APP = String.raw`
   // DRAWN from it every frame, which is why a tap, a fling and a finger stopped
   // between two pages all agree with one another.
 
-  var VIEWS = ["library", "train", "pumpy"];
-  var PAGE_IDS = ["libpage", "trainview", "pumpyview"];
+  // Train first: the app opens on what to do today, and Workouts is the shelf it
+  // is chosen from (owner decision, 25 Sept, Option B "Train is home").
+  var VIEWS = ["train", "library", "pumpy"];
+  var PAGE_IDS = ["trainview", "libpage", "pumpyview"];
   var LAST = VIEWS.length - 1;
 
   var pagesEl = $("pages"), track = $("track"), tabbar = document.querySelector(".tabbar");
@@ -18350,6 +19660,10 @@ export const APP = String.raw`
     if (changed) { guideClear(); guideStill(); guide.visit = null; }
     idx = i;
     state.view = VIEWS[i];
+    // The header's two per-page parts: Train's streak and ring are tappable only
+    // on Train, and the add button wears its word only on Workouts.
+    hdrEl.classList.toggle("ontrain", state.view === "train");
+    hdrEl.classList.toggle("onlib", state.view === "library");
     if (changed && pumpyReset) renderPumpy();
     var tabs = document.querySelectorAll(".tab"), n, k;
     for (k = 0; k < tabs.length; k++) {
@@ -18380,7 +19694,6 @@ export const APP = String.raw`
     var v = VIEWS[i];
     guide.visit = v;
     setTimeout(function () { guidePage(v); }, 450);
-    if (v === "library") renderToday();
     if (v === "train" && state.logs) countStats();
     // Settled somewhere else, with Pumpy off screen: the one place a chat can be
     // swapped without anybody seeing it happen.
@@ -18391,9 +19704,9 @@ export const APP = String.raw`
   // Contextual help still waits for arrive(); warming cannot count as a visit.
   function preparePage(i) {
     var v = VIEWS[i];
-    // Library's grid is kept fresh by realtime and load(); only the today card
-    // is a snapshot, and renderToday() decides for itself whether it has aged.
-    if (v === "library") { renderToday(); return; }
+    // Workouts' grid is kept fresh by realtime and load(); its statuses read the
+    // plan and the logs Train already holds.
+    if (v === "library") { renderGrid(); return; }
     if (v === "train") {
       // The strip opens on this week on every visit, the way Plan always did —
       // but the segment and the scroll offset are where the visitor left them:
@@ -18441,8 +19754,12 @@ export const APP = String.raw`
     // an old link, a notification or a console call lands on Train, on the
     // segment it asked for. History has lived under Progress since the recap wave.
     if (v === "history") v = "progress";
-    if (v === "plan" || v === "progress") {
-      trainSeg = v === "plan" ? "calendar" : "progress";
+    // "plan" is the month now, opened out of the week strip in place; the
+    // segments below it are Progress and Records. Asked for rather than done
+    // here, because the strip may not be built yet (a cold launch from a link).
+    if (v === "plan") { trainWantMonth = true; v = "train"; if (state.view === "train" && trainLean) renderTrain(); }
+    if (v === "progress") {
+      trainSeg = "progress";
       v = "train";
       // goTo() only prepares a page it had to change to, so a link naming a
       // segment of the page you are already on moved nothing: the control stayed
@@ -18461,9 +19778,10 @@ export const APP = String.raw`
   function resetPager() {
     if (!pagesEl) return;
     stopSpring();
-    idx = 0; arrivedAt = 0; state.view = "library";
+    idx = 0; arrivedAt = 0; state.view = VIEWS[0];
     drawn = { train: false, pumpy: false };
     trainSeg = null;
+    trainWantMonth = false;
     trainLean = null;
     // The arc's starting point, too: left behind, the next account's first ring
     // would animate out of the last account's number instead of out of nothing.
@@ -19295,9 +20613,11 @@ export const APP = String.raw`
 
   var ptrStart = 0, ptrPulling = false;
 
+  // Everything Workouts shows: the cards, and the plan and the logs its statuses
+  // and its Ready to try count are read from. The count of new cards is load()'s.
   function refreshActive() {
     invalidateLogs();
-    return load();
+    return Promise.all([load(), loadLogs(), loadPlan(true)]).then(function (r) { return r[0]; });
   }
 
   pagesEl.addEventListener("touchstart", function (e) {
@@ -19305,7 +20625,7 @@ export const APP = String.raw`
     // Library only: it is the one page whose content arrives from outside — a
     // share from another device, a socket that dropped. Plan, Progress and Pumpy
     // refresh themselves on arrival and have nothing a pull could add.
-    if (idx !== 0 || !pg || pg.scrollTop > 2 || overlayShowing()) { ptrPulling = false; return; }
+    if (VIEWS[idx] !== "library" || !pg || pg.scrollTop > 2 || overlayShowing()) { ptrPulling = false; return; }
     ptrStart = e.touches[0].clientY;
     ptrPulling = true;
   }, { passive: true });
@@ -19342,38 +20662,14 @@ export const APP = String.raw`
     }, function () { toast("Could not reach Spotter — check your connection."); });
   }, { passive: true });
 
-  // ---------- install hint ----------
+  // ---------- installed ----------
 
-  // Two reasons to install, one per platform. On iPhone it buys a home-screen app;
-  // on Android it also buys a place in the share sheet, which is the whole reason
-  // an Android user would bother, so the hint says that instead.
+  // An app, not a browser tab: the native shell, or a page added to a home screen.
+  // (The "install Spotter" hint that asked for the second went with the web app;
+  // the page only ships inside the shell now, where it could never show.)
   function standalone() {
     return !!(native || window.navigator.standalone ||
       (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches));
-  }
-
-  function maybeInstallHint() {
-    $("hint").classList.remove("show");
-    if (!state.user || !state.workouts.some(function (w) { return !isPending(w) && !isFailed(w); }) || standalone()) return;
-    var dismissed = false;
-    try { dismissed = localStorage.getItem("spotter_hint_done") === "1"; } catch (e) { /* ignore */ }
-    if (dismissed) return;
-    var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    var isAndroid = /android/i.test(navigator.userAgent);
-    if (!isIOS && !isAndroid) return;
-    // Why, then how. The old line was only the how — two steps for no given reason.
-    $("hinttext").innerHTML = isIOS
-      ? "Make your next visit easier. Install Spotter for a full-screen app. " +
-        "Tap <b>Share</b>, then <b>Add to Home Screen</b>."
-      : "Make your next save easier. Install Spotter to add it to your share sheet — then a video goes " +
-        "straight to it with <b>Share</b>.";
-    var help = el("button", "setlink", "Phone save options");
-    help.onclick = function () {
-      openSettings(); animateDisclosure($("phonesave"), true);
-      $("phonesave").scrollIntoView({ block: "start" });
-    };
-    $("hinttext").appendChild(help);
-    $("hint").classList.add("show");
   }
 
   // ---------- wiring ----------
@@ -19489,8 +20785,7 @@ export const APP = String.raw`
   $("refreshbtn").onclick = function () {
     var b = $("refreshbtn");
     b.classList.add("spin");
-    invalidateLogs();
-    load().then(function () { b.classList.remove("spin"); });
+    refreshActive().then(function () { b.classList.remove("spin"); });
   };
   $("settingsbtn").onclick = openSettings;
   wirePwEye($("pw").parentNode);
@@ -19505,15 +20800,11 @@ export const APP = String.raw`
   $("goalless").onclick = function () { bumpGoal(-1); };
   $("goalmore").onclick = function () { bumpGoal(1); };
   $("countdone").onclick = function () { closeSheet("countsheet"); };
-  // Handed over rather than stacked, the way dayadd hands over to the picker: the
-  // sheet layer holds one history entry and the next sheet keeps it.
-  $("tmcopy").onclick = function () { openCopy(); closeSheet("trainmore"); };
-  $("tmpumpy").onclick = function () { programWithPumpy(state.weekStart); closeSheet("trainmore"); };
-  $("tmcount").onclick = function () { openSheet("countsheet"); closeSheet("trainmore"); };
   $("soundtoggle").onclick = toggleSounds;
   $("haptictoggle").onclick = toggleHaptics;
   $("remplan").onclick = function () { toggleRemind("plan"); };
   $("remrisk").onclick = function () { toggleRemind("risk"); };
+  $("remready").onclick = function () { toggleRemind("ready"); };
   $("remtime").onchange = setRemindAt;
   $("setnamerow").onclick = openName;
   $("setpwrow").onclick = openPassword;
@@ -19570,15 +20861,34 @@ export const APP = String.raw`
     });
   };
   $("dmore").onclick = function () { openSheet("workoptions"); };
+  // Every row closes the sheet after its own handler has run, so a row that opens
+  // another sheet hands the history entry over rather than dropping it. Read it
+  // again stays open to show that it is reading. Ask Pumpy and Remove close the
+  // card as well, and do their own leaving (cardOff).
   $("workoptions").addEventListener("click", function (e) {
     var b = e.target.closest("button");
-    if (b && b.id !== "dreproc" && b.getAttribute("data-armed") !== "1") closeSheet("workoptions");
+    if (b && ["dreproc", "dask", "drm"].indexOf(b.id) < 0) closeSheet("workoptions");
   });
+  // The sheet and the card under it, in one navigation. Two history.back() calls
+  // in one task are one traversal in WebKit (it keeps only the last navigation
+  // it was asked for), and that one popstate was then read as the sheet's own,
+  // so on the phone the card stayed open — the way leaveWorkout folds its pops.
+  function cardOff() {
+    var n = sheetNav ? 2 : 1;
+    closeSheet("workoptions", true);
+    history.go(-n);
+  }
+  $("dask").onclick = function () { var w = current; cardOff(); if (w) openPumpy(w); };
+  $("dren").onclick = function () { if (current) openRename("workout", current.id, current.title || ""); };
+  $("dcol").onclick = function () { if (current) openCollections(current); };
+  $("drm").onclick = function () { var w = current; if (!w) return; cardOff(); removeWorkout(w, true); };
+  $("dstart").onclick = function () { if (current) startWorkout(current); };
+  $("dplan").onclick = function () { if (current) openPlanSheet({ w: current, from: "card" }); };
   document.querySelectorAll("[data-close]").forEach(function (b) {
     b.onclick = function () { closeSheet(b.getAttribute("data-close")); };
   });
-  ["workoptions", "filtersheet", "schedulesheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
-   "restsheet", "sectionsheet", "ordersheet"].forEach(function (id) {
+  ["workoptions", "filtersheet", "recapsheet", "woaddsheet", "aiconsentsheet", "wleavesheet",
+   "sectionsheet", "ordersheet", "exmenu", "plandays", "readysheet", "pausedask"].forEach(function (id) {
     $(id).addEventListener("keydown", function (e) {
       if (e.key === "Escape") { e.preventDefault(); closeSheet(id); }
       if (e.key !== "Tab") return;
@@ -19606,10 +20916,12 @@ export const APP = String.raw`
   function syncRereadButton(w) {
     var b = $("dreproc"), busy = !!(w && rereading[w.id] && rereading[w.id].epoch === accountEpoch);
     b.disabled = busy || !!(w && isPending(w));
-    b.textContent = busy ? "Reading…" : "Read it again";
+    b.lastChild.textContent = busy ? "Reading…" : "Read it again";
     b.setAttribute("aria-busy", busy ? "true" : "false");
   }
-  $("dreproc").onclick = function () {
+  // From ⋯ and from Improve this read alike.
+  $("dreproc").onclick = rereadCard;
+  function rereadCard() {
     if (!state.user || !current || (rereading[current.id] && rereading[current.id].epoch === accountEpoch)) return;
     // A card that never finished goes back on the queue instead of being re-run
     // inline; retryWorkout owns that path and the pending UI that goes with it.
@@ -19641,7 +20953,8 @@ export const APP = String.raw`
         return load().then(function () {
           if (!accountNow(epoch, uid)) return;
           var fresh = state.workouts.filter(function (x) { return x.id === r.workout.id; })[0];
-          if (fresh && current && current.id === w.id) openDetail(fresh);
+          // In place: the card already holds its history entry.
+          if (fresh && current && current.id === w.id) openDetail(fresh, true);
           toast((fresh || w).user_workout_override ? "Source refreshed; your personal exercise list was kept." : "Re-read the workout.");
         });
       }).catch(function (e) {
@@ -19649,7 +20962,7 @@ export const APP = String.raw`
         if (!accountNow(epoch, uid) || aiDeclined(e)) return;
         toast("Could not read that workout again — try again in a minute.");
       });
-  };
+  }
 
   $("wclose").onclick = function () {
     if (wo && !wo.finished) openLeave(); else history.back();
@@ -19662,6 +20975,7 @@ export const APP = String.raw`
   };
   $("wend").onclick = function () {
     var extra = sheetNav ? 1 : 0, n = loggedSets();
+    undoOff();
     closeSheet("wleavesheet", true);
     if (!n) { leaveWorkout(extra, false); toast("Workout closed — nothing logged."); return; }
     // The summary takes the session's place in the overlay, so only the sheet's
@@ -19674,8 +20988,17 @@ export const APP = String.raw`
   wireWmain($("wmain"));
   $("wprev").onclick = function () { woGo(-1); };
   $("wnext").onclick = skipMove;
-  $("wfinish").onclick = finishWorkout;
-  $("waddexercise").onclick = openWorkoutAdd;
+  $("wfinish").onclick = woFinish;
+  $("wgo").onclick = goTap;
+  // ⋯ Exercise: the card's exercise sheet, for the movement on screen — Watch,
+  // Demo, Swap, Add set, Add an exercise. Freestyle has no movement to speak
+  // about, so there it opens the one thing it can offer: adding one.
+  $("wexmore").onclick = function () {
+    if (!wo || wo.finished) return;
+    var s = wo.screens[wo.i];
+    if (!s || !this._ex) { openWorkoutAdd(); return; }
+    openExerciseSheet({ from: "workout", w: wo.workout, bi: s.bi, ei: s.ei, ex: this._ex, block: s.block });
+  };
   $("woaddsave").onclick = saveWorkoutAdd;
   // From the dose back to the list; from the list, when a section sheet handed
   // over, back to that sheet with its fields as they were left — handed over
@@ -19754,11 +21077,6 @@ export const APP = String.raw`
     renderWorkout();
   };
 
-  $("hintx").onclick = function () {
-    $("hint").classList.remove("show");
-    try { localStorage.setItem("spotter_hint_done", "1"); } catch (e) { /* ignore */ }
-  };
-
   // ---------- arriving from outside the page ----------
   //
   // A button on the Live Activity, a tap on the watch, a notification action and
@@ -19781,24 +21099,19 @@ export const APP = String.raw`
   }
 
   function liveAction(a) {
-    var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null, pre;
+    var k = a.kind, live = wo && !wo.finished, s = live ? wo.screens[wo.i] : null;
     // A remote reminder carries its destination as the action id. A rest-end one
     // whose rest is already over has nothing left to say.
     if (k === "notification" && typeof a.id === "string" && a.id.indexOf("spotter://") === 0) openLink(a.id);
     else if (k === "open" || k === "notification") { if (k === "open" || !wo || restUntil) woForward(); }
     else if (!live) return;
     else if (k === "set") {
-      // A hold and a complex are not logged with reps and a weight, so a remote
-      // Save has nothing to send: those two are answered on the screen.
-      if (!s || (s.cx && !s.ei) || isTimed(s.ex)) toast("Log this one on the phone.");
-      else {
-        // The wrist can turn the dial before it saves, and through the stepper’s
-        // own setters a figure from off the phone meets the clamp a thumb does.
-        pre = setPrefill(wo.entries[wo.i].sets.length);
-        setCtx.idx = pre.idx;
-        setReps(typeof a.reps === "number" && isFinite(a.reps) ? a.reps : pre.reps);
-        setWeight(typeof a.weight === "number" && isFinite(a.weight) ? a.weight : pre.weight);
-        saveSet();
+      // The same door as Workout Mode's big button. The wrist can turn the dial
+      // before it saves, and through the stepper's own setters a figure from off
+      // the phone meets the clamp a thumb does. A hold and a complex are not
+      // logged with reps and a weight, so those two are answered on the screen.
+      if (logNextSet({ reps: a.reps, weight: a.weight, id: a.eventId || null, source: a.source || "activity" }).why === "screen") {
+        toast("Log this one on the phone.");
       }
     } else if (k === "round" || k === "mark") {
       // The complex screen's two taps. "round" is Round N done; "mark" ticks the
@@ -19826,7 +21139,9 @@ export const APP = String.raw`
     woForward();
     var s = wo.screens[wo.i];
     if (!s || (s.cx && !s.ei) || isTimed(s.ex)) return;
-    openSetSheet(wo.entries[wo.i].sets.length);
+    // The set the card was naming, which after one logged out of order is not
+    // the one past the end.
+    openSetSheet(nextSet().idx);
     if (reps) setReps(parseFloat(reps[1]));
     if (weight) setWeight(parseFloat(weight[1]));
     if (field === "weight" || field === "reps") $(field === "weight" ? "wtval" : "repsval").click();
@@ -19837,14 +21152,16 @@ export const APP = String.raw`
   function openDeepLink(url) {
     var m = state.user && String(url).match(/^spotter:\/\/([a-z]+)\/?([^?#]*)/);
     if (!m) return;
+    // An open with an errand of its own: the ready sheet does not add one (readyOnOpen).
+    linkAt = Date.now();
     var head = m[1], arg = decodeURIComponent(m[2].replace(/\/+$/, ""));
     if (head === "set") { openSetLink(arg, String(url)); return; }
     // "spotter://workout/" names nothing, which is a malformed link rather than a
     // card that has been deleted, and a malformed link says nothing at all.
-    var card = !!arg && (head === "workout" || head === "start"), w = card ? planWorkout(arg) : null;
+    var card = !!arg && (head === "workout" || head === "start" || head === "ready"), w = card ? planWorkout(arg) : null;
     if (head === "resume") woForward();
     else if (head === "tab") {
-      if (!/^(library|plan|progress|pumpy)$/.test(arg)) return;
+      if (!/^(train|library|plan|progress|pumpy)$/.test(arg)) return;
       // An overlay covers the tabs, so switching one underneath it changes
       // nothing the reader can see: on the 16e, a Today-widget tap with a
       // workout card open and a reminder tap with Settings open both looked
@@ -19859,11 +21176,13 @@ export const APP = String.raw`
       setView(arg);
     }
     else if (!card) return;
-    else if (!w) toast("That workout is not in your library any more.");
-    else if (head === "workout") openDetail(w);
+    else if (!w) toast("That workout is no longer in Workouts.");
+    // A saved video is ready (push.ts): the banner and Plan It land here.
+    else if (head === "ready") readyLink(w, /[?&]auto=1/.test(url));
+    else if (head === "workout") showCard(w);
     else if (wo && !wo.finished) { woForward(); toast("A workout is already running."); }
     // The card first, so finishing lands back where a Library tap would have.
-    else { openDetail(w); startWorkout(w); }
+    else { showCard(w); startWorkout(w); }
   }
 
   // A link can only open something once there is a library to open it in.
@@ -19882,7 +21201,22 @@ export const APP = String.raw`
     // the same open, so the parked copy goes — otherwise the next launch would
     // replay a link the reader already followed.
     try { sessionStorage.removeItem(OPEN_KEY); } catch (e) { /* ignore */ }
-    openDeepLink(u);
+    // A card link can name a card this page has not seen — shared in from another
+    // app while Spotter slept, its row comes with the next read — or saw still
+    // being read. That row is read first and the link followed as if it had always
+    // been here. A tap counts as seeing it; the quiet door leaves that to the sheet.
+    var m = String(u).match(/^spotter:\/\/(?:workout|start|ready)\/([\w-]+)/), w = m && planWorkout(m[1]), epoch, uid;
+    if (!m) return openDeepLink(u);
+    if (w && !isPending(w)) return cardLink(u);
+    epoch = accountEpoch;
+    uid = state.user.id;
+    if (!/[?&]auto=1/.test(u)) readyMark(m[1]);
+    sb.from("workouts").select(CARD_COLS).eq("user_id", uid).eq("id", m[1]).maybeSingle().then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      if (r.error) return toast("Could not reach Spotter — check your connection.");
+      if (r.data) onWorkoutChange({ eventType: "UPDATE", new: r.data });
+      cardLink(u);
+    });
   }
 
   // A cold launch parks its URL in the shell before any listener could exist.
@@ -19919,7 +21253,7 @@ export const APP = String.raw`
     }
     // A back gesture on a live session pauses it: the safe door, and the one
     // Android's back button opens without a chance to ask.
-    if ($("workout").classList.contains("open")) { exitWorkout(!!(wo && !wo.finished)); renderResume(); return; }
+    if ($("workout").classList.contains("open")) { exitWorkout(!!(wo && !wo.finished)); sessionChanged(); return; }
     if ($("detail").classList.contains("open")) closeDetail();
   });
 
@@ -19946,7 +21280,7 @@ export const APP = String.raw`
     // on the shelf when the sheet or the card closes, and load() refreshes an open
     // card in place. Only a live session is left alone. The pending poll starts a
     // fresh budget, so a card that outlived the last one is asked about again.
-    if (state.user && !wo) { pendPolls = 0; watchPending(); load(); takeParkedShare(); }
+    if (state.user && !wo) { pendPolls = 0; watchPending(); load().then(readyOnOpen); takeParkedShare(); }
   });
 
   document.addEventListener("visibilitychange", function () {

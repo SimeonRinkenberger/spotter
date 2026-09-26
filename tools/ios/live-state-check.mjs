@@ -75,6 +75,7 @@ function workoutContext() {
     hist: { 'n:Bench Press': { weight: 60, unit: 'kg', sets: 4, reps: '8', date: '2026-09-11' } },
     histReady: true,
     restUntil: NOW + 45000, restTotal: 60000, restHeld: 0, restFace: null,
+    setCtx: { idx: 0, reps: 10, weight: 0 }, stepRows: null, ssHeld: null,
     LB_PER_KG: 2.2046226,
     native: {
       live: {
@@ -86,7 +87,7 @@ function workoutContext() {
     Math, Date, Object, String, Number, Boolean, isFinite, parseInt, JSON
   });
   vm.runInContext(pull(['askText', 'blockName', 'isTimed', 'cxDosed', 'cxCap', 'complexOf', 'supersetOf', 'isCircuit', 'roundsOf',
-    'roundOf', 'targetOf', 'isStop', 'exKey', 'toUnit', 'setPrefill', 'plate',
+    'roundOf', 'targetOf', 'isStop', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'nextSet', 'plate',
     'cxOf', 'cxCurrent', 'cxMarks', 'cxLive', 'liveState', 'liveSync', 'liveEnd']), ctx);
   return { ctx, sent };
 }
@@ -150,6 +151,16 @@ same(vm.runInContext('(function () { var c = liveState().complex; return [c.roun
 vm.runInContext('wo.finished = true;', phases.ctx);
 assert.equal(vm.runInContext('liveState().phase', phases.ctx), 'done');
 
+// The set the card names is the first one not yet done — the one the phone's
+// button names and a Log set logs (nextSet; superset-harness pins the tap) — so
+// set 2 logged out of order off its pill no longer puts "Set 2 · 70 kg" on the
+// Lock Screen over a tap that logs set 1 at last time's 60.
+const hole = workoutContext();
+vm.runInContext('wo.entries[1].sets = [undefined, { reps: 10, weight: 70, unit: "kg", done: true }];', hole.ctx);
+same(vm.runInContext('liveState().set', hole.ctx), { index: 1, total: 4 }, 'the hole is the set the card names');
+assert.equal(vm.runInContext('liveState().weight', hole.ctx), '60 kg', 'at set 1\'s dose, not the set after the hole');
+assert.equal(vm.runInContext('liveState().dose.weight', hole.ctx), 60);
+
 // A bodyweight movement with no history offers no weight.
 const bare = workoutContext();
 vm.runInContext('hist = {};', bare.ctx);
@@ -165,7 +176,7 @@ vm.runInContext('native = { live: { update: function () { throw new Error("no pl
 vm.runInContext('liveSync()', broken.ctx);
 vm.runInContext('wo = null; liveSync();', broken.ctx);
 
-console.log('PASS LiveState key set, 1-based set index, epoch rest deadline, five phases, one-block and bodyweight cases, liveSync delivery and its failure path.');
+console.log('PASS LiveState key set, 1-based set index (the first set not yet done), epoch rest deadline, five phases, one-block and bodyweight cases, liveSync delivery and its failure path.');
 
 // ---------- LiveSummary ----------
 
@@ -299,7 +310,7 @@ function overlay(calls, id, open) {
 
 function linkContext(open) {
   open = open || {};
-  const calls = { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 };
+  const calls = { detail: [], keep: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 };
   const sheets = (open.sheets || []).map(id => ({ id }));
   const ctx = vm.createContext({
     wo: null, $: id => overlay(calls, id, open),
@@ -311,19 +322,19 @@ function linkContext(open) {
     resumeWorkout: () => { calls.resumed++; },
     state: { user: { id: 'u1' }, workouts: [{ id: 'w1', title: 'Push day' }] },
     planWorkout: id => ctx.state.workouts.filter(w => w.id === id)[0],
-    openDetail: w => calls.detail.push(w.id),
+    openDetail: (w, keep) => { calls.detail.push(w.id); calls.keep.push(!!keep); },
     startWorkout: w => calls.start.push(w.id),
     setView: v => calls.view.push(v),
     toast: t => calls.toast.push(t),
     String, decodeURIComponent, Object
   });
-  vm.runInContext(pull(['woForward', 'openDeepLink']), ctx);
+  vm.runInContext(pull(['woForward', 'showCard', 'openDeepLink']), ctx);
   return { ctx, calls };
 }
 
 let link = linkContext();
 vm.runInContext('openDeepLink("spotter://open")', link.ctx);
-assert.deepEqual(link.calls, { detail: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 },
+assert.deepEqual(link.calls, { detail: [], keep: [], start: [], view: [], toast: [], forward: 0, back: 0, closed: [], resumed: 0 },
   'spotter://open does nothing on its own — the shell already brought the app up');
 
 link = linkContext();
@@ -357,6 +368,16 @@ vm.runInContext('openDeepLink("spotter://start/w1")', link.ctx);
 assert.deepEqual(link.calls.start, [], 'a running session is never restarted');
 assert.equal(link.calls.forward, 1);
 assert.equal(link.calls.toast.length, 1);
+
+// Over a card already open, a card link takes its place and its history entry
+// (showCard): a second {detail} entry outlived the Back that closed the overlay,
+// and the next Back spent it doing nothing.
+link = linkContext({ detail: true });
+vm.runInContext('openDeepLink("spotter://workout/w1"); openDeepLink("spotter://start/w1")', link.ctx);
+assert.deepEqual(link.calls.keep, [true, true], 'a card link over an open card pushes no second entry');
+link = linkContext();
+vm.runInContext('openDeepLink("spotter://workout/w1")', link.ctx);
+assert.deepEqual(link.calls.keep, [false], 'with no card open it is an ordinary open');
 
 link = linkContext();
 ['library', 'plan', 'progress', 'pumpy'].forEach(t => vm.runInContext('openDeepLink("spotter://tab/' + t + '")', link.ctx));
@@ -403,7 +424,7 @@ link.ctx.state.user = null;
 vm.runInContext('openDeepLink("spotter://tab/plan")', link.ctx);
 assert.deepEqual(link.calls.view, []);
 
-console.log('PASS five deep-link routes, the already-running guard, a deleted card, garbage and signed-out.');
+console.log('PASS five deep-link routes, the already-running guard, a card link over an open card, a deleted card, garbage and signed-out.');
 
 // ---------- actions arriving from outside the page ----------
 
@@ -411,7 +432,7 @@ function actionContext() {
   const calls = { reps: [], weight: [], save: 0, done: 0, pause: 0, finish: 0, deep: [], toast: [], forward: 0,
     parked: [], unparked: 0 };
   const ctx = vm.createContext({
-    wo: fixture(), restUntil: 1, setCtx: { idx: 0, reps: 0, weight: 0 },
+    wo: fixture(), restUntil: 1, setCtx: { idx: 0, reps: 0, weight: 0 }, stepRows: null, ssHeld: null, setEvents: [],
     $: id => overlay(calls, id, {}),
     OPEN_KEY: 'spotter_open_pending',
     sessionStorage: { setItem: (k, v) => calls.parked.push(v), removeItem: () => { calls.unparked++; } },
@@ -428,7 +449,7 @@ function actionContext() {
     toast: t => calls.toast.push(t),
     Math, Object, String, Number, isFinite, parseInt
   });
-  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'woForward', 'openLink', 'liveAction']), ctx);
+  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'nextSet', 'logNextSet', 'woForward', 'openLink', 'liveAction']), ctx);
   return { ctx, calls };
 }
 
@@ -497,7 +518,7 @@ console.log('PASS remote set with and without an adjusted dose, rest and finish 
 function complexActionContext() {
   const calls = { round: [], mark: [], save: 0, toast: [] };
   const ctx = vm.createContext({
-    wo: fixture(), restUntil: 0, setCtx: { idx: 0, reps: 0, weight: 0 },
+    wo: fixture(), restUntil: 0, setCtx: { idx: 0, reps: 0, weight: 0 }, stepRows: null, ssHeld: null, setEvents: [],
     $: id => overlay(calls, id, {}), OPEN_KEY: 'spotter_open_pending',
     sessionStorage: { setItem: () => {}, removeItem: () => {} },
     state: { unit: 'kg', user: { id: 'u1' } }, hist: {}, LB_PER_KG: 2.2046226,
@@ -510,7 +531,7 @@ function complexActionContext() {
     cxMark: (bi, cx, j) => calls.mark.push([bi, j]),
     Math, Object, String, Number, isFinite, parseInt
   });
-  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'woForward', 'openLink', 'liveAction']), ctx);
+  vm.runInContext(pull(['isTimed', 'exKey', 'toUnit', 'setPrefill', 'ssIdx', 'nextSet', 'logNextSet', 'woForward', 'openLink', 'liveAction']), ctx);
   return { ctx, calls };
 }
 

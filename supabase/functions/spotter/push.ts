@@ -1,11 +1,17 @@
-// Spotter — the two reminders, and nothing else.
+// Spotter — the two reminders, and the one answer to something the user just did.
 //
-// There are exactly two notifications in this app and there will not be a third:
+// There are exactly two reminders in this app and there will not be a third:
 //
 //   1. **Plan day** — at an hour the user picked. "Push day is on today's plan.
 //      42 minutes."
 //   2. **Week at risk** — once a week, on the day the goal stops having slack,
 //      never after 20:00 local. "One session left this week. Your streak is at 6."
+//
+// The third notification is not a reminder and does not pretend to be one: a
+// video shared into Spotter from another app has finished becoming a workout
+// ("Pull Day Routine is ready"). The person started it seconds or minutes ago,
+// so it keeps none of the reminders' schedule or caps — see "a save is ready"
+// at the bottom of this file.
 //
 // Everything below is shaped by the same three rules the design report set:
 // opt-in from a real tap and never at launch, hard caps (one a day, three a week,
@@ -411,6 +417,18 @@ export async function sendApns(
   kind: "plan" | "risk", title: string, body: string | undefined,
   cfg: Apns, nowMs = Date.now(), originFor = apnsOrigin,
 ): Promise<ApnsResult> {
+  // The web sender's `tag` by another name: a second copy of the same reminder
+  // replaces the first on the Lock Screen rather than stacking.
+  return await postApns(device, kind === "risk" ? "spotter-risk" : "spotter-plan",
+    apnsPayload(kind, title, body), cfg, nowMs, originFor);
+}
+
+/** The one POST every APNs notification makes; only the collapse id and the body differ. */
+async function postApns(
+  device: { token: string; bundle: string | null; env: string },
+  collapse: string, payload: Record<string, unknown>,
+  cfg: Apns, nowMs: number, originFor: (env: string) => string,
+): Promise<ApnsResult> {
   const r = await fetch(`${originFor(device.env)}/3/device/${device.token}`, {
     method: "POST",
     headers: {
@@ -426,13 +444,13 @@ export async function sendApns(
       // One hour, the same TTL the web sender uses and for the same reason: a
       // reminder for 17:00 is worthless at 22:00, and Apple would otherwise
       // store it for up to 30 days and deliver it whenever the phone reappears.
+      // A ready card an hour late is no better: by then the app offers it itself
+      // the next time it opens (readyPick in app.ts).
       "apns-expiration": String(Math.floor(nowMs / 1000) + 3600),
-      // The web sender's `tag` by another name: a second copy of the same
-      // reminder replaces the first on the Lock Screen rather than stacking.
-      "apns-collapse-id": kind === "risk" ? "spotter-risk" : "spotter-plan",
+      "apns-collapse-id": collapse,
       "content-type": "application/json",
     },
-    body: JSON.stringify(apnsPayload(kind, title, body)),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(10_000),
   });
   // Apple answers an empty body on 200 and `{"reason":"..."}` on everything
@@ -964,4 +982,202 @@ export async function runPushTick(nowMs = Date.now(), dry = false): Promise<{
   }
 
   return { looked: rows.length, sent, dropped, decisions, errors };
+}
+
+// ---------- a save is ready ----------
+//
+// The moment a video shared in from TikTok or Instagram becomes a workout is the
+// moment a new person is won or lost: the Share sheet said "Saved" a minute ago,
+// they have gone back to scrolling, and the card is now something they could
+// start or put on a day. So a save made OUTSIDE the app (the Share Extension or
+// the Shortcut, which authenticate with the ingest key, and Android's share,
+// which says `source: "share"`) is marked on its job, and when that job
+// delivers the card, this says so — with two actions, Start Now and Plan It,
+// registered by the app as the CARD_READY category (NotificationsHost.swift).
+// A save made in the app is not announced: the person is looking at it.
+//
+// No caps, because the person set this off themselves and the save allowance
+// already bounds how often. A burst is folded instead: three shares in a row
+// read "3 workouts are ready", and every banner of the burst carries one
+// collapse id, so the latest replaces the earlier ones on the Lock Screen rather
+// than stacking three. The count is the person's cards that became ready in the
+// last two minutes and have not been started: jobs marked this way (finishJob
+// stamps the mark back onto the finished job, since finishing clears its meta),
+// plus cards that arrived ready at once from the shared cache — those have no
+// job to mark, so every cache hit in the window counts, which can only ever
+// include a card that really is ready.
+//
+// Installs only. The web app this would open is retired, and a browser that
+// still holds a push_subscriptions row gets nothing it would have to explain.
+
+/** How far back a burst reaches. Two minutes covers three shares made one after
+ *  another from the same feed without folding in yesterday's. */
+const READY_WINDOW_MS = 2 * 60_000;
+
+/** One card as a notification names it. */
+export type ReadyCard = { id: string; title: string | null; exercises: number; minutes: number | null };
+
+/** What a card_ready notification says and where each part of it goes. `url` is
+ *  the body tap; `card` is what Start Now and Plan It act on. */
+export type ReadyAlert = { title: string; body: string; url: string; card: string };
+
+/** Exercises on a card, counted the way the card's own meta line counts them. */
+function exercisesIn(blocks: unknown): number {
+  let n = 0;
+  for (const b of Array.isArray(blocks) ? blocks : []) {
+    const list = (b as { exercises?: unknown })?.exercises;
+    if (Array.isArray(list)) n += list.length;
+  }
+  return n;
+}
+
+/** A title short enough that "is ready" is still on the Lock Screen's one line. */
+function readyName(title: string | null, max: number): string {
+  const t = (title ?? "").replace(/\s+/g, " ").trim() || "Your workout";
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return (space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,.:;–—-]+$/, "") + "…";
+}
+
+/**
+ * The words. One card is named in the title, where it is read at a glance, and
+ * its size goes under it; a burst is counted, and the latest card is named in
+ * the body because it is the one Start Now and Plan It act on.
+ */
+export function readyAlert(card: ReadyCard, count: number): ReadyAlert {
+  if (count > 1) {
+    return {
+      title: `${count} workouts are ready`,
+      body: `Latest: ${readyName(card.title, 80)} · Start now or plan it`,
+      url: "spotter://tab/library",
+      card: card.id,
+    };
+  }
+  const bits: string[] = [];
+  if (card.exercises > 0) bits.push(`${card.exercises} ${card.exercises === 1 ? "exercise" : "exercises"}`);
+  if (card.minutes && card.minutes > 0) bits.push(`~${card.minutes} min`);
+  bits.push("Start now or plan it");
+  return {
+    title: `${readyName(card.title, 30)} is ready`,
+    body: bits.join(" · "),
+    url: `spotter://ready/${card.id}`,
+    card: card.id,
+  };
+}
+
+/** The exact JSON body APNs carries for a ready card. The simulator fixture
+ *  (tools/ios/fixtures/card-ready.apns) is generated from this, as the
+ *  reminders' are from apnsPayload. */
+export function readyPayload(a: ReadyAlert): Record<string, unknown> {
+  return {
+    aps: {
+      alert: { title: a.title, body: a.body },
+      sound: "default",
+      // Its own stack in Notification Centre: a reminder and a new workout are
+      // different kinds of news.
+      "thread-id": "ready",
+      // The two actions. An install that predates them has no such category and
+      // shows the banner without buttons, which is harmless.
+      category: "CARD_READY",
+    },
+    // Peers of `aps`, as the reminders' link is: APNs drops custom keys inside it.
+    url: a.url,
+    card: a.card,
+  };
+}
+
+/** One ready notification to one device, collapsing onto the burst before it. */
+export async function sendApnsReady(
+  device: { token: string; bundle: string | null; env: string },
+  alert: ReadyAlert, cfg: Apns, nowMs = Date.now(), originFor = apnsOrigin,
+): Promise<ApnsResult> {
+  return await postApns(device, "spotter-ready", readyPayload(alert), cfg, nowMs, originFor);
+}
+
+/** A workouts row as the ready query reads it. */
+export type ReadyRow = { id: string; title?: string | null; blocks?: unknown; duration_minutes?: number | null };
+
+/**
+ * The whole decision, pure, so the harness can hold it: whether to send, how
+ * many cards the burst counts, and which one it names. `cards` are the
+ * candidates newest first (the card that just became ready among them);
+ * `started` the ids with a session, which are no longer news.
+ */
+export function readyNotice(
+  cardId: string, cards: ReadyRow[], started: string[], settings: unknown,
+): { send: false; why: string } | { send: true; count: number; alert: ReadyAlert } {
+  // Absent means on: the switch is only ever written to say Off.
+  if ((settings as { notifyReady?: unknown } | null)?.notifyReady === false) return { send: false, why: "switched off" };
+  // The card that set this off has to be one of them, ready; otherwise this
+  // would only repeat a banner the burst already showed.
+  if (!cards.some((c) => c.id === cardId)) return { send: false, why: "not ready" };
+  const gone = new Set(started);
+  const fresh = cards.filter((c) => !gone.has(c.id));
+  if (!fresh.length) return { send: false, why: "already started" };
+  const named = fresh.find((c) => c.id === cardId) ?? fresh[0];
+  return {
+    send: true,
+    count: fresh.length,
+    alert: readyAlert({
+      id: named.id, title: named.title ?? null, exercises: exercisesIn(named.blocks),
+      minutes: typeof named.duration_minutes === "number" ? named.duration_minutes : null,
+    }, fresh.length),
+  };
+}
+
+/**
+ * Tell this person's installs that `cardId` is ready. Called in the background
+ * by the ingest paths once the card is committed, and never awaited by them: a
+ * notification that cannot be sent must not fail the save it is about.
+ */
+export async function sendReady(
+  userId: string, cardId: string, nowMs = Date.now(), originFor = apnsOrigin,
+): Promise<{ sent: number; why: string }> {
+  const apns = apnsCfg();
+  if (!apns) return { sent: 0, why: "no APNs key" };
+  // Devices first: most people have none, and then nothing else is worth a read.
+  const devices = await readRows("push_devices", `user_id=eq.${userId}&select=token,bundle,env`) as unknown as Device[];
+  if (!devices.length) return { sent: 0, why: "no device" };
+  const since = new Date(nowMs - READY_WINDOW_MS).toISOString();
+  const [prof, jobs] = await Promise.all([
+    readRows("profiles", `id=eq.${userId}&select=settings`),
+    readRows("ingest_jobs",
+      `user_id=eq.${userId}&status=eq.done&finished_at=gte.${since}&meta->>notify_ready=eq.true&select=id`),
+  ]);
+  // A cache hit has no job to carry the mark, so every cache hit of the window
+  // counts — a save made inside the app a minute before a share too, and that
+  // burst reads "2 workouts are ready" and opens Workouts. Rare (two saves
+  // inside two minutes, one of them a cache hit made in the app), and harmless;
+  // telling them apart would need a mark on the card, which is a migration.
+  const or = [`id.eq.${cardId}`, `and(ingest_job_id.is.null,platform.neq.pumpy,created_at.gte."${since}")`];
+  if (jobs.length) or.push(`ingest_job_id.in.(${jobs.map((j) => String(j.id)).join(",")})`);
+  const cards = await readRows("workouts",
+    `user_id=eq.${userId}&ingest_status=eq.ready&or=(${encodeURIComponent(or.join(","))})` +
+    `&select=id,title,blocks,duration_minutes&order=created_at.desc&limit=20`) as unknown as ReadyRow[];
+  const ids = cards.map((c) => c.id);
+  const started = ids.length
+    ? await readRows("workout_logs", `user_id=eq.${userId}&workout_id=in.(${ids.join(",")})&select=workout_id`)
+    : [];
+  const n = readyNotice(cardId, cards, started.map((s) => String(s.workout_id)), prof[0]?.settings);
+  if (!n.send) {
+    console.log(`push: user ${userId} ready skipped(${n.why})`);
+    return { sent: 0, why: n.why };
+  }
+  let sent = 0;
+  for (const d of devices) {
+    try {
+      const r = await sendApnsReady(d, n.alert, apns, nowMs, originFor);
+      if (r.gone) {
+        await dropRow("push_devices", `token=eq.${encodeURIComponent(d.token)}`);
+        console.log(`push: user ${userId} ready dropped(${r.status} ${r.reason}, device gone)`);
+      } else if (r.status >= 300) {
+        console.error(`push: user ${userId} ready refused ${r.status} ${r.reason}`);
+      } else sent++;
+    } catch (e) {
+      console.error(`push: user ${userId} ready failed`, e);
+    }
+  }
+  console.log(`push: user ${userId} ready (${n.count}) sent to ${sent} of ${devices.length} device(s)`);
+  return { sent, why: sent ? "sent" : "not delivered" };
 }

@@ -34,6 +34,7 @@ function node(text) {
       add(c) { classes.add(c); }, remove(c) { classes.delete(c); }, contains(c) { return classes.has(c); },
     },
     setAttribute(k, v) { this.attrs[k] = v; },
+    blur() {},
   };
 }
 const dom = {
@@ -147,7 +148,7 @@ ok(run('failedKick(W, true)') === 'Failed' && run('failedKick(W, false)') === 'F
   'V-4: a failed upload (its file is gone) says "Failed" on the tile and above the title alike');
 ok(/tw\.appendChild\(icon\(el\("div", "noimg"\), pending \? stage\.glyph : failedGlyph\(w\)\)\);/.test(APP) &&
   /pending \? stage\.kick : failedKick\(w, true\)\)\);/.test(APP) &&
-  /\(isFailed\(w\) \? failedKick\(w, false\) : \(w\.category \|\| "Other"\)\)\)\);/.test(APP) &&
+  /isFailed\(w\) \? failedKick\(w, false\)\s*: \[w\.category \|\| "Other"/.test(APP) &&
   !/"Needs another try" : \(w\.category/.test(APP),
   'V-4: the library tile and the detail overline both ask failedKick / failedGlyph');
 
@@ -255,7 +256,9 @@ ok(/return doAdd\(true\)\.then\(function \(saved\) \{[\s\S]{0,200}if \(saved\) t
   const declined = APP.slice(APP.indexOf('  function aiDeclined('), APP.indexOf('\n', APP.indexOf('  function aiDeclined(')));
   vm.runInContext([declined, fn('cuttingFrames'), fn('doAdd'), fn('handleSharedUrl'),
     block('  var PARKED_MAX_MS = ', '  // ---------- upload a video from your phone ----------'),
-    'function resetUpload() {} function addMode() {} function load() { return Promise.resolve(); }'].join('\n'), c2);
+    // A cache hit now hands the card to the ready sheet (offerReady) once load() is back.
+    'function resetUpload() {} function addMode() {} function load() { return Promise.resolve(); }',
+    'function offerReady() {} function planWorkout() {}'].join('\n'), c2);
   const r2 = (code) => vm.runInContext(code, c2);
   for (const [answer, want, label] of [
     [{ status: 'processing', id: 'w1' }, true, 'a queued save'],
@@ -314,8 +317,8 @@ ok(!/configureSharing\([^)]*,\s*(r\.data\.plan|state\.profile && state\.profile\
 }
 
 // ---- S15 and the share flag ----
-ok(/if \(state\.user && !wo\) \{ pendPolls = 0; watchPending\(\); load\(\); takeParkedShare\(\); \}/.test(APP),
-  'native resume reloads under an open card or sheet, and restarts the pending poll');
+ok(/if \(state\.user && !wo\) \{ pendPolls = 0; watchPending\(\); load\(\)\.then\(readyOnOpen\); takeParkedShare\(\); \}/.test(APP),
+  'native resume reloads under an open card or sheet, restarts the pending poll, and then offers a card that became ready meanwhile');
 ok(/if \(wo\) \{ acquireWake\(\); return; \}\s*\n\s*watchBilling\(\);\s*\n\s*load\(\);/.test(APP),
   'a visible page reloads under an overlay too');
 ok((APP.match(/if \(fromShare\) sharing = false;/g) || []).length === 2,

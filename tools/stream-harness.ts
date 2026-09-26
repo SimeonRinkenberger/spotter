@@ -348,7 +348,7 @@ globalThis.fetch = realFetch;
 
 {
   const res = S.ndjsonResponse({ "Access-Control-Allow-Origin": "*" }, async (sink) => {
-    sink.send({ t: "status", text: "Looking through your library…" });
+    sink.send({ t: "status", text: "Looking through your workouts…" });
     sink.send({ t: "delta", text: "Three\nrounds." });
     sink.send({ t: "retract", chars: 6 });
   });

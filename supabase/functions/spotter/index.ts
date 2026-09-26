@@ -73,7 +73,7 @@ import { deauthorizeStrava, handleCallback, handleStrava, stravaGrantFor } from 
 import {
   deleteRevenueCatSubscriber, type Eraser, eraseAtProvider, type Provider as ErasureProvider, runErasureOutbox,
 } from "./erasure.ts";
-import { pushConfig, runPushTick, sendPush } from "./push.ts";
+import { pushConfig, runPushTick, sendPush, sendReady } from "./push.ts";
 import { opsScorecard, runOpsAlert } from "./ops.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById, standardOf } from "./catalog.ts";
 import { assertPublicUrl, checkUrl, dnsAvailable, safeFetch } from "./net.ts";
@@ -713,8 +713,8 @@ function capMessage(kind: LimitKind, plan: string, cap: number | null): string {
       // No "resets at midnight" here, because it never does: this is the shelf,
       // not the day. Says plainly what to do about it, and does not pretend the
       // workouts are at risk — nothing already saved is ever touched by a cap.
-      return `That is ${many("saved workout", "saved workouts")} — the whole ${p} library. ` +
-        "Everything you have saved stays; deleting one makes room for another.";
+      return `That is ${many("saved workout", "saved workouts")}, the most the ${p} plan keeps. ` +
+        "Everything you have saved stays; removing one makes room for another.";
     case "saves":
       return `That is today's ${many("save", "saves")} ${tail}`;
     case "extract":
@@ -1541,6 +1541,12 @@ type Meta = {
   // code that never existed. Set by a provider only on that positive answer, never
   // on a timeout or a login wall, because it makes the job final at attempt one.
   absent?: boolean;
+  // A save made outside the app — the Share Extension or Shortcut (the ingest
+  // key) or Android's share — whose card is announced when it is ready
+  // (push.ts, sendReady). Bookkeeping, not a scrape: it rides on the job's meta
+  // only because the job has no column for it, and a meta holding nothing else
+  // is read as "not scraped yet" (runJobGuarded).
+  notify_ready?: boolean;
 };
 
 // Successful-model state remains for the parser adapters; active routing uses
@@ -7062,7 +7068,7 @@ async function buildCard(
 function visionWarning(card: Card): string | null {
   if (!card.vision?.missing.length) return null;
   return "Read " + card.vision.completed.length + " of " + card.vision.total +
-    " images. Some workout details may be missing. Use Read it again in Options to retry.";
+    " images. Some workout details may be missing. Use Read it again to retry.";
 }
 
 /**
@@ -8373,14 +8379,14 @@ function suppliedMessage(meta: Meta, seeded: boolean): string {
  * goes back through the queue so it keeps the backoff and the dead-letter cutoff.
  */
 async function requeueWithMeta(
-  workoutId: string, userId: string, meta: Meta, cors: Cors,
+  workoutId: string, userId: string, meta: Meta, cors: Cors, notify = false,
 ): Promise<Response> {
   const q = (await rpc("requeue_ingest", { p_user: userId, p_workout: workoutId }))[0];
   if (!q) return json({ status: "error", message: "Not found." }, 404, cors);
   // Only a job this call created may be seeded. A job already in flight for this
   // video belongs to its own scrape — overwriting its meta would hand somebody
   // else's save our text.
-  const seeded = q.job_created ? await seedJobMeta(q.job_id, meta) : false;
+  const seeded = q.job_created ? await seedJobMeta(q.job_id, notify ? { ...meta, notify_ready: true } : meta) : false;
   console.log("requeued with supplied meta", workoutId, "job", q.job_id,
     q.job_created ? "(new)" : "(joined existing, not seeded)", "source:", meta.source);
   kickWorker();
@@ -8400,7 +8406,7 @@ async function requeueWithMeta(
  * an ordinary enqueue — the worker does not know or care that this one has no URL.
  */
 async function ingestUpload(
-  body: Record<string, unknown>, userId: string, cors: Cors,
+  body: Record<string, unknown>, userId: string, cors: Cors, notify = false,
 ): Promise<Response> {
   const t0 = Date.now();
   const ref = parseUploadPath(body.upload_path, userId);
@@ -8480,7 +8486,7 @@ async function ingestUpload(
   // `up-<uuid>` is unique per upload, so this cannot legitimately happen — a
   // repeated POST of the same path is the only way, and it is already saved.
   if (q.already) {
-    return json({ status: "exists", id: q.workout_id, message: "Already in your library." }, 200, cors);
+    return json({ status: "exists", id: q.workout_id, message: "Already in Workouts." }, 200, cors);
   }
 
   // Two things at once, and both matter.
@@ -8493,7 +8499,8 @@ async function ingestUpload(
   try {
     await dbPatch("ingest_jobs", `id=eq.${q.job_id}`, {
       max_attempts: 1,
-      meta: { caption: null, thumb: null, author: null, upload_path: ref.path, filename: filename || null },
+      meta: { caption: null, thumb: null, author: null, upload_path: ref.path, filename: filename || null,
+        ...(notify ? { notify_ready: true } : {}) },
       updated_at: new Date().toISOString(),
     });
   } catch (e) {
@@ -8563,8 +8570,13 @@ async function handleIngestPrepare(req: Request, userId: string, cors: Cors): Pr
     ai_consent: aiConsented(got.row?.settings), url: p.clean }, 200, cors);
 }
 
-async function handleIngest(req: Request, userId: string, cors: Cors): Promise<Response> {
+async function handleIngest(req: Request, userId: string, cors: Cors, viaKey = false): Promise<Response> {
   const t0 = Date.now();
+  // Made outside the app, so announced when ready (push.ts, sendReady): the ingest
+  // key is the Share Extension's and the Shortcut's, and Android's share goes
+  // through the app with `source: "share"`. Everything else is a save the person
+  // is watching happen.
+  let notify = viaKey;
   let shared = "";
   let html: string | null = null;
   let caption: string | null = null;
@@ -8579,10 +8591,11 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   if (ct.includes("json")) {
     let body: Record<string, unknown> | null = null;
     try { body = await req.json(); } catch (_) { body = null; }
+    if (body?.source === "share") notify = true;
     // No link, a file. The whole request is a different shape from here on, so it
     // gets its own function rather than five more branches in this one.
     if (body && typeof body.upload_path === "string") {
-      return await ingestUpload(body, userId, cors);
+      return await ingestUpload(body, userId, cors, notify);
     }
     shared = typeof body?.url === "string" ? body.url : "";
     const rawHtml = typeof body?.html === "string" ? body.html : "";
@@ -8695,13 +8708,13 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       if (overCap(counts.extracts, uc.caps.extract)) return extractLimitResponse(cors, uc, counts.extracts);
       const refused = await admitNow();
       if (refused) return refused;
-      return await requeueWithMeta(dupe[0].id, userId, supplied, cors);
+      return await requeueWithMeta(dupe[0].id, userId, supplied, cors, notify);
     }
     const processing = dupe[0].ingest_status === "processing";
     return await bail(json({
       status: processing ? "processing" : "exists",
       id: dupe[0].id, title: dupe[0].title,
-      message: processing ? "Already reading that one." : "Already in your library.",
+      message: processing ? "Already reading that one." : "Already in Workouts.",
     }, 200, cors));
   }
 
@@ -8750,7 +8763,7 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       // unique constraint rejects the second, which is correct, not an error.
       if (!String(e).includes("23505")) throw e;
       const again = await dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,title`);
-      return await bail(json({ status: "exists", id: again[0]?.id, title: again[0]?.title, message: "Already in your library." }, 200, cors));
+      return await bail(json({ status: "exists", id: again[0]?.id, title: again[0]?.title, message: "Already in Workouts." }, 200, cors));
     }
     // The ledger row is written after the answer, not before it: the card is
     // already the person's, and the row is metrics plus the daily save count,
@@ -8763,8 +8776,11 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
       "served in", Date.now() - t0, "ms");
     // The row is theirs either way — this only decides whether Spotter stops here
     // or goes and reads the video the cached card could not.
-    const upgraded = await upgradeCachedCard(userId, p, c, row.id, cors, premium, uc);
+    const upgraded = await upgradeCachedCard(userId, p, c, row.id, cors, premium, uc, notify);
     if (upgraded) return await bail(upgraded);
+    // Ready at once, so a share from another app hears so at once. Behind the
+    // answer, never in front of it.
+    if (notify) background(sendReady(userId, row.id));
     return await bail(json({
       status: "saved", cached: true, id: row.id, title: row.title,
       category: row.category, has_full_workout: row.has_full_workout, degraded: false,
@@ -8796,10 +8812,10 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
     if (supplied) {
       const again = await dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${sc}&select=id,ingest_status`);
       if (again[0]?.ingest_status === "failed") {
-        return await requeueWithMeta(again[0].id, userId, supplied, cors);
+        return await requeueWithMeta(again[0].id, userId, supplied, cors, notify);
       }
     }
-    return await bail(json({ status: "exists", id: q.workout_id, message: "Already in your library." }, 200, cors));
+    return await bail(json({ status: "exists", id: q.workout_id, message: "Already in Workouts." }, 200, cors));
   }
 
   console.log("enqueued", p.platform, p.shortcode, "job", q.job_id,
@@ -8822,14 +8838,23 @@ async function handleIngest(req: Request, userId: string, cors: Cors): Promise<R
   const seedMeta: Meta | null = supplied
     ? (frames ? { ...supplied, frames } : supplied)
     : (frames ? { caption: null, thumb: null, author: null, frames } : null);
+  // The ready mark goes on in the same write as whatever seeds the job, or on its
+  // own when nothing does — before the kick, like the seed, and only on a job this
+  // save created. A write that fails costs the notification, never the save.
+  const mark = notify && q.job_created ? { notify_ready: true } : null;
   // Saved first, frames after: a new job with no frames yet is held for them —
   // only when stills could change the read (CR-6). The plan is the server's, not
   // the hint the extension decided with, which can be a plan ago; a joined job
   // belongs to the save that started it.
   const holding = framesPending && !frames && q.job_created && framesCouldHelp(p, uc.plan, cached[0])
-    ? await holdForFrames(q.job_id, supplied) : false;
+    ? await holdForFrames(q.job_id, supplied, mark) : false;
   const seeded = holding ? !!supplied
-    : seedMeta && q.job_created ? await seedJobMeta(q.job_id, seedMeta) : false;
+    : seedMeta && q.job_created ? await seedJobMeta(q.job_id, mark ? { ...seedMeta, ...mark } : seedMeta) : false;
+  if (mark && !holding && !seedMeta) {
+    await dbPatchMany("ingest_jobs", `id=eq.${q.job_id}&status=eq.queued`,
+      { meta: mark, updated_at: new Date().toISOString() })
+      .catch((e) => console.error("could not mark job", q.job_id, "for a ready notification", e));
+  }
   if (seedMeta && !q.job_created) {
     // Another save of the same video is already in flight and owns the reading.
     console.log("joined an existing job for", p.shortcode, "— supplied meta not applied");
@@ -9078,6 +9103,16 @@ async function finishJob(
   if (committed.status !== "done") {
     console.warn("job completion rejected", job.id, committed.status);
     return;
+  }
+
+  // A share from another app is announced now that its card is ready. Finishing
+  // cleared the job's meta, so the mark goes back on the finished job first: it
+  // is how the next card of the same burst counts this one ("3 workouts are
+  // ready"). In the background, and never able to fail the card it is about.
+  if ((meta.notify_ready || job.meta?.notify_ready) && recipient?.id && committed.filled > 0) {
+    background(dbPatch("ingest_jobs", `id=eq.${job.id}&status=eq.done`, { meta: { notify_ready: true } })
+      .catch((e) => console.error("could not keep the ready mark on job", job.id, e))
+      .then(() => sendReady(job.user_id, recipient.id)));
   }
 
   // The rate-limit row was written at enqueue time so a burst could not slip past
@@ -9727,8 +9762,11 @@ async function runJobGuarded(job: Job): Promise<void> {
   // scraped like any other save and the frames ride along.
   const framesOnly = !job.meta?.caption && !job.meta?.supplied && !!(job.meta?.frames || job.meta?.hold_frames);
   const addressOnly = (!!job.meta?.upload_path && !job.meta?.caption) || framesOnly;
+  // Nor is a meta that holds only the ready mark (notify_ready): that is a share
+  // from another app still waiting for its first scrape.
+  const scraped = !!job.meta && Object.keys(job.meta).some((k) => k !== "notify_ready");
   let meta: Meta;
-  if (job.meta && !addressOnly) {
+  if (job.meta && scraped && !addressOnly) {
     meta = job.meta;
     // Supplied text is usually partial — a pasted caption carries no thumbnail and
     // no handle. Fill in only what is missing, once, and never fail over it.
@@ -9743,6 +9781,9 @@ async function runJobGuarded(job: Job): Promise<void> {
   } else {
     meta = await fetchMeta(p, job);     // throws: worth a retry, that is a network fault
     if (job.meta?.frames && p.platform !== "upload" && !meta.frames) meta.frames = job.meta.frames;
+    // Carried onto the scrape, which replaces the job's meta below: a retry after
+    // this point must still know to announce the card.
+    if (job.meta?.notify_ready) meta.notify_ready = true;
     // The platform answered that there is no such post. Asking again cannot
     // change that, and a card that spins for six minutes to say "tap to retry"
     // is the one outcome worse than saying so now.
@@ -10638,11 +10679,11 @@ const FRAMES_HOLD_MS = 20_000;
 const UNAVAILABLE_SENTENCE = "This post is private, deleted or unavailable to Spotter.";
 
 /** Hold a job this save just created until its frames arrive, or the hold ends. */
-async function holdForFrames(jobId: string, seed: Meta | null): Promise<boolean> {
+async function holdForFrames(jobId: string, seed: Meta | null, mark: Pick<Meta, "notify_ready"> | null = null): Promise<boolean> {
   try {
     const held = await dbPatchMany("ingest_jobs", `id=eq.${jobId}&status=eq.queued`, {
       step: seed ? "card" : "meta",
-      meta: { ...(seed ?? { caption: null, thumb: null, author: null }), hold_frames: true },
+      meta: { ...(seed ?? { caption: null, thumb: null, author: null }), hold_frames: true, ...mark },
       run_after: new Date(Date.now() + FRAMES_HOLD_MS).toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -10951,7 +10992,7 @@ async function handleReadVideo(
  */
 async function upgradeCachedCard(
   userId: string, p: Parsed, cached: any, workoutId: string, cors: Cors,
-  premium?: boolean, known?: UserCaps,
+  premium?: boolean, known?: UserCaps, notify = false,
 ): Promise<Response | null> {
   if (visuallyRead(cached)) return null;
   // The save already knows both of these; asking again was two more hops on
@@ -10975,7 +11016,9 @@ async function upgradeCachedCard(
   if (q.job_created) {
     const seed = mediaSeed(cached, { caption: cached.caption, author: cached.author, thumb_url: cached.thumb_url });
     try {
-      await jobStep(q.job_id, seed.step, { meta: seed.meta, card: seed.card });
+      // A share from another app is announced once this read delivers, not now:
+      // the card is still being read.
+      await jobStep(q.job_id, seed.step, { meta: notify ? { ...seed.meta, notify_ready: true } : seed.meta, card: seed.card });
     } catch (e) {
       console.error("could not seed the cache-upgrade job", q.job_id, e);
     }
@@ -13363,7 +13406,7 @@ export async function validateProposal(userId: string, p: any): Promise<PumpyPro
     return {
       kind, title: card.title, category: card.category, difficulty: card.difficulty,
       duration_minutes: card.duration_minutes, equipment: card.equipment, muscle_groups: card.muscle_groups,
-      blocks: card.blocks, summary: summary || `Save "${card.title}" to your library`,
+      blocks: card.blocks, summary: summary || `Save "${card.title}" to Workouts`,
     };
   }
 
@@ -13428,7 +13471,7 @@ async function execProposal(userId: string, p: PumpyProposal, model: string | nu
   }
   if (p.kind === "append_exercises") {
     const rows = await dbSelect("workouts", `id=eq.${p.workout_id}&user_id=eq.${userId}&select=*`);
-    if (!rows.length) throw new Error("That workout is no longer in your library.");
+    if (!rows.length) throw new Error("That workout is no longer in Workouts.");
     const w = rows[0];
     const blocks: any[] = Array.isArray(w.blocks) ? deepCopy(w.blocks) : [];
     const exs = p.exercises.map((e) => ({ ...e, added_by_pumpy: true }));
@@ -13549,7 +13592,7 @@ const PUMPY_STATIC = [
   'When an exercise is taken from one of the user\'s saved workouts, set that exercise\'s "from" to that ' +
   "workout's id — only ever the id of a workout that really contains the movement, otherwise leave it out — and " +
   "in say name the workouts you drew from by their titles.",
-  "Rules: spell exercises the way the catalog does when the catalog has them; favourites (★) and collections tell " +
+  "Rules: spell exercises the way the catalog does when the catalog has them; favorites (★) and collections tell " +
   "you what the user likes, and when the user names something like 'my leg day' or 'hotel gym', a collection with " +
   "that name identifies the workouts they mean — use it before asking; when a saved workout fits, prefer it to " +
   "inventing one; balance a week — do not stack the same muscles on consecutive days and leave rest days; respect " +
@@ -13823,7 +13866,7 @@ export function makeSayGate(limit: number): SayGate {
 
 /** What the user reads while a tool runs. Specific, per Apple's rule against "loading". */
 export const PUMPY_TOOL_STATUS: Record<string, string> = {
-  list_library: "Looking through your library…",
+  list_library: "Looking through your workouts…",
   get_workout: "Reading that workout…",
   get_exercise_detail: "Watching how they did it…",
   search_catalog: "Checking the exercise catalog…",
@@ -15526,7 +15569,7 @@ Deno.serve(async (req: Request) => {
     return await guardedUserRequest(req, path, userId, cors, async () => {
     if (req.method === "POST" && path === "/api/uploads/authorize") return (await freeTick) ?? await authorizeUpload(req, userId!, cors);
     if (req.method === "POST" && path === "/api/ingest/prepare") return (await freeTick) ?? await handleIngestPrepare(req, userId, cors);
-    if (req.method === "POST" && path === "/api/ingest") return (await freeTick) ?? await handleIngest(req, userId, cors);
+    if (req.method === "POST" && path === "/api/ingest") return (await freeTick) ?? await handleIngest(req, userId, cors, viaKey);
 
     const reproc = path.match(/^\/api\/workouts\/([0-9a-f-]{36})\/reprocess$/);
     if (req.method === "POST" && reproc) return await handleReprocess(reproc[1], userId, req, cors);

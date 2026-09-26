@@ -130,7 +130,7 @@ function saveFixture(settings) {
   const t = fixture(settings);
   const toasts = [], opened = [];
   t.nodes.set('addurl', { value: 'https://www.tiktok.com/@a/video/1' });
-  t.nodes.set('addgo', { disabled: false, textContent: 'Save workout' });
+  t.nodes.set('addgo', { disabled: false, textContent: 'Add video' });
   Object.assign(t.c, {
     toast: (m) => toasts.push(m), sharing: true, cuttingFrames: () => false, deviceFrames: () => Promise.resolve(null),
     isFree: () => false, withShelf: (m) => m, placePending() {}, limitHit: () => false, load: () => Promise.resolve(),
@@ -148,7 +148,7 @@ function saveFixture(settings) {
   assert.equal(await saved, false, 'save: nothing saved');
   assert.deepEqual(t.toasts, [], 'save: no "Could not reach Spotter" after Not now');
   assert.equal(t.nodes.get('addgo').disabled, false);
-  assert.equal(t.nodes.get('addgo').textContent, 'Save workout');
+  assert.equal(t.nodes.get('addgo').textContent, 'Add video');
   assert.equal(t.nodes.get('addurl').value, 'https://www.tiktok.com/@a/video/1', 'save: the link stays in the box');
   assert.equal(t.opened.pop(), 'addsheet', 'save: a shared link is put back in the add sheet');
   assert.equal(t.c.sharing, false);

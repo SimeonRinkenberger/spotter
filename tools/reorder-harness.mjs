@@ -100,9 +100,9 @@ ok('keys name every stored section and exercise once, in the order shown', () =>
   assert.deepEqual(run('ordKey("s1")'), { b: 1, e: null });
 });
 
-ok('an untitled block keeps the name the card gave it, however far it moves', () => {
+ok('an untitled section keeps the name the card gave it, however far it moves', () => {
   vm.runInContext('var PLAIN = [{ title: null, exercises: [{ name: "A" }] }, { title: null, exercises: [{ name: "B" }] }];', ctx);
-  assert.equal(run('ordTitle(PLAIN, 1)'), 'Block 2');
+  assert.equal(run('ordTitle(PLAIN, 1)'), 'Section 2');
   assert.equal(run('ordTitle([{ title: null, exercises: [] }], 0)'), 'Exercises');
   assert.equal(run('ordLabel(CARD, "e1.0")'), 'Goblet Squat');
   assert.equal(run('ordLabel(CARD, "s2")'), 'Finisher');
@@ -229,7 +229,7 @@ ok('arrow keys and Escape work the selection, and Escape puts it down before the
   assert(wire.includes('e.key === "Escape"') && wire.includes('e.stopImmediatePropagation()'));
   assert(wire.includes('ordArrow(ord.sel, e.key === "ArrowUp" ? -1 : 1)'));
   // Registered before the shared Escape/Tab loop that closes sheets.
-  assert(src.indexOf('sheet.addEventListener("keydown"') < src.indexOf('"restsheet", "sectionsheet", "ordersheet"].forEach(function (id) {'));
+  assert(src.indexOf('sheet.addEventListener("keydown"') < src.indexOf('$(id).addEventListener("keydown", function (e) {'));
   // Every arrow is a labelled button; the drag handle is hidden from assistive tech.
   const row = fn('ordRow');
   assert(row.includes('b.setAttribute("aria-label", "Move " + title + a[2]);'));

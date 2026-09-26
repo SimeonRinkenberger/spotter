@@ -173,15 +173,15 @@ enum SharedLink {
         }
     }
     /// The server has not been given the extension's upload door yet.
-    static let videoNotHereYet = "Spotter can’t take videos from the share sheet yet. Open Spotter, tap Save workout, then Upload a video from your phone."
+    static let videoNotHereYet = "Spotter can’t take videos from the share sheet yet. Open Spotter, tap Add video, then Upload a video from your phone."
     static let uploadFailedMessage = "The video didn’t finish uploading. Check your connection and try again."
 
     static func savedMessage(status: Int, body: [String: Any]) -> String? {
         guard (200..<300).contains(status), let id = body["id"] as? String, !id.isEmpty else { return nil }
         switch body["status"] as? String {
-        case "processing": return "Saved to your library. Spotter is reading the workout."
-        case "exists": return "Already in your Spotter library."
-        case "saved": return "Saved to your Spotter library."
+        case "processing": return "Saved to Workouts. Spotter is reading it now."
+        case "exists": return "Already in Workouts."
+        case "saved": return "Saved to Workouts — ready to train."
         default: return nil
         }
     }

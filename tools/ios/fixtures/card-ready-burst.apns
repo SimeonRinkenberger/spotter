@@ -1,0 +1,14 @@
+{
+  "Simulator Target Bundle": "app.spotter.dev",
+  "aps": {
+    "alert": {
+      "title": "3 workouts are ready",
+      "body": "Latest: Pull Day Routine · Start now or plan it"
+    },
+    "sound": "default",
+    "thread-id": "ready",
+    "category": "CARD_READY"
+  },
+  "url": "spotter://tab/library",
+  "card": "7c1f2a9e-3b4d-4e5f-8a6b-9c0d1e2f3a4b"
+}

@@ -1,4 +1,4 @@
-// The Save workout sheet leads with sharing in the app and with the link box on
+// The Add video sheet leads with sharing in the app and with the link box on
 // the web. Checked here, per platform (iOS app, Android app, web):
 //   - which block comes first when the sheet opens, and that a link put back
 //     after a failed share still opens the box-first sheet;
@@ -91,7 +91,7 @@ const SHEET = between(MARKUP, '<div class="sheet" id="addsheet">', '<div class="
 const at = (s) => { const i = SHEET.indexOf(s); assert(i >= 0, 'the add sheet lost ' + s); return i; };
 ok(at('id="addlede"') < at('class="sharehow"') && at('class="sharehow"') < at('class="orpaste"') &&
   at('class="orpaste"') < at('id="addurl"') && at('id="addurl"') < at('id="addgo"') && at('id="addgo"') < at('id="uploadrow"'),
-  'the add sheet reads: title, lede, the share row, "Or paste a link", the box, Save workout, Upload');
+  'the add sheet reads: title, lede, the share row, "Or paste a link", the box, Add video, Upload');
 ok(/<div class="orpaste">Or paste a link<\/div>/.test(SHEET), 'the box is headed as the second way: "Or paste a link"');
 const FLOW = between(SHEET, '<ol class="shareflow">', '</ol>', 'the share row');
 const steps = [...FLOW.matchAll(/<li([^>]*)>([\s\S]*?)<\/li>/g)].map((m) => ({ on: (/data-on="([^"]+)"/.exec(m[1]) || [])[1] || null, words: text(m[2]) }));
@@ -112,7 +112,7 @@ ok(STYLE.includes('.sharehow, .orpaste { display: none; }') && STYLE.includes('#
 ok((STYLE.match(/\.sharehow[^{]*\{[^}]*display/g) || []).length === 2,
   'nothing else decides whether the share row shows');
 ok(/#addsheet\.share:has\(#addurl:placeholder-shown\) #addgo \{ background: var\(--sand\)/.test(STYLE),
-  'in share mode Save workout is quiet until a link is in the box, and ember once one is');
+  'in share mode Add video is quiet until a link is in the box, and ember once one is');
 ok(/@media \(prefers-reduced-motion: reduce\) \{\s*#addsheet\.open \.sfmark::after, #addsheet\.open \.sfmark\.app::after \{ animation: none; \}/.test(STYLE),
   'the ring that walks the row stands still under reduced motion');
 ok(/#addsheet\.attach \.field, #addsheet\.attach #addgo \{ display: none; \}/.test(STYLE) && /#addsheet\.attach \.webnote \{ display: none; \}/.test(STYLE),
@@ -183,7 +183,7 @@ ok(has(ios, /tap Share, then More, then Spotter/) && has(android, /tap Share, th
   has(web, /In the Spotter app — tap Share/) && !has(web, /then More, then Spotter/),
   'Settings › Save from your phone says what the sheet says, per platform');
 const PHONE = between(MARKUP, '<details class="disclosure" id="phonesave">', '<h3 class="seth">Data', 'Settings');
-ok(/<p class="lede"><b>Or<\/b> copy the video’s link and paste it into <b>Save workout<\/b>\.<\/p>/.test(PHONE),
+ok(/<p class="lede"><b>Or<\/b> copy the video’s link and paste it into <b>Add video<\/b>\.<\/p>/.test(PHONE),
   'and on every platform, the link box as the other way');
 ok(!/nativesharehelp|Android<\/b> — install Spotter/.test(MARKUP) && !/shortcutsetup"\)\.classList/.test(APP),
   'the old per-platform toggles are gone, so nothing re-shows a line paintSaveOn hid');
@@ -218,7 +218,7 @@ ok(run('(native = { platform: "ios" }, shareWords())') === 'tap Share, then More
     'Android first run: Share › Spotter');
   ok(!flowOf(e3) && /Paste a TikTok, Instagram, or YouTube link to get started\./.test(words(e3)),
     'web first run: paste a link, as before');
-  ok([e1, e2, e3].every((e) => e.children.some((n) => n.textContent === 'Save your first workout')),
+  ok([e1, e2, e3].every((e) => e.children.some((n) => n.textContent === 'Add video')),
     'every platform keeps the one button into the sheet');
   ok(steps.length === 3 && flow.children.every(visible), 'the sheet\'s own row is copied, never moved or repainted');
 }
@@ -259,12 +259,12 @@ ok(run('(native = { platform: "ios" }, shareWords())') === 'tap Share, then More
   vm.runInContext('D.addbtn.value = ""; D.addurl.value = "https://x"; calls = []', c);
   d.addbtn.onclick();
   ok(JSON.stringify(c.calls) === '["resetUpload","addMode:null","open:addsheet"]' && d.addurl.value === '',
-    '+ Save workout empties the box, resets the upload, picks the mode, then opens the sheet');
+    '+ Add video empties the box, resets the upload, picks the mode, then opens the sheet');
   vm.runInContext('calls = []', c); d.addgo.onclick({ type: 'click' });
   d.addurl.listeners.keydown.forEach((f) => f({ key: 'Enter' }));
   d.addurl.listeners.keydown.forEach((f) => f({ key: 'a' }));
   ok(JSON.stringify(c.calls) === '["doAdd:undefined","doAdd:undefined"]',
-    'Save workout and Enter in the box both save the link (never as a share)');
+    'Add video and Enter in the box both save the link (never as a share)');
   vm.runInContext('calls = []', c); d.uploadrow.onclick();
   ok(d.addfile.clicked === 1 && c.calls[0] === 'upError:', 'the upload row still opens the file picker');
   d.addfile.onchange.call({ files: [{ name: 'clip.mp4' }] });

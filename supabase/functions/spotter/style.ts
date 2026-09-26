@@ -92,13 +92,13 @@ export const STYLE = String.raw`<style>
   .iconbtn .ic { width: 18px; height: 18px; }
   .addbtn .ic { width: 20px; height: 20px; }
   .addbtn.ghost .ic { width: 18px; height: 18px; }
-  .chip .ic, .mbtn .ic, .btn .ic { width: 15px; height: 15px; }
+  .chip .ic, .btn .ic { width: 15px; height: 15px; }
   .exhelp .ic, .colrow .mark .ic, .daydone .ic { width: 14px; height: 14px; }
   .searchico .ic { width: 16px; height: 16px; }
   .stepper button .ic { width: 20px; height: 20px; }
   /* Every control that used to centre a glyph with line-height now has a box to
      centre instead, and a box only centres inside a flex container. */
-  .addbtn, .planx, .pumpyctx button, #hint button, .stepper button {
+  .addbtn, .pumpyctx button, .stepper button {
     display: flex; align-items: center; justify-content: center; }
   .btn { display: flex; align-items: center; justify-content: center; gap: 7px; }
   .daydone { display: inline-flex; align-items: center; gap: 4px; }
@@ -275,11 +275,12 @@ export const STYLE = String.raw`<style>
   header { position: absolute; top: 0; left: 0; right: 0; z-index: 20;
     padding: calc(12px + env(safe-area-inset-top)) 18px 12px; }
   /* The hairline belongs at the bottom of the whole translucent bar, and on
-     Library that bar ends at the search field, which carries its own and slides
-     away with the page. --x is the track position in pages, so the two lines
-     cross-fade: mid-swipe you see half of each instead of both at full strength. */
+     Workouts (the second page) that bar ends at the search field, which carries
+     its own and slides away with the page. --x is the track position in pages,
+     so the two lines cross-fade: mid-swipe you see half of each instead of both
+     at full strength. */
   header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
-    background: var(--line); opacity: clamp(0, var(--x, 0), 1); }
+    background: var(--line); opacity: clamp(0, max(var(--x, 0) - 1, 1 - var(--x, 0)), 1); }
   .titlerow { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
   .tstack { flex: 1 1 auto; min-width: 0; }
   h1 { font-family: var(--display); font-size: 27px; margin: 0; font-weight: 700;
@@ -297,7 +298,26 @@ export const STYLE = String.raw`<style>
   .ts:nth-child(1) { --i: 0; }
   .ts:nth-child(2) { --i: 1; }
   .ts:nth-child(3) { --i: 2; }
-  .hbtns { display: flex; gap: 8px; }
+  .hbtns { display: flex; gap: 8px; position: relative; }
+  /* Train's streak and ring sit left of the buttons without taking their room:
+     out of the flow, so the gear and the + never move as the page changes, and
+     faded by the pager's own --x the way the titles are. Only Train can tap them. */
+  .trainstat { position: absolute; right: calc(100% + 10px); top: 50%; display: flex;
+    align-items: center; gap: 10px; transform: translateY(-50%);
+    opacity: clamp(0, calc(1 - var(--x, 0) * 1.6), 1); pointer-events: none; }
+  header.ontrain .trainstat { pointer-events: auto; }
+  /* One add button, two sizes: the word shows on Workouts, where saving is the
+     page's job, and folds away to a + on Train and Pumpy. Switched when the page
+     is decided rather than per frame, so a drag never relays out the header. */
+  #addbtn .addword { display: inline-block; max-width: 0; opacity: 0; overflow: hidden;
+    transition: max-width var(--t-2) var(--e-out), opacity var(--t-1) var(--e-soft); }
+  header.onlib #addbtn .addword { max-width: 96px; opacity: 1; }
+  #addbtn { min-width: 44px; justify-content: center;
+    transition: padding var(--t-2) var(--e-out), gap var(--t-2) var(--e-out); }
+  header:not(.onlib) #addbtn { padding: 0 10px; gap: 0; }
+  @media (prefers-reduced-motion: reduce) {
+    #addbtn, #addbtn .addword { transition: opacity var(--t-1) var(--e-soft); }
+  }
 
   /* ---------- the pager ----------
      No touch-action on purpose. Asking for pan-y let WebKit start scrolling
@@ -315,7 +335,7 @@ export const STYLE = String.raw`<style>
   .track.dragging { will-change: transform; }
   .page { flex: 0 0 100%; height: 100%; overflow-x: hidden; overflow-y: auto;
     overscroll-behavior-x: auto; overscroll-behavior-y: contain;
-    -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--ptab, 78px) + 24px); }
+    -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--ptab, 78px) + var(--pbar, 0px) + 24px); }
   /* The header's height as a real box rather than the scroller's top padding:
      engines disagree about which edge a sticky inset inside a PADDED scroller
      is measured from, and with no padding there is nothing to disagree about.
@@ -340,7 +360,7 @@ export const STYLE = String.raw`<style>
     background: color-mix(in srgb, var(--paper) 84%, transparent);
     -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); }
   .searchwrap::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
-    background: var(--line); opacity: calc(1 - clamp(0, var(--x, 0), 1)); }
+    background: var(--line); opacity: calc(1 - clamp(0, max(var(--x, 0) - 1, 1 - var(--x, 0)), 1)); }
   /* Spanning the input's own band rather than half of a padded box, so the mark
      stays on the field's mid-line whatever the field's height turns out to be. */
   .searchico { position: absolute; left: 32px; top: 8px; bottom: 12px;
@@ -379,19 +399,13 @@ export const STYLE = String.raw`<style>
     .searchx > span, #searchwrap:focus-within .searchx > span { transform: none; transition: none; }
   }
 
-  /* ---------- filter chips ---------- */
-  /* This row used to ask for horizontal pans back, because the pager was taking
-     them away at the top. It no longer takes them, so there is nothing to ask. */
-  /* The row's side inset lives on the end chips, not on the scroller: Blink measures
-     a sticky inset from the scrollport's content box and WebKit from its padding box,
-     so a padded scroller pins the Sort chip 18px apart on the two engines. With no
-     horizontal padding there is nothing for them to disagree about. */
-  .chips { display: flex; gap: 7px; overflow-x: auto; padding: 14px 0 6px; scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
-    mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%); }
-  .chips::-webkit-scrollbar { display: none; }
-  .chips > :first-child { margin-left: 18px; }
-  .chips > :last-child { margin-right: 18px; }
+  /* ---------- filter chips ----------
+     The library's row wraps rather than scrolls, so every way to narrow the grid
+     has a name on screen (7 Sept). It was drawn as a sideways scroller — edge
+     fade, hidden scrollbar, the inset on its end chips — and then told to wrap
+     by a rule further down; the row is only ever this now, inset on the box so a
+     second line keeps it too. */
+  .chips { display: flex; flex-wrap: wrap; gap: 7px; padding: 14px 18px 6px; }
   .chip { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px;
     border: none; background: var(--sand); color: var(--ink-2);
     border-radius: 999px; padding: 9px 14px; font-size: 13px; font-weight: 600; line-height: 1;
@@ -402,37 +416,11 @@ export const STYLE = String.raw`<style>
   .chip.active { background: var(--ember); color: var(--on-ember); box-shadow: 0 3px 12px var(--glow); }
   .chip .n { opacity: .5; font-weight: 700; margin-left: 5px; font-size: 11px; font-variant-numeric: tabular-nums; }
   .chip.active .n { opacity: .75; }
-  /* ---------- today ----------
-     The Plan's own day card, borrowed to answer the question the app is opened
-     with. It sits beside the chip row and hides with it: the view switch turns
-     that row off when the Library is not on screen, and this has to leave too
-     rather than sit on top of the Plan. Trained already and the ember goes —
-     nothing left to do here today. */
-  .todaywrap { padding: 12px 18px 0; }
-  .chips.hide + .todaywrap { display: none; }
-  /* ---------- a paused session ----------
-     The card the Library leads with while a workout is waiting: what was paused,
-     how far it got, one button that picks it up. It used to be a toast for
-     thirty seconds and then nothing — a session the reader had every intention
-     of finishing, gone from sight behind a grid of other cards. Same card as
-     Today, ember all round so it reads as the thing to do, and it stays until
-     the session is resumed or ended. */
-  .resumewrap { padding: 12px 18px 0; }
-  .resumewrap .daycard { margin-bottom: 0; border-color: var(--ember); }
-  .resumewrap .dayname { color: var(--ember-ink); }
-  .resumewrap .tclock { font-family: var(--display); font-size: 13px; font-weight: 700; color: var(--muted);
-    font-variant-numeric: tabular-nums; }
-  .resumewrap .tbtns { margin-top: 12px; }
-  .resumewrap .tend { flex: 0 0 auto; width: auto; padding: 12px 16px; font-size: 14px; }
-  .resumewrap .tstart { flex: 1; }
-  .todaywrap .daycard { margin-bottom: 0; }
-  .todaywrap .daycard.done { border-color: var(--line); }
-  .todaywrap .daycard.done .dayname { color: var(--muted); }
+  /* Train's day card: its title and its dose line. */
   .ttitle { display: block; width: 100%; text-align: left; border: none; background: none;
     padding: 3px 0 0; color: var(--ink); font-family: var(--display); font-size: 18px;
     font-weight: 700; line-height: 1.22; letter-spacing: -.015em; }
   .tdose { font-size: 12.5px; color: var(--muted); margin: 5px 0 12px; }
-  .tstart { padding: 12px; font-size: 14.5px; border-radius: 12px; }
 
   /* ---------- collections ----------
      A collection is the general form of a favourite: the same chip row, the same
@@ -519,10 +507,12 @@ export const STYLE = String.raw`<style>
   .thumbwrap.loaded img { opacity: 1; transform: none; }
   /* Card art is the face of a card, not a photo to keep: held, it opened iOS's image
      menu (Share / Save to Photos / Copy) over the Library, on top of the press the card
-     answers itself. Library grid, Train's rows and pickers, and the detail's source chips.
+     answers itself. The Workouts grid, the pickers, the detail's source chips, the
+     card's cover, Up next's cover, the Ready to try shelf and the ready sheet (a drag
+     in the shelf would otherwise pick the picture up instead of scrolling).
      The source photo (.dphoto) and the share card (.scprev, #proof) keep the menu:
      those are pictures, and keeping one is a fair thing to want. */
-  .thumbwrap img, .tthumb, .planitem img, .pickrow img, .fromthumb img {
+  .thumbwrap img, .pickrow img, .fromthumb img, .dcover img, .tcover img, .shelfart img, .readycover {
     -webkit-touch-callout: none; -webkit-user-drag: none; -webkit-user-select: none; user-select: none; }
   /* Finite sweep on purpose: lazy images far below the fold stay pending indefinitely,
      and an infinite animation per card would keep the compositor busy all session. */
@@ -537,10 +527,27 @@ export const STYLE = String.raw`<style>
   .fav { position: absolute; top: 9px; right: 9px; z-index: 2; width: 27px; height: 27px;
     display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1;
     background: rgba(10,14,20,.46); border-radius: 999px; color: #FFC9A8; }
-  .durbadge { position: absolute; left: 9px; bottom: 9px; z-index: 2; font-size: 10.5px; font-weight: 700;
-    letter-spacing: .02em; font-variant-numeric: tabular-nums;
-    color: #fff; background: rgba(10,14,20,.56); padding: 4px 8px;
-    border-radius: 999px; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  /* The two marks a picture carries share one geometry: the video's length, and
+     the card's one status (app.ts, cardNode). The status holds the bottom-left
+     corner on every card. The length gave that corner up and went to the top:
+     at 375px a card is 163px wide, and "Done 3× · Sep 21" with "45 min" beside
+     it is 190 — the pair would have fitted beside each other on no status but
+     "New". */
+  .durbadge, .stpill { position: absolute; z-index: 2; display: flex; align-items: center; gap: 4px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .02em; font-variant-numeric: tabular-nums;
+    padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+  .durbadge { left: 9px; top: 9px; color: #fff; background: rgba(10,14,20,.56);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+  /* Solid, so a word on a photograph is still a word. New is the quietest of the
+     three — a dot, no mark — because on a young shelf most cards say it. */
+  .stpill { left: 9px; bottom: 9px; background: var(--card); color: var(--ink);
+    box-shadow: 0 1px 3px rgba(10,14,20,.24); }
+  .stpill .ic { stroke-width: 2.6; }
+  .stpill.new { background: var(--ember-soft); color: var(--ember-ink); }
+  .stpill.new::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--ember); }
+  /* No soft green in the palette: these are --good at AA on them, 4.56 and 7.2. */
+  .stpill.done { background: #EFF8F3; color: var(--good); }
+  @media (prefers-color-scheme: dark) { .stpill.done { background: #173026; } }
   .cardbody { padding: 11px 3px 0; min-width: 0; }
   .cardkick { display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
     margin-bottom: 5px; min-width: 0; }
@@ -642,6 +649,51 @@ export const STYLE = String.raw`<style>
   .dnav button:first-child .ic { transform: rotate(180deg); }
   .dnav.gone, .dnav .gone { opacity: 0; visibility: hidden; pointer-events: none; }
   .dinner { padding: 4px 18px calc(46px + var(--sab)); max-width: 720px; margin: 0 auto; }
+  /* The dock's height and the home indicator under it: the last row always clears it. */
+  #detail.docked .dinner { padding-bottom: calc(96px + var(--sab)); }
+  /* ---------- the dock ----------
+     Start and Plan, pinned under the card in the tab bar's glass, the home
+     indicator's inset beneath: one prominent button and one quiet one, which is
+     the HIG's budget for a view. Fixed to the screen rather than riding in the
+     card's flow, so the card-to-card lean leaves it where the thumb expects it;
+     the edge swipe carries it off with the card. It fades out of the keyboard's
+     way while a field on the card has focus (a fade, so reduced motion needs
+     nothing of its own). */
+  .ddock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: flex; gap: 10px;
+    padding: 10px max(18px, calc(50% - 342px)) calc(10px + var(--sab));
+    background: color-mix(in srgb, var(--paper) 84%, transparent); box-shadow: 0 -1px 0 var(--line);
+    -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); transition: opacity var(--t-2) var(--e-soft); }
+  #detail:not(.docked) .ddock { display: none; }
+  .ddock .btn { min-height: 50px; }
+  #dplan { flex: 0 0 auto; width: auto; padding: 14px 20px; }
+  #detail:has(textarea:focus, input:focus, select:focus) .ddock { opacity: 0; pointer-events: none; }
+  /* ---------- the cover ----------
+     The thumbnail at 16:9, the way a recipe card leads with its dish: the fastest
+     way to know which workout this is, and on a video card the way to the video.
+     Sand until the picture lands, then the picture fades in — opacity only, and
+     not at all when it was already cached. */
+  .dcover { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; margin: 2px 0 16px;
+    padding: 0; border: 0; border-radius: 20px; overflow: hidden; background: var(--sand);
+    box-shadow: var(--sh-sm); transition: transform var(--t-1) var(--e-out); }
+  button.dcover:active { transform: scale(.985); }
+  /* Most saves are portrait video: the band a third of the way down holds the
+     person, where the centre held a forearm. */
+  .dcover img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 32%; opacity: 0;
+    transition: opacity var(--t-3) var(--e-out); }
+  .dcover.in img { opacity: 1; }
+  .dcover.now img { transition: none; }
+  .dcover.noart img { visibility: hidden; }
+  /* What the tap does, said on the picture in dark glass, so the words hold on
+     any frame: white on it measures over 5:1 even above a white one. */
+  .dplay { position: absolute; left: 10px; bottom: 10px; display: flex; align-items: center; gap: 6px;
+    padding: 7px 12px 7px 10px; border-radius: 999px; background: rgba(12,14,18,.62); color: #fff;
+    font-size: 12.5px; font-weight: 650; }
+  .dplay .ic, .dwatch .ic { fill: currentColor; }
+  /* One line of facts and one of gear, both text, under the handle. */
+  .workout-meta { margin: 2px 0 3px; color: var(--ink-2); font-size: 13.5px; font-weight: 550;
+    font-variant-numeric: tabular-nums; }
+  .dgear { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  .dwatch { margin: 2px 0 12px; min-height: 44px; }
   /* A lean pushes the card's right edge past the overlay: clipped, or the scroller
      it lives in grows a sideways scroll and refuses the drag that caused it. */
   #detail { overflow-x: hidden; }
@@ -679,38 +731,16 @@ export const STYLE = String.raw`<style>
     transition: color var(--t-1) var(--e-soft); }
   .dauthor:active { color: var(--ember-ink); }
   /* ---------- managing a card ----------
-     Rename, collections and remove as one row, in the same quiet card style as
-     .sect. Favourite stays in the top bar: it is a state, these are actions. */
-  .managerow { display: flex; gap: 8px; margin: 0 0 12px; }
-  .mbtn { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--card);
-    color: var(--ink-2); border-radius: 13px; padding: 10px 8px; font-size: 12.5px; font-weight: 650;
-    display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: var(--sh-sm);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1;
-    transition: transform var(--t-1) var(--e-out), background-color var(--t-2); }
-  .mbtn:active { transform: scale(.96); }
-  .mbtn .n { font-size: 11px; opacity: .6; font-variant-numeric: tabular-nums; }
-  .mbtn.on { background: var(--ember-soft); color: var(--ember-ink); border-color: transparent; }
-  .mbtn.quiet { color: var(--muted); }
+     Rename, collections and remove live in the ⋯ Workout sheet (.mlist); the
+     collections a card is in show as pills under Notes and category. */
   .colpills { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 16px; }
   .colpills .pill { border: none; cursor: pointer; font-family: var(--sans); }
   .pillrow { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
   .pill { font-size: 12px; font-weight: 600; padding: 7px 11px; border-radius: 999px;
     background: var(--sand); color: var(--ink-2); line-height: 1; }
   .pill.accent { background: var(--ember-soft); color: var(--ember-ink); }
-  /* Content-sized rather than four equal quarters: the values are a duration, a
-     count and a word, and "Intermediate" needs more room than "3". Equal cells
-     made the longest one bleed into its own padding. Each still grows into the
-     leftover, so the strip is full width whatever it is holding. */
-  .spec { flex: 1 1 auto; padding: 13px 8px; text-align: center;
-    border-right: 1px solid var(--line); min-width: 0; }
-  .spec:last-child { border-right: none; }
-  .spec .v { font-family: var(--display); font-size: 17px; font-weight: 700; letter-spacing: -.012em;
-    color: var(--ink); font-variant-numeric: tabular-nums; }
-  .spec .k { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 4px; }
-  .startbtn { width: 100%; border: none; border-radius: 16px; padding: 16px; font-size: 16px;
-    font-weight: 700; background: var(--ember); color: var(--on-ember); box-shadow: 0 4px 18px var(--glow);
-    margin-bottom: 22px; letter-spacing: -.01em; transition: transform var(--t-1) var(--e-out); }
-  .startbtn:active { transform: scale(.982); }
+  /* The original, in its own app: a pill with the arrow that says it leaves. */
+  .olink { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; margin-bottom: 14px; }
   .sect { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
     padding: 16px 16px 6px; margin-bottom: 14px; box-shadow: var(--sh-sm); }
   .sect h3 { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
@@ -742,21 +772,13 @@ export const STYLE = String.raw`<style>
     color: var(--ember-ink); font-variant-numeric: tabular-nums; padding-top: 1px; }
   .exacts { position: absolute; top: 0; right: 0; bottom: 0; display: flex;
     transition: transform var(--t-3) var(--e-spring); transform: translateX(100%); }
-  /* Closed, each button is folded onto the one to its right. */
   .exact { width: var(--exw); border: 0; padding: 0; background: var(--sand); color: var(--ink-2);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
     font-size: 10.5px; font-weight: 650; line-height: 1;
     transition: transform var(--t-3) var(--e-spring);
     transform: translateX(calc(var(--i, 0) * var(--exw) * -1)); }
-  .exact:nth-child(2) { --i: 1; }
-  .exact:nth-child(3) { --i: 2; }
   .exact .ic { width: 16px; height: 16px; }
-  /* Two sand rectangles side by side read as one; a hairline says they are two. */
-  .exact + .exact:not(.prim) { border-left: 1px solid var(--line); }
-  /* One accent, spent on the thing the row is most often opened for. */
-  .exact.prim { background: var(--ember); color: var(--on-ember); }
   .exact:active { filter: brightness(.93); }
-  .exrow.open .exmain { transform: translateX(calc(var(--exw) * -3)); }
   .exrow.open .exacts, .exrow.open .exact { transform: none; }
   /* While a finger is on it the row is not animating, it is being moved. */
   .exrow.drag .exmain, .exrow.drag .exacts, .exrow.drag .exact { transition: none; }
@@ -768,10 +790,6 @@ export const STYLE = String.raw`<style>
   .exhelp { flex: 0 0 auto; width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--line-2);
     background: none; color: var(--muted); font-size: 12px; line-height: 1; display: flex;
     align-items: center; justify-content: center; }
-  /* An exercise the user has corrected or added by hand. The card still shows the
-     creator's wording everywhere else, so this is the only mark that says which
-     lines are theirs — quiet, and it never appears on model output. */
-  .exmine { font-size: 11px; font-weight: 600; color: var(--muted); margin-top: 4px; }
   /* Where a coach borrowed the line from: the voice of "Added by you", and not a
      link — the source is one tap away in the strip above, and a fourth target on a
      row holding three buttons is a row nobody can aim at. */
@@ -806,11 +824,21 @@ export const STYLE = String.raw`<style>
     color: var(--ink-2); font-size: 13px; font-weight: 650; padding: 10px; margin: 4px 0 12px;
     transition: transform var(--t-1) var(--e-out); }
   .addex:active { transform: scale(.985); }
-  /* Add a section and Reorder share the line under the last section: both are
-     about the card's shape, and neither is the card asking for anything. */
-  .cardtools { display: flex; gap: 8px; }
-  .cardtools .addex { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px; }
-  .cardtools .addex .ic { width: 15px; height: 15px; }
+  /* The row as one button: the name, the creator's cue cut at two lines (its sheet
+     has the rest) and one quiet line of clip and rest on the left, the dose in
+     ember on the right. The whole row is the target; the swipe and the held press
+     still reach the drawer behind it. */
+  .exercise-main { display: flex; gap: 12px; align-items: flex-start; width: 100%; margin: 0; padding: 12px 0;
+    border: 0; background: none; color: inherit; font: inherit; text-align: left; }
+  .exercise-main:focus-visible { outline-offset: -2px; }
+  .exercise-main .exname { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .exercise-main .exdose { flex: 0 0 auto; max-width: 42%; text-align: right; }
+  .exercise-main .exnote { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .exmeta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; margin-top: 4px;
+    font-size: 12px; font-weight: 550; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .exmeta .dflt { color: var(--muted); font-weight: 450; }
+  .exclip { display: flex; align-items: center; gap: 4px; }
+  .exclip .ic { width: 9px; height: 9px; fill: var(--ember); stroke: var(--ember); }
   /* ---------- reorder ----------
      A list of tiles, iOS edit-mode style: a section is a sand band, an exercise a
      card, and each keeps its handle on the trailing edge where UIKit draws the
@@ -871,7 +899,7 @@ export const STYLE = String.raw`<style>
   #olist.ocollapse .oex { display: none; }
   .orow.oin { animation: fadein var(--t-2) var(--e-out) both; }
   /* Where a moved row landed on the card, said once. Colour, not travel. */
-  .exrow.moved .exmain, .exrow.moved .exercise-card { animation: movedglow 1.6s var(--e-soft) both; }
+  .exrow.moved .exmain { animation: movedglow 1.6s var(--e-soft) both; }
   @keyframes movedglow { 0%, 35% { background-color: var(--ember-soft); } }
   @media (prefers-reduced-motion: reduce) {
     .orow, .orow.lift { transition: background-color var(--t-1), border-color var(--t-1); }
@@ -888,20 +916,20 @@ export const STYLE = String.raw`<style>
      number that makes the first scroll to the bottom least wrong. */
   .capbox { font-size: 13.5px; line-height: 1.62; color: var(--ink-2); white-space: pre-wrap;
     word-break: break-word; content-visibility: auto; contain-intrinsic-size: auto 400px; }
-  /* Shown only when the extraction could not be traced back to the source text.
-     Deliberately quiet: it is a caveat on a card that still works, not an error.
-     A disclosure like the rows around it: the headline is the whole caveat for
-     most people, and four lines of sand box above the Start button read as a
-     problem on every card that has one. The eye stays; the chevron says there
-     is more. */
-  .disclosure.unverified { margin: 0 0 14px; }
-  .disclosure.unverified > summary { gap: 9px; color: var(--ink); font-weight: 650; }
-  .disclosure.unverified > summary b { font-weight: inherit; min-width: 0; white-space: nowrap;
+  /* The caveat (the read could not be traced back to the source text) and "Some
+     details are missing": one folded line each, a thumb tall and the card's width.
+     Deliberately quiet — a note about a card that still works, not an error, and
+     not a second card: they used to be bordered boxes above Start. The mark stays;
+     the chevron says there is more. */
+  .disclosure.dnote { border: 0; background: none; border-radius: 0; margin: 0; }
+  .disclosure.dnote > summary { min-height: 44px; padding: 0; gap: 9px; color: var(--ink-2); }
+  .disclosure.dnote > summary b { font-weight: 600; min-width: 0; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
-  .unverified .ic { flex: 0 0 auto; width: 17px; height: 17px; color: var(--ember-ink); }
-  .disclosure.unverified .disclosure-body { padding: 0 16px 14px; font-size: 12.5px;
+  .dnote .ic { flex: 0 0 auto; width: 16px; height: 16px; color: var(--ember-ink); }
+  .disclosure.dnote .disclosure-body { padding: 0 0 12px 25px; font-size: 12.5px;
     line-height: 1.55; color: var(--ink-2); }
-  .unverified .fixlink { display: inline; background: none; border: 0; padding: 0; margin: 0;
+  .dnote + :not(.dnote) { margin-top: 8px; }
+  .dnote .fixlink { display: inline; background: none; border: 0; padding: 0; margin: 0;
     font: inherit; color: var(--ember-ink); font-weight: 650; text-decoration: underline;
     text-underline-offset: 2px; cursor: pointer; }
   .notesarea { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 12px;
@@ -1128,22 +1156,6 @@ export const STYLE = String.raw`<style>
      horizontal scroller for that is a scrollbar nobody asked for. */
   .perf { margin-bottom: 18px; }
   .perfchips { display: flex; flex-wrap: wrap; gap: 7px; }
-  /* ---------- the delta and the second, on a card row ---------- */
-  .exmarks { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
-  /* One line, truncated: the sheet says the delta in full, and a row whose height
-     depends on how long a delta turned out to be makes the list breathe unevenly. */
-  .dchip { min-width: 0; border-radius: 999px; padding: 5px 10px; line-height: 1.2;
-    background: var(--ember-soft); color: var(--ember-ink); font-size: 11px; font-weight: 650;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* The second is pushed to the end, where a reader's eye already goes for a
-     duration, and set in tabular digits so a column of them lines up. */
-  .t { flex: 0 0 auto; margin-left: auto; font-size: 11px; font-weight: 650;
-    color: var(--muted); font-variant-numeric: tabular-nums; }
-  /* "Watch this bit" sat on the chip above it with no gap at all, and on a row
-     with no cue it ran on inline after the name ("Lat pulldown [Watch this
-     bit]"), pushing the name off the dose's baseline. A line of its own, as
-     wide as its words, with the air a paragraph gets. */
-  .exname > .chip { display: flex; width: fit-content; margin-top: 9px; }
   /* ---------- the demonstration clip ----------
      One 16:9 slot, a byline, the other creators who filmed it, a way out — the shape
      Hevy, Fitbod and Nike Training Club all settled on for the demo inside an exercise
@@ -1443,6 +1455,60 @@ export const STYLE = String.raw`<style>
     color: var(--ember-ink); }
   .leaverow .pt b { font-size: 15px; white-space: normal; }
   .leaverow .pt span { display: block; margin-top: 1px; line-height: 1.4; }
+  /* The same rows ask about a paused session (askPaused), whose title takes
+     VoiceOver's focus as the sheet opens: a focus that draws no ring. */
+  #patitle { outline: none; }
+  /* A card with no picture keeps the column: a sand tile where the art would be. */
+  .pickrow .noimg { width: 46px; height: 46px; border-radius: 11px; flex: 0 0 auto; display: flex;
+    align-items: center; justify-content: center; background: var(--sand); color: var(--muted); }
+  .pickrow .noimg .ic { width: 20px; height: 20px; }
+
+  /* ---------- the ⋯ sheets: Workout and Exercise ----------
+     One inset-grouped list, iOS's shape for a menu that outgrew a popover: a mark,
+     a word, a hairline that starts at the word. The row that takes something away
+     is last, alone in a group of its own, in the app's red (the section sheet's
+     Remove). Also the list under Improve this read. */
+  .mlist { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    overflow: hidden; margin: 0 0 12px; }
+  .mlist .pickrow { position: relative; min-height: 50px; padding: 0 16px; gap: 14px; border-radius: 0;
+    font-size: 15px; font-weight: 550; }
+  .mlist .pickrow + .pickrow::before { content: ""; position: absolute; left: 50px; right: 0; top: 0;
+    height: 1px; background: var(--line); }
+  .mlist .ic { width: 20px; height: 20px; color: var(--ink-2); }
+  .mlist > [hidden] { display: none; }
+  .mlist .del, .mlist .del .ic { color: var(--ember-ink); }
+  .pknote { margin-left: auto; font-size: 13px; font-weight: 500; color: var(--muted);
+    font-variant-numeric: tabular-nums; }
+  /* The whole cue the row cuts at two lines, and the creator's difference. */
+  .exmnote { margin: 0 0 16px; font-size: 13.5px; line-height: 1.55; color: var(--ink); white-space: pre-line; }
+  .exmnote:empty { display: none; }
+
+  /* ---------- plan · the fortnight ----------
+     Two weeks from today on the week strip's own cell (.wday: weekday, date, the
+     one dot), so what is already on a day reads the way it does on Train. A tap
+     toggles a day, as a multi-date UICalendarView does: a pick fills ember and a
+     check takes the dot's place. A day this workout is already on is soft ember
+     with a check of its own and cannot be picked twice. 44px a cell at 375. */
+  .pdays { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; margin: 0 0 12px; }
+  /* Scoped under .pdays: the strip's own rules come later in this sheet. */
+  .pdays .pday { position: relative; border-color: var(--line); background: var(--card); --dbg: var(--card);
+    transition: background-color var(--t-1) var(--e-soft), transform var(--t-1) var(--e-out); }
+  .pdays .wdn { font-size: 14px; color: var(--ink); white-space: nowrap; }
+  .pday > .ic { position: absolute; left: 50%; bottom: 7px; width: 12px; height: 12px; margin-left: -6px;
+    stroke-width: 3; opacity: 0; transform: scale(.4);
+    transition: opacity var(--t-1) var(--e-out), transform var(--t-2) var(--e-spring); }
+  .pdays .pday.on { background: var(--ember); border-color: var(--ember); }
+  .pdays .pday.on .wdl, .pdays .pday.on .wdn, .pday.on > .ic { color: var(--on-ember); }
+  .pdays .pday.has { background: var(--ember-soft); border-color: transparent; box-shadow: none; }
+  .pdays .pday.has .wdn, .pday.has > .ic { color: var(--ember-ink); }
+  .pday.on .dmark, .pday.has .dmark { opacity: 0; }
+  .pday.on > .ic, .pday.has > .ic { opacity: 1; transform: none; }
+  .pdsum { min-height: 21px; margin: 0 0 8px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+  /* Reduced motion: nothing scales; the check crossfades. */
+  @media (prefers-reduced-motion: reduce) {
+    .pdays .pday:active, button.dcover:active { transform: none; }
+    .pday > .ic { transform: none; transition: opacity var(--t-1) var(--e-soft); }
+  }
 
   /* ---------- sort and jump ----------
      A mark against the one in force, which is what Apple says people scan a list of
@@ -1468,17 +1534,22 @@ export const STYLE = String.raw`<style>
   /* Hung from the frame's bottom edge, not the layout viewport's — not the same
      edge on an installed iPhone. -100% makes top the line the toast sits ON, so
      the 96px of clearance still means 96px. */
-  #toast { position: fixed; left: 50%;
-    top: calc(var(--vvtop) + var(--vvh) - 96px - var(--sab));
+  /* width: max-content, since beside left: 50% shrink-to-fit only ever had half
+     the screen to fill, and a set's Undo wrapped to three lines over the name. */
+  #toast { position: fixed; left: 50%; width: max-content;
+    top: calc(var(--vvtop) + var(--vvh) - 96px - var(--pbar, 0px) - var(--sab));
     transform: translate(-50%, calc(-100% + 14px)); z-index: 90; background: var(--ink); color: var(--paper);
     padding: 12px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 600; opacity: 0;
     pointer-events: none; transition: opacity var(--t-2), transform var(--t-2) var(--e-out);
     box-shadow: var(--sh-lg); max-width: 88vw; text-align: center; }
   #toast.show { opacity: 1; transform: translate(-50%, -100%); }
-  /* Workout Mode has no tab bar to clear but a rest strip lands where the toast
-     does: 76px of bottom bar, 48px of strip, 12px of air. "New best" used to sit
-     on +15 s and Skip for three seconds. */
-  #workout.open ~ #toast { top: calc(var(--vvtop) + var(--vvh) - 136px - var(--sab)); }
+  /* Workout Mode's foot is all controls — the big button, the arrows, the rest
+     strip's +15 s and Skip — and a toast there sat on one of them: "New best"
+     over Skip, and now a set's Undo where a thumb reaches for the next set. It
+     comes down under the top bar instead, where Hevy shows a live best, over
+     the dots and nothing that takes a tap. */
+  #workout.open ~ #toast { top: calc(var(--vvtop) + env(safe-area-inset-top) + 57px); transform: translate(-50%, -14px); }
+  #workout.open ~ #toast.show { transform: translate(-50%, 0); }
   #toast.tappable { pointer-events: auto; cursor: pointer; }
   /* The one toast the landing ever shows — a shared link waiting for sign-in —
      belongs above the fold, not across the sign-in card. There is no tab bar here
@@ -1534,6 +1605,39 @@ export const STYLE = String.raw`<style>
      backdrop-filtered bar while a transformed sibling repaints every frame. */
   .tab .tl { display: block; transform: translateZ(0); }
 
+  /* ---------- the paused bar ----------
+     A session waiting, on every tab (app.ts, "the paused bar"): a card standing
+     on the tab bar's top edge, --ptab being that bar's measured height, safe area
+     and all. It rises from behind the tab bar and sinks back into it on transform
+     and opacity alone; reduced motion keeps the fade. Solid, not glass: a blur
+     here is recomputed on every scroll frame of every page beneath it, and at the
+     opacity its small print needs to stay AA over a photo, it showed nothing. */
+  .pausedbar { position: absolute; left: 0; right: 0; bottom: var(--ptab, 78px); z-index: 39;
+    padding: 0 10px 8px; pointer-events: none; }
+  /* Taps, not a double-tap zoom (#setsheet's reason): Finish is two taps in a row.
+     The bar is outside the pager, so saying so costs the axis lock nothing. */
+  .pbin { display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 20px;
+    background: var(--card); border: 1px solid var(--line); box-shadow: var(--sh-md);
+    touch-action: manipulation; opacity: 0; transform: translateY(calc(100% + 14px));
+    transition: transform var(--t-2) var(--e-in), opacity var(--t-2) var(--e-in); }
+  .pausedbar.on .pbin { pointer-events: auto; opacity: 1; transform: none;
+    transition: transform var(--t-3) var(--e-spring), opacity var(--t-2) var(--e-out); }
+  .pbbody { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 9px;
+    border: none; background: none; padding: 0; text-align: left; color: var(--ink); }
+  .pbin .addbtn { flex: 0 0 auto; background: var(--ember-soft); color: var(--ember-ink); }
+  .pbtx { min-width: 0; display: grid; gap: 2px; }
+  .pbtx > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pbtx b { font-family: var(--display); font-size: 15px; letter-spacing: -.012em; }
+  .pbtx span { font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  /* The app's own buttons cut to the bar: Resume, and Finish as an icon button. */
+  .pbin .btn { width: auto; min-height: 44px; padding: 0 16px; font-size: 14px; }
+  .pbin .iconbtn { width: 44px; height: 44px; }
+  /* Finish, armed: the flag lit, and the line under the title says what it does. */
+  .pbin.armed .iconbtn { background: var(--ember); color: var(--on-ember); }
+  .pbin.armed .pbtx span { color: var(--ember-ink); }
+  body.kb .pausedbar { visibility: hidden; }
+  @media (prefers-reduced-motion: reduce) { .pbin, .pausedbar.on .pbin { transform: none; } }
+
   /* ---------- pull to refresh ---------- */
   #ptr { position: fixed; top: calc(env(safe-area-inset-top) + 6px); left: 50%; z-index: 30;
     width: 30px; height: 30px; margin-left: -15px; border-radius: 999px; background: var(--card);
@@ -1553,48 +1657,83 @@ export const STYLE = String.raw`<style>
      the vertical padding belongs to .page. */
   .view { padding-left: 18px; padding-right: 18px; }
 
-  /* The streak on the left, the ring on the right, and nothing between them: the
-     two things a training week is judged by, at a glance, above everything the
-     week can be browsed into. */
-  .trainhero { display: flex; align-items: center; justify-content: space-between; gap: 14px;
-    margin: 4px 0 12px; min-height: 84px; }
-  .wkleft { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .wkbig { font-family: var(--display); font-size: 26px; font-weight: 800; line-height: 1;
-    letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-  .wksub { font-size: 12px; font-weight: 600; color: var(--muted); }
-  .trainhero.risk .wksub { color: var(--ember-ink); }
-  .trainhero.full .wksub { color: var(--good); }
-  /* The ring as a button: it is the door to what counts, which is where the day
-     dots used to lead. 84px is the mockup's, and it carries its own 44px. */
-  .ringwrap.rsm { width: 84px; height: 84px; margin: 0; flex: 0 0 auto; border: 0;
-    background: none; padding: 0; }
-  .rsm .rnum { font-size: 22px; }
-  .rsm .rof { font-size: 10px; }
-  .rsm .rcheck .ic { width: 26px; height: 26px; }
+  /* ---------- train / the header's corner ----------
+     The streak and the week's ring, up in the bar since Option B, faded by the
+     pager's --x with the titles (.trainstat, under the header). The ring is a
+     44px button, the door to what counts. */
+  .tsk { width: min-content; font-size: 11px; font-weight: 700; line-height: 1.15; text-align: right;
+    color: var(--ink-2); }
+  .sheetbody p.countnow { font-weight: 700; color: var(--ink); }
+  .countnow:empty { display: none; }
 
-  .weekbar { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
-  .weekbar b, .secthead b { font-family: var(--display); font-size: 16px; font-weight: 700;
-    letter-spacing: -.012em; }
-  .wbnav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
-
-  /* Seven days, one row, one dot each. The cell is the target — 48px across on a
-     375px phone and 56 deep — because a dot is not something anyone can hit. */
-  .wstrip { display: flex; gap: 4px; margin: 0 0 12px; }
-  .wday { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center;
-    gap: 6px; min-height: 56px; padding: 8px 0 7px; border-radius: 12px; background: none;
-    border: 1px solid transparent; transition: transform var(--t-1) var(--e-out); }
-  .wday:active { transform: scale(.93); }
-  .wday.today { background: var(--card); border-color: var(--ember); box-shadow: var(--sh-sm); }
+  /* ---------- train / the calendar ----------
+     One grid at two heights (app.ts, "train · the calendar"): the week strip is
+     the month seen through a one-row window, and pulling it down opens the
+     window. .wk is the week at rest, .mo the month at rest, .moving a fold under
+     way (app.ts runs it). A row is a fixed 48px on a 52px pitch (ROW_PITCH), so
+     the strip is placed without measuring anything: --a is the row it shows. */
+  .tcalhead { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+  .tctitle, .tcacts { display: grid; }
+  .tcacts { justify-items: end; }
+  /* Centred in the row, not hung from its top: the week's range is a 44px button
+     and the month's name, stacked in the same cell, is only a line of text. */
+  .tctitle { flex: 1; justify-items: start; align-items: center; transition: transform var(--t-2) var(--e-spring); }
+  .wbdrag .tctitle { transition: none; }
+  .tctitle > *, .tcacts > * { grid-area: 1 / 1; }
+  /* The week's words and the month's controls share the row and cross over. */
+  .cw { opacity: var(--cw, 1); }
+  .cm { opacity: var(--cm, 1); }
+  .wk .cm, .mo .cw, .wk .cweek:not(.anchor), .wk .dlegend { visibility: hidden; }
+  .tcrange, .tcmonth { margin: 0; font: 700 16px var(--display); letter-spacing: -.012em; color: var(--ink); }
+  /* Focused after the month opens, for VoiceOver; it is a heading, not a control. */
+  .tcmonth { outline: none; }
+  .tcrange { display: flex; align-items: center; gap: 3px; min-height: 44px; padding: 0 6px 0 0; border: 0;
+    background: none; }
+  .tcrange .ic { color: var(--muted); transform: rotate(90deg); }
+  .cdow, .cweek { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; text-align: center; }
+  .cdow { padding-bottom: 5px; font-size: 10.5px; font-weight: 650; color: var(--muted); }
+  .crows { overflow: hidden; }
+  .wk .crows { height: 48px; }
+  .cblock { display: flex; flex-direction: column; gap: 4px; padding-bottom: 6px; }
+  .wk .cblock { transform: translateY(calc(var(--a) * -52px)); }
+  .moving .cblock, .moving + .tbelow { will-change: transform; }
+  .crows.xfade { animation: fadeonly var(--t-2) var(--e-soft); }
+  .cweek { height: 48px; }
+  /* A day: its number and its dot. Today is told by colour and the selected day
+     by the card it stands on (ember when they are the same day), the way iOS
+     Calendar tells the two apart. The Plan sheet's fortnight borrows the cell
+     as .wday, with the weekday's name over the date (.pdays, above). */
+  .cday, .wday { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    min-width: 0; padding: 0; border: 1px solid transparent; border-radius: 12px; background: none;
+    --dbg: var(--paper); transition: transform var(--t-1) var(--e-out), background-color var(--t-2) var(--e-soft); }
+  .cday:active, .wday:active { transform: scale(.93); }
+  .wday { min-height: 56px; padding: 8px 0 7px; }
+  .wday.today { background: var(--card); border-color: var(--ember); box-shadow: var(--sh-sm); --dbg: var(--card); }
   .wdl { font-size: 10.5px; font-weight: 650; color: var(--muted); letter-spacing: .04em; }
-  .wdn { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--ink-2);
-    font-variant-numeric: tabular-nums; }
-  .wday.today .wdn { color: var(--ink); }
+  .cdn, .wdn { font: 700 15px/1 var(--display); color: var(--ink); font-variant-numeric: tabular-nums; }
+  .cday.sel { background: var(--card); border-color: var(--line-2); box-shadow: var(--sh-sm); --dbg: var(--card); }
+  .cday.today .cdn { color: var(--ember-ink); }
+  .cday.sel.today { border-color: var(--ember); }
+  /* The month's neighbours: there and tappable, quieter. Colour and weight, not
+     opacity: --muted is 4.52 on paper, where ink at .45 was 3.4. */
+  .tcal:not(.wk) .cday.out .cdn { color: var(--muted); font-weight: 600; }
+  /* The handle, on the calendar's edge in both states: drawn 36 by 5, answering a
+     120-wide, 44-deep area clear of the days above it and the card below. */
+  .thandle { position: relative; display: block; width: 120px; height: 24px; margin: 0 auto 14px; border: 0;
+    background: none; }
+  .thandle::before, .thandle::after { content: ""; position: absolute; }
+  .thandle::before { left: 42px; top: 10px; width: 36px; height: 5px; border-radius: 3px;
+    background: color-mix(in srgb, var(--muted) 55%, transparent); }
+  .thandle::after { inset: -6px 0 -14px; }
+  /* Everything under the calendar is one sheet the month opens out from under:
+     opaque paper, above the rows, moved (transform only) while a fold runs. */
+  .tbelow { position: relative; z-index: 1; background: var(--paper); }
 
   /* ---------- train / the dot language ----------
-     Five states, spoken by the strip, the month grid and the key under it:
-     filled is done, filled with a ring is done exactly as planned, hollow ember
-     is planned, a grey cross is planned and missed, sand is a free day. The ring
-     is drawn in --card so it reads on a card and in a cell.
+     Five states, spoken by the strip, the month and the key under it: filled is
+     done, filled with a ring is done exactly as planned, hollow ember is planned,
+     a grey cross is planned and missed, sand is a free day. The ring is drawn in
+     the colour under it (--dbg), so it reads on a selected day's card too.
 
      Missed used to be a hollow amber ring — the same shape as planned in a hue a
      shade off ember, which at 8px the owner could not tell apart ("too close in
@@ -1610,57 +1749,90 @@ export const STYLE = String.raw`<style>
   .dmark.on { background: var(--ember); }
   .dmark.as { background: var(--ember);
     box-shadow: 0 0 0 2px var(--dbg, var(--paper)), 0 0 0 3.5px var(--ember); }
-  .mcell, .wday.today { --dbg: var(--card); }
-  .mcell.out { --dbg: var(--paper); }
   .dmark.plan { background: none; box-shadow: inset 0 0 0 1.6px var(--ember); }
   .dmark.miss { background: none; }
   .dmark.miss::before, .dmark.miss::after { content: ""; position: absolute; left: 50%; top: 50%;
     width: 10px; height: 1.8px; border-radius: 1px; background: var(--muted);
     transform: translate(-50%, -50%) rotate(45deg); }
   .dmark.miss::after { transform: translate(-50%, -50%) rotate(-45deg); }
-  .dlegend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 9px 2px 0;
+  .dlegend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin: 5px 2px 0;
     font-size: 11.5px; font-weight: 600; color: var(--muted); }
   .dlegend .lg { display: flex; align-items: center; gap: 6px; }
 
-  /* ---------- train / today ---------- */
+  /* ---------- train / the day card ----------
+     Up next for today, the selected day's own card for any other: one card, so the
+     question the app is opened with has one answer. It wears .daycard's frame,
+     ember-edged when it asks for something (resume, start, try), quiet when it
+     only reports.
+     Its rows are the picker's (.pickrow) and the history's (.histrow). */
   .daycard { background: var(--card); border: 1px solid var(--line); border-radius: 16px;
     padding: 13px 15px; margin-bottom: 9px; box-shadow: var(--sh-sm); }
-  .daycard.today { border-color: var(--ember); }
-  .dayhead { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    margin-bottom: 2px; }
   .dayname { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
     color: var(--muted); }
-  .daycard.today .dayname { color: var(--ember-ink); }
   .daydone { color: var(--good); font-size: 12px; font-weight: 700; }
-  .tcard { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; margin: 0 0 12px; }
-  .tcard .dayhead { margin-bottom: 0; }
-  /* The overflow reads as a glyph, not as a second button competing with Start. */
-  .tmore { background: none; color: var(--muted); margin: -3px -6px -3px 0; }
-  .tbody { display: flex; align-items: center; gap: 12px; min-width: 0; }
-  .tthumb { width: 44px; height: 55px; border-radius: 12px; object-fit: cover;
-    background: var(--sand); flex: 0 0 auto; }
-  .ttxt { min-width: 0; }
-  .tcard .ttitle { font-size: 17px; padding: 0; }
-  .tcard .tdose { margin: 3px 0 0; font-size: 13px; color: var(--ink-2); }
+  .tcard { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; overflow: hidden; }
+  .tcard.act { border-color: var(--ember); }
+  .tcard.act > .dayname { color: var(--ember-ink); }
+  .tcard.good > .dayname { color: var(--good); }
+  /* The saved video's own frame; portrait video, so the crop sits a third down. */
+  .tcover { margin: -13px -15px 0; aspect-ratio: 12 / 5; overflow: hidden; background: var(--sand); }
+  .tcover img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+  .tcard .ttitle { padding: 0; }
+  .tcard .tdose { margin: -7px 0 0; font-size: 13px; color: var(--ink-2); }
+  .tcard .linkbtn { align-self: flex-start; }
+  .tcard .pickrow { padding: 4px 0; }
   .tbtns { display: flex; gap: 8px; }
   .tbtns .btn { flex: 1; min-width: 0; min-height: 44px; }
-  .tbtns .tmove { flex: 0 0 auto; width: auto; padding: 14px 16px; font-size: 14px; }
-  .planitem { display: flex; align-items: center; gap: 11px; margin-top: 9px; }
-  .planitem img { width: 42px; height: 42px; border-radius: 10px; object-fit: cover;
-    background: var(--sand); flex: 0 0 auto; }
-  .planitem .pt { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; line-height: 1.3;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tbtns .tmove, .piacts .btn { flex: 0 0 auto; width: auto; padding: 12px 16px; font-size: 14px; }
+  .tbtns .iconbtn { width: 50px; height: auto; border-radius: 14px; }
+  .piacts { display: flex; align-items: center; gap: 20px; margin-top: -4px; }
+  /* Level with the button beside them: .tcard .linkbtn lifts a card's own links
+     to the top of their line, which beside a 44px button reads as a slip. */
+  .piacts .linkbtn { align-self: center; }
+  /* A row planned a moment ago waits for the server's id, and its plan actions
+     with it (app.ts, dayCard and Up next's ⋯). */
+  .piacts .linkbtn[disabled], .tbtns .iconbtn[disabled] { opacity: .42; }
+  .dayses { width: 100%; min-height: 44px; background: none; border: 0; border-top: 1px solid var(--line);
+    text-align: left; color: var(--ink); }
+  .dayses .ic { color: var(--muted); flex: 0 0 auto; }
   .planadd { background: none; border: 1px dashed var(--line-2); color: var(--muted); width: 100%;
-    border-radius: 12px; padding: 10px; font-size: 13px; font-weight: 600; margin-top: 9px; }
-  .planx { background: none; border: none; color: var(--muted); font-size: 15px; padding: 6px; }
+    border-radius: 12px; padding: 10px; font-size: 13px; font-weight: 600; min-height: 44px; }
+  .tcard.empty { padding: 22px 16px 16px; }
+  .tcard .pumpyart { width: 96px; height: 96px; margin: 0 auto; }
+  /* S0: the planned card's shape in sand while the first answer is on its way. */
+  .sk { height: 13px; width: 30%; border-radius: 7px; background: var(--sand); }
+  .sk.st { height: 22px; width: 70%; }
+  .sk.sm { height: 16px; width: 50%; margin-top: -7px; }
+  .sk.sb { height: 47px; width: auto; border-radius: 14px; }
+  .tskel > * { animation: skel 1.1s var(--e-soft) infinite alternate; }
+  @keyframes skel { to { opacity: .55; } }
+
+  /* ---------- train / ready to try ----------
+     The saves never trained yet, newest first: a sideways scroller with the
+     page's gutter inside it, so the row runs out to the screen's edge; at either
+     end the tab pager takes over, as it does from the chip row. */
+  .tshelf .secthead { margin: 0 2px 9px; }
+  .shelfn { margin-right: auto; font-size: 12px; color: var(--muted); }
+  .shelfrow { display: flex; gap: 10px; overflow-x: auto; margin: 0 -18px 6px; padding: 0 18px 4px;
+    scrollbar-width: none; }
+  .shelfrow::-webkit-scrollbar { display: none; }
+  .shelfitem { flex: 0 0 104px; display: grid; align-content: start; gap: 6px; padding: 0; border: 0;
+    background: none; color: var(--ink); text-align: left; font-size: 12.5px; font-weight: 600; line-height: 1.3;
+    transition: transform var(--t-1) var(--e-out); }
+  .shelfitem:active { transform: scale(.96); }
+  .shelfart { position: relative; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: var(--sand); }
+  .shelfart img { width: 100%; height: 100%; object-fit: cover; }
+  .shelfart .noimg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 30px; opacity: .45; }
+  .shelft { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
   /* ---------- train / the segmented control ----------
      Apple's segmented control: the selection is one thumb travelling between
      seats, not three pictures of a state, so the pill is a single node sliding on
-     --t-2 while the labels hold still. Three title-case nouns and no action among
+     --t-2 while the labels hold still. Title-case nouns and no action among
      them — a segmented control chooses a view and never does a thing.
      Sticky in the header's own glass, bled to the page edges, because the days
-     above it scroll away and the question "which of the three am I reading" must
+     above it scroll away and the question "which of these am I reading" must
      not. No touch-action anywhere in here: the pager's axis lock depends on the
      page declaring nothing. */
   .trainseg { position: sticky; top: var(--hdr, 92px); z-index: 5; margin: 0 -18px 14px;
@@ -1677,56 +1849,26 @@ export const STYLE = String.raw`<style>
     background: none; color: var(--ink-2); font-size: 13px; font-weight: 700; padding: 0 10px;
     letter-spacing: -.005em; transition: color var(--t-2) var(--e-soft); }
   .segbtn[aria-selected="true"] { color: var(--ink); }
-  .planacts { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; }
+  .secthead b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
+  .wbnav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
   .planbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
     border-radius: 999px; padding: 0 13px; min-height: 32px; font-size: 12.5px; font-weight: 700;
     display: inline-flex; align-items: center; justify-content: center; gap: 5px;
     transition: transform var(--t-1) var(--e-out), border-color var(--t-2) var(--e-soft); }
   .planbtn:active { transform: scale(.94); }
-  /* A crossfade and nothing more: the tap did not say which way time went. */
+  .wbnav .planbtn { margin: 0 4px; }
+  /* A crossfade and nothing more: the change did not say which way time went. */
   .planswap { animation: planswap var(--t-2) var(--e-out); }
   @keyframes planswap { from { opacity: 0; } }
-  /* A swipe on the band leans the week the way the finger goes and then sends it
-     out that way, so the week arriving comes in from the far side — the crossfade
-     above cannot say which direction time went. The days, the card and whichever
-     segment is open lean together, because they are one week. Transform and
-     opacity only, and .pbmove is timing: on for the release, off while a finger is
-     holding it, so tracking is 1:1 and the let-go is the only thing that eases. */
-  .trainlean.pbmove { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
-  .weekbar b { transition: transform var(--t-2) var(--e-spring); }
-  .weekbar.wbdrag b { transition: none; }
+  /* A swipe on the strip leans the rows the way the finger goes and then sends
+     them out that way, so the week arriving comes in from the far side — a
+     crossfade cannot say which direction time went; the week's Progress arrives
+     with it, and a day's card from the side the day is on. Transform and opacity
+     only, and .pbmove is timing: on for the release, off while a finger holds
+     it, so tracking is 1:1 and the let-go is the only thing that eases. */
+  .pbmove { transition: transform var(--t-2) var(--e-out), opacity var(--t-2) var(--e-out); }
   .planin { animation: planin var(--t-3) var(--e-out); }
   @keyframes planin { from { opacity: 0; transform: translateX(var(--pin, 26px)); } }
-
-  /* ---------- train / the month ----------
-     iOS Calendar's compact month: a number and one mark, with the key under the
-     grid doing the naming. Seven columns in a 375px phone leave 45px each, which
-     is what an 8px dot and a 12.5px number were sized against. */
-  .mgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
-  .mdow { text-align: center; font-size: 10px; font-weight: 700; letter-spacing: .08em;
-    color: var(--muted); padding-bottom: 5px; }
-  .mcell { display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-    gap: 6px; min-height: 48px; padding: 8px 1px; background: var(--card);
-    border: 1px solid var(--line); border-radius: 11px; box-shadow: var(--sh-sm);
-    transition: transform var(--t-1) var(--e-out); }
-  .mcell:active { transform: scale(.93); }
-  /* Present and tappable but no longer cards: 35 equal boxes hide the 1st. */
-  .mcell.out { background: none; border-color: transparent; box-shadow: none; }
-  /* Colour and weight, not opacity: --muted measures 4.52 on paper, and ink at
-     .45 lands on 3.4 and stops being AA. */
-  .mcell.out .mnum { color: var(--muted); font-weight: 600; }
-  .mcell.today { border-color: var(--ember); box-shadow: 0 0 0 1px var(--ember); }
-  .mnum { font-size: 12.5px; font-weight: 700; color: var(--ink); line-height: 1;
-    font-variant-numeric: tabular-nums; }
-  .mcell.today .mnum { color: var(--ember-ink); }
-  /* The day sheet borrows .planitem and .planadd whole, and .histrow for the
-     sessions above them. */
-  #daylist { margin-bottom: 4px; }
-  #daylist .lede { margin: 10px 0 0; }
-  .dayses { width: 100%; min-height: 44px; background: none; border: 0;
-    border-top: 1px solid var(--line); text-align: left; color: var(--ink); }
-  .dayses:first-child { border-top: none; }
-  .dayses .ic { color: var(--muted); flex: 0 0 auto; }
 
   /* ---------- train / sets per day ----------
      Seven bars, no axes, no SVG: the shape of the week is the message and the
@@ -1780,55 +1922,44 @@ export const STYLE = String.raw`<style>
      stays scoped to this sheet: the pager's axis lock needs the rest of the page
      to keep declaring nothing. */
   #copysheet button { touch-action: manipulation; }
-  .planbtn.wide { width: 100%; min-height: 44px; margin-top: 11px; font-size: 13.5px; }
-  /* Already 44, and stacked between two controls whose hit areas it would eat. */
-  .planbtn.wide::after { display: none; }
-  .trainbody > .planbtn.wide { margin-top: 16px; }
-  .planbtn .pumpmark { border-radius: 50%; overflow: hidden; width: 18px; height: 18px; color: var(--ember); flex: 0 0 auto; }
-  .planbtn .pumpmark svg { border-radius: 50%; width: 100%; height: 100%; display: block; }
   /* The answer without the travel: the pill still moves, instantly. */
   @media (prefers-reduced-motion: reduce) {
     .segpill { transition: none; }
-    .planbtn:active, .segbtn, .mcell, .copyweek { transition: none; }
+    .planbtn:active, .segbtn, .cday, .wday, .copyweek, .shelfitem { transition: none; }
     .planswap { animation: none; }
     /* The week still changes and still says so, with the crossfade this section
        already uses rather than a slide. The drag itself moves nothing: app.ts
-       asks lessMotion() before it paints a lean. */
-    .trainlean.pbmove, .weekbar b, .sbar, .wday { transition: none; }
+       asks lessMotion() before it paints a lean, and a fold lands at once. */
+    .pbmove, .tctitle, .sbar { transition: none; }
     .planin { animation: planswap var(--t-2) var(--e-out); }
+    .tskel > * { animation: none; }
   }
 
   /* ---------- train / the ring ----------
      Apple's Activity shape with ONE arc, because a second ring is a second thing
      to fail at. Only stroke-dashoffset moves, and every colour is a token, so the
      dark scheme costs nothing. */
-  .ringwrap { position: relative; width: min(96px, 26vw); height: min(96px, 26vw);
-    margin: 13px auto 11px; }
+  .ringwrap { position: relative; width: 44px; height: 44px; padding: 3px; border: 0; background: none; }
+  .ringwrap .rtrack, .ringwrap .rarc { stroke-width: 9; }
   .wring { display: block; width: 100%; height: 100%; overflow: visible; }
   .rtrack, .rarc { fill: none; stroke-width: 4.2; }
   .rtrack { stroke: var(--sand); }
   .rarc { stroke: var(--ember); stroke-linecap: round;
     transform: rotate(-90deg); transform-origin: 50% 50%;
     transition: stroke-dashoffset var(--t-4) var(--e-out), stroke var(--t-3) var(--e-soft); }
-  .trainhero.full .rarc, .sumweek.full .rarc { stroke: var(--good); }
+  .trainstat.full .rarc, .sumweek.full .rarc { stroke: var(--good); }
   /* Once, two seconds, on a week still winnable but tight. Something that pulses
      forever is an alarm; this is a nudge. */
-  .trainhero.risk .wring { animation: ringpulse 2s var(--e-soft) 1; }
+  .trainstat.risk .wring { animation: ringpulse 2s var(--e-soft) 1; }
   @keyframes ringpulse { 0%, 100% { filter: none; }
     50% { filter: drop-shadow(0 0 6px var(--glow)); } }
   .rmid { position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 1px; }
-  .rnum { font-family: var(--display); font-size: min(40px, 11vw); font-weight: 800;
-    line-height: 1; letter-spacing: -.02em; color: var(--ink); }
-  .rof { font-size: 11px; font-weight: 600; color: var(--muted); }
+  .rnum { font-family: var(--display); font-size: 11.5px; font-weight: 800; color: var(--ink); }
   .rcheck { display: flex; color: var(--good); }
-  .rcheck .ic { width: 34px; height: 34px; stroke-width: 2.6; }
-  .rnum, .rof, .rmeta, .tweek, .sumweek, .wkbig { font-variant-numeric: tabular-nums; }
+  .rcheck .ic { width: 17px; height: 17px; stroke-width: 3; }
+  .rnum, .rmeta, .sumweek { font-variant-numeric: tabular-nums; }
   .rmeta { font-size: 11.5px; color: var(--muted); padding-bottom: 8px; }
-  /* The same sentence on the today card and at the end of a session. */
-  .tweek { font-size: 12px; font-weight: 600; color: var(--ember-ink); margin: 0 0 12px; }
-  .tweek.risk { color: var(--ember); }
-  .tdose + .tweek { margin-top: -7px; }
   .sumweek { display: flex; align-items: center; justify-content: center; gap: 9px;
     margin: 13px 0 0; font-size: 13px; font-weight: 600; color: var(--ink-2); }
   .sumweek.full { color: var(--good); }
@@ -1869,7 +2000,7 @@ export const STYLE = String.raw`<style>
     /* The arc still says the right thing without travelling to say it, and the
        at-risk week still glows — it just stops breathing. */
     .rarc { transition: none; }
-    .trainhero.risk .wring { animation: none; filter: drop-shadow(0 0 6px var(--glow)); }
+    .trainstat.risk .wring { animation: none; filter: drop-shadow(0 0 6px var(--glow)); }
   }
   .chartcard { background: var(--card); border: 1px solid var(--line); border-radius: 18px;
     padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-sm); }
@@ -1887,6 +2018,8 @@ export const STYLE = String.raw`<style>
     font-weight: 400; margin-top: 2px; }
   .prrow .v, .cardnum { font-family: var(--display); font-size: 14px; font-weight: 700;
     color: var(--ember-ink); font-variant-numeric: tabular-nums; }
+  .prrow .v { text-align: right; }
+  .prrow .v small { display: block; font-family: var(--sans); font-size: 10.5px; font-weight: 600; color: var(--muted); }
   .monthhead { font-family: var(--display); font-size: 12px; font-weight: 700; letter-spacing: .11em;
     text-transform: uppercase; color: var(--muted); margin: 20px 0 8px; }
 
@@ -1975,6 +2108,12 @@ export const STYLE = String.raw`<style>
   .wtop { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px;
     padding: calc(10px + env(safe-area-inset-top)) 16px 6px; }
   .wtools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .wtools:first-child { justify-content: flex-start; }
+  /* Finish: a chip on the top bar's sand, not a second big button (HIG: one or
+     two prominent buttons a view). Ember-ink is 5.2:1 on sand. The reach grows
+     to 44px the way the icon buttons' does. */
+  .wfinish { position: relative; height: 38px; color: var(--ember-ink); font-size: 14.5px; font-weight: 700; }
+  .wfinish::after { content: ""; position: absolute; inset: -3px; }
   .wclock { font-family: var(--display); font-size: 14px; font-weight: 700; color: var(--muted);
     font-variant-numeric: tabular-nums; }
   /* The dots are a band of their own between the bar and the screen: the screen
@@ -2032,7 +2171,15 @@ export const STYLE = String.raw`<style>
   .setpill.pr { box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ember); }
   .setpill.just.pr { animation: setpr var(--t-4) var(--e-spring); }
   @keyframes setpr { 0% { transform: scale(.88); } 45% { transform: scale(1.09); } }
-  .wactions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 18px; }
+  /* The set the big button logs next: outlined in ember, the way the complex
+     outlines the movement it is on. Done sets stay filled. */
+  .setpill.up { border-color: var(--ember); }
+  /* "Exercise 2 of 5": where the session is, in ink-2 (the ember wash behind
+     the top of the screen takes --muted under 4.5:1). The goal line under the
+     name is what the card asks and what was lifted last time, one line. */
+  .wstep { color: var(--ink-2); }
+  .wstep + .wblock { margin-top: -6px; }
+  .wgoal { font-size: 15px; font-weight: 600; color: var(--ink-2); line-height: 1.45; text-wrap: balance; }
   .wbottom { display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 10px 16px calc(14px + var(--sab)); }
   .wnav { border: none; background: var(--sand); color: var(--ink); border-radius: 999px;
@@ -2040,10 +2187,10 @@ export const STYLE = String.raw`<style>
     transition: transform var(--t-1) var(--e-out); }
   .wnav:active { transform: scale(.9); }
   .wnav[disabled] { opacity: .35; }
-  .wfinish { flex: 1; border: none; background: var(--ember); color: var(--on-ember); border-radius: 999px;
-    padding: 15px; font-size: 15px; font-weight: 700; box-shadow: 0 4px 18px var(--glow);
-    transition: transform var(--t-1) var(--e-out); }
-  .wfinish:active { transform: scale(.978); }
+  /* A new label rises into place, so the tap that changed it is seen to land. */
+  .wgo .ic { width: 19px; height: 19px; }
+  .wgo.swap span { animation: wgoin var(--t-2) var(--e-out); }
+  @keyframes wgoin { from { opacity: 0; transform: translateY(40%); } }
   /* A rest has a known length, so the ring says what is left of it. The strip sits
      between the exercise and the bottom bar rather than inside the screen, so it
      outlives the swipe to the next movement; the ring is also the pause button,
@@ -2088,12 +2235,13 @@ export const STYLE = String.raw`<style>
   .restcontrols .chip { justify-content: center; padding: 8px 12px; background: var(--card); }
   .reststrip.paused { border-color: var(--line-2); background: var(--sand); }
   .wbottom { flex-shrink: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr) 52px; }
-  #waddexercise { grid-column: 2; grid-row: 1; min-height: 48px; }
-  #wnext { grid-column: 3; grid-row: 1; }
-  .wfinish { grid-column: 1 / -1; grid-row: 2; width: 100%; min-height: 60px; font-size: 18px; padding: 18px; border-radius: 18px; }
+  #wexmore { min-height: 48px; }
+  .wgo { grid-column: 1 / -1; min-height: 60px; font-size: 18px; padding: 16px 18px; border-radius: 18px; gap: 9px; }
   .wmain { min-height: 0; justify-content: flex-start; }
   .wmain > * { flex-shrink: 0; }
-  .wo-extra-set { min-height: 48px; width: 100%; margin-bottom: 10px; }
+  @media (prefers-reduced-motion: reduce) {
+    .wgo.swap span { animation-name: fadeonly; }
+  }
 
   /* ---------- adding a movement mid-workout ----------
      The picker is a list first and a form second, so the only chrome it gets is
@@ -2210,7 +2358,6 @@ export const STYLE = String.raw`<style>
   .wtimer .ring:active { transform: scale(.965); }
   .wphase { margin: 12px 0 0; }
   .wup { color: var(--ink-2); font-weight: 600; }
-  .wstart { align-self: center; max-width: 280px; margin-top: 16px; }
 
   /* ---------- a complex, all at once ----------
      Five movements against a clock is ONE thing to do, so the screen holds all of
@@ -2252,8 +2399,6 @@ export const STYLE = String.raw`<style>
      steps up to ink-2 on a marked row rather than the wash being lightened, so the
      row still reads as filled from across a gym. */
   .cxmove.on .pt span { color: var(--ink-2); }
-  /* 64px because it is tapped mid-effort, by someone who is not looking at it. */
-  .cxdone { min-height: 64px; margin-top: 14px; font-size: 17px; }
   .cxundo { min-height: 44px; margin-top: 8px; padding: 10px; font-size: 14px; }
 
   /* ---------- a superset, one screen ----------
@@ -2293,10 +2438,8 @@ export const STYLE = String.raw`<style>
   .ssstack.hand .sswrap, .ssstack.hand .ssin { transition-delay: 90ms; }
   .ssin .setpills { margin: 12px 0 2px; }
   .ssin .stepper { margin: 8px 0; }
-  .sslog { min-height: 54px; margin-top: 8px; }
   .ssin .wtimer .ring { width: 124px; height: 124px; }
   .ssin .wup { display: none; }
-  .ssin .wstart { margin: 14px auto 0; }
   @media (prefers-reduced-motion: reduce) {
     .sspanel, .ssletter, .sshead::after, .sswrap, .ssin { transition: none; }
   }
@@ -2313,6 +2456,7 @@ export const STYLE = String.raw`<style>
   /* Both top-bar tools go quiet on the summary: there is no list left to open and
      no clock left to mute, and a control that does nothing is a small lie. */
   #workout.summary #wlist, #workout.summary #wsound { visibility: hidden; }
+  #workout.summary #wfinish { display: none; }
   /* ---------- the share card ----------
      The one thing a finished session can leave the phone as. Both card palettes
      live here rather than in the draw code, and both are written out in full so
@@ -2403,7 +2547,7 @@ export const STYLE = String.raw`<style>
   .scchip { min-width: 0; min-height: 44px; padding: 10px 4px; font-size: 13px;
     font-weight: 650; border: 1px solid var(--line-2); border-radius: 12px;
     background: var(--card); color: var(--ink-2);
-    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2); }
+    transition: background-color var(--t-2), border-color var(--t-2), color var(--t-2), transform var(--t-1) var(--e-out); }
   .scchip[aria-pressed="true"] { background: var(--pill); border-color: var(--ember);
     color: var(--ember-ink); }
   .schint { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
@@ -2416,6 +2560,42 @@ export const STYLE = String.raw`<style>
   @media (prefers-reduced-motion: reduce) {
     .sharewrap, .scbtns.in, .scvid { animation-name: fadeonly; animation-delay: 0ms; }
     .scprev img { transition: none; }
+  }
+  /* ---------- ready ----------
+     The sheet a new workout arrives in (app.ts, showReadySheet), and the recap's
+     "Plan your next one" under the figures. Their day chips are the share row's
+     own chips four across: 44px tall, pressed in ember, the same control the
+     recap already shows two of. A day with something planned wears the strip's
+     ring, small. The cover fades up when it has loaded rather than popping in. */
+  .readycover { display: block; width: 100%; aspect-ratio: 16 / 9; max-height: 200px; object-fit: cover;
+    border-radius: 16px; background: var(--sand); margin-bottom: 16px; opacity: 0;
+    transition: opacity var(--t-3) var(--e-out); }
+  .readycover.in { opacity: 1; }
+  .readykick, .readylabel { font-size: 12.5px; font-weight: 650; color: var(--ember-ink); margin: 0 0 4px; }
+  .readylabel { color: var(--muted); margin: 20px 0 9px; }
+  .sheetbody #readytitle { font-size: 22px; line-height: 1.2; margin: 0; outline: none; }
+  .readymeta { font-size: 13px; color: var(--muted); margin: 5px 0 18px; }
+  .daychips { grid-template-columns: repeat(4, 1fr); }
+  .daychips .scchip { position: relative; white-space: nowrap; }
+  .daychips .scchip:active { transform: scale(.95); }
+  .daychips .has::after { content: ""; position: absolute; top: 6px; right: 6px; width: 5px; height: 5px;
+    border: 1.5px solid var(--ember); border-radius: 50%; }
+  .readyfoot { display: flex; justify-content: space-between; margin: 8px -12px -8px; }
+  .readylook { min-height: 44px; padding: 0 12px; border: none; background: none; color: var(--ember-ink);
+    font-size: 14px; font-weight: 650; }
+  .readylook + .readylook { color: var(--muted); }
+  .sumnext { margin-top: 22px; text-align: left; animation: viewin var(--t-2) var(--e-out) 230ms both; }
+  /* Seven days and Pick another: the ready sheet's two rows of four. A quarter of
+     375px has 68px for a label and "Pick another" is 80, so its two words take
+     two lines inside the 44px every chip keeps, rather than a row of their own. */
+  .sumnext .scchip:last-child { white-space: normal; line-height: 1.1; padding-top: 5px; padding-bottom: 5px; }
+  /* A lit switch in a Settings row wears its fill and not its glow: the value cell
+     clips (overflow, for the ellipsis) and the glow came out as a hard square. */
+  .setgroup .kv .v .chip.active { box-shadow: none; }
+  .sumnext + .reader-offer { text-align: left; }
+  @media (prefers-reduced-motion: reduce) {
+    .readycover, .daychips .scchip { transition: none; }
+    .sumnext { animation-name: fadeonly; animation-delay: 0ms; }
   }
   /* ---------- proof, in one screenshot ----------
      The card the summary drew, alone on the screen: no tab bar, no header, no
@@ -2624,8 +2804,9 @@ export const STYLE = String.raw`<style>
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
-  .composer { position: sticky; bottom: var(--ptab, calc(78px + var(--sab)));
-    margin-bottom: var(--ptab, calc(78px + var(--sab)));
+  /* --pbar: the paused bar, when there is one, stands between it and the tab bar. */
+  .composer { position: sticky; bottom: calc(var(--ptab, calc(78px + var(--sab))) + var(--pbar, 0px));
+    margin-bottom: calc(var(--ptab, calc(78px + var(--sab))) + var(--pbar, 0px));
     padding: 8px 0 10px;
     background: color-mix(in srgb, var(--paper) 90%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
@@ -2868,12 +3049,12 @@ export const STYLE = String.raw`<style>
      Apple asks for 44px; these are drawn smaller because their rows are. Only the
      hit area grows, capped at the gap to the next control so no two overlap.
      Insets come off the padding box: a bordered control needs a pixel more. */
-  .iconbtn, .addbtn, .exhelp, .planx, .planadd, .mbtn, .addex, .danger, .libcount,
+  .iconbtn, .addbtn, .exhelp, .planadd, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
   .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
-  .iconbtn::after, .addbtn::after, .exhelp::after, .planx::after, .planadd::after,
+  .iconbtn::after, .addbtn::after, .exhelp::after, .planadd::after,
   .segbtn::after, .planbtn::after, .linkbtn::after,
-  .mbtn::after, .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
+  .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
   .votes .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
@@ -2882,14 +3063,12 @@ export const STYLE = String.raw`<style>
   .iconbtn::after { inset: -3px; }
   .addbtn::after { inset: -2px; }
   .exhelp::after { inset: -7px -6px; }
-  .planx::after { inset: -7px -4px; }
   .planadd::after, .addex::after { inset: -5px 0; }
   .segbtn::after, .planbtn::after { inset: -6px 0; }
   /* "All" is two letters and drew a 20x27 target — the smallest control in the
      app. Nothing interactive sits beside it in the section head, so it can have
      the room on all four sides: 44 across and 45 down. */
   .linkbtn::after { inset: -9px -12px; }
-  .mbtn::after { inset: -6px 0; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
   /* A square control needs the inset on all four sides: 36 + 4 + 4 is 44 across as
@@ -2898,18 +3077,6 @@ export const STYLE = String.raw`<style>
   .pumpyctx button::after { inset: -7px; }
   /* Up into the label, which is text and not a control; down to the dose line. */
   .ttitle::after { inset: -14px 0 -5px; }
-
-  /* ---------- install hint ---------- */
-  #hint { margin: 12px 18px 0; background: var(--card); border: 1px solid var(--line);
-    border-radius: 16px; padding: 13px 15px; font-size: 13px; line-height: 1.55; color: var(--ink-2);
-    display: none; align-items: flex-start; gap: 11px; box-shadow: var(--sh-sm); }
-  #hint.show { display: flex; }
-  #hint b { color: var(--ink); }
-  /* The dismiss cross only. "Phone save options" is a button in the same box,
-     appended after this rule was written, and #hint button was dressing it as a
-     17px glyph with no padding, jammed against the sentence above it. */
-  #hintx { background: none; border: none; color: var(--muted); font-size: 17px; padding: 0 2px;
-    line-height: 1; flex: 0 0 auto; }
 
   /* ---------- reduced motion, in one place ----------
      Apple's instruction is not "remove the feedback" but "replace transitions in
@@ -3037,7 +3204,7 @@ export const STYLE = String.raw`<style>
     .pumpy-tip { animation: none; }
     .welcome-page { transform: none; transition: opacity var(--t-1) var(--e-soft); }
     .btn:active, .iconbtn:active, .addbtn:active, .chip:active, .carditem:active,
-    .mbtn:active, .startbtn:active, .addex:active, .planbtn:active, .mcell:active,
+    .addex:active, .planbtn:active,
     .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scprev:active,
     .uploadrow:active, .pumpybar button:active { transform: none; }
   }
@@ -3045,44 +3212,12 @@ export const STYLE = String.raw`<style>
   .savebtn { width: auto; min-height: 44px; padding: 0 12px; gap: 5px; font-size: 12px; font-weight: 650; white-space: nowrap; }
   .hbtns { align-items: center; flex-shrink: 0; }
   .firstsave { margin-top: 22px; }
-  .detail-actions { display: flex; gap: 10px; margin: 8px 0 14px; }
-  .detail-actions .chip { min-height: 44px; flex: 1; justify-content: center; }
-  #dinner > .startbtn { margin-bottom: 12px; box-shadow: var(--sh-sm); }
-  #dinner > .detail-actions { margin: 0 0 20px; }
   #detail { background-image: none; }
   .workout-block { padding: 16px 16px 6px; box-shadow: none; }
   .workout-block > h3 { text-transform: none; letter-spacing: -.01em; font-size: 15px; color: var(--ink); margin-bottom: 4px; }
   .disclosure { border: 1px solid var(--line); background: var(--card); border-radius: 16px; margin: 12px 0; }
   .disclosure > summary { cursor: pointer; padding: 14px 16px; min-height: 48px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
   .disclosure-body { padding: 0 14px 14px; }
-  .disclosure-body .embedwrap { margin-top: 12px; }
-  .exercise-card { background: var(--card); margin: 0; padding: 4px 0; contain: layout style; }
-  .exercise-card + .exercise-card { border-top: 1px solid var(--line); }
-  .exercise-main { display: flex; gap: 12px; align-items: flex-start; padding: 14px 0 6px; }
-  .exercise-main .exname { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .exercise-main .exdose { flex: 0 0 auto; max-width: 42%; white-space: normal; text-align: right; }
-  /* A stable full-width drawer keeps secondary actions quiet, without a flex
-     row renegotiating its width when the hidden labels become visible. */
-  .exercise-actions { display: block; width: 100%; min-width: 0; padding: 0; position: relative; }
-  /* ---------- the rest on the row ----------
-     The empty half of the options line, where the owner pointed. Laid over the
-     summary's left end, which is only air (its word sits at the right), so the
-     drawer under it keeps its full width when it opens; drawn small and reached
-     at 44px, like the chips. A rest the card stated is solid; the default is
-     outlined and says so — the same number is a different fact. --muted is
-     4.89 on card, which is what the outlined one sits on. The .pill shape, on a
-     button; no overflow clip, which would take the reach with it — the longest
-     word fits a 375px row. */
-  .restpill { position: absolute; left: 0; top: 8px; border: 1px solid transparent;
-    white-space: nowrap; transition: transform var(--t-1) var(--e-out); }
-  .restpill.dflt { background: none; border-color: var(--line-2); color: var(--muted); }
-  .restpill:active { transform: scale(.95); }
-  .restpill::after { content: ""; position: absolute; inset: -9px 0; }
-  .exercise-options { border: 0; margin: 0; border-radius: 0; background: none; min-width: 0; }
-  .exercise-actions > .exercise-options { width: 100%; }
-  .exercise-options > summary { width: 100%; font-size: 12px; min-height: 44px; padding: 10px 6px;
-    justify-content: flex-end; border-radius: 10px; }
-  .wactions .exercise-options > summary { justify-content: center; background: var(--sand); border-radius: 12px; font-size: 13px; }
   /* Keep the exercise and logging controls anchored when supporting actions open.
      Centering the whole stack makes every item drift upward during expansion. */
   /* 10px less than it was: the dots' band grew by that much, so at rest nothing
@@ -3090,19 +3225,7 @@ export const STYLE = String.raw`<style>
   #workout:not(.summary) .wmain { justify-content: flex-start; min-height: 0;
     padding-top: clamp(10px, calc(var(--vvh) * .04 - 10px), 22px); }
   #workout:not(.summary) .wmain > * { flex-shrink: 0; }
-  .exercise-options .disclosure-body { padding: 4px 12px; margin: 4px 0 10px; background: var(--sand); border-radius: 12px; overflow: hidden; }
-  .exercise-options .pickrow { width: 100%; min-height: 48px; padding: 12px 2px; border-radius: 0;
-    font-size: 13px; font-weight: 550; background: transparent; color: var(--ink); justify-content: flex-start;
-    transition: background-color var(--t-1) var(--e-soft); }
-  .exercise-options .pickrow + .pickrow { border-top: 1px solid var(--line); }
-  .exercise-options .pickrow .ic { width: 18px; height: 18px; color: var(--ink-2); }
-  .exercise-options .pickrow:active { background: var(--card); }
-  .exercise-options > summary:active { background: var(--sand); transform: none; }
-  .exercise-options[open] > summary { color: var(--ember-ink); }
-  .exercise-options.details-closing > summary { color: var(--ink-2); }
-  #workmanage .managerow { flex-direction: column; }
-  #workmanage .mbtn { flex: auto; min-height: 44px; justify-content: flex-start; }
-  #workoptions .pickrow, #recapopts .pickrow { min-height: 48px; }
+  #recapopts .pickrow { min-height: 48px; }
   /* Destructive, so it takes the one red the system has - the same red Settings
      gives its delete - rather than the muted grey that reads as unavailable. */
   /* "Choose the first exercise" is a sentence, and half a row at 375px wraps
@@ -3110,27 +3233,8 @@ export const STYLE = String.raw`<style>
   #sectionsheet .btnrow .ghost { flex: 0 0 auto; width: auto; padding: 14px 20px; }
   /* The section sheet's Remove is its last word and its one red one: this one. */
   #recapopts .danger, #sectionremove { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
-  #dmore { min-height: 44px; }
-  /* The library row wraps rather than scrolls, and a wrapped row cannot carry its
-     side inset on its end chips: the second line's first chip is not :first-child,
-     so "Clear filter" sat flush against the screen edge under a row inset 18px.
-     A wrapping row has no scrollport for the two engines to disagree about, so the
-     inset moves back onto the box, and the scroll fade goes with the scrolling. */
-  #chips { flex-wrap: wrap; overflow: visible; padding-left: 18px; padding-right: 18px;
-    -webkit-mask-image: none; mask-image: none; }
-  #chips > :first-child { margin-left: 0; }
-  #chips > :last-child { margin-right: 0; }
-  /* iOS date inputs can add padding outside their declared width. Let a normal
-     box own the inset and border; the native picker remains an unpadded input. */
-  .schedule-date-control { display: flex; min-width: 0; padding: 0 14px; border: 1px solid var(--line);
-    border-radius: 13px; background: var(--sand); transition: border-color var(--t-2), background-color var(--t-2); }
-  .schedule-date-control:focus-within { border-color: var(--ember); background: var(--card); }
-  #scheduledate { display: block; flex: 1; width: 100%; min-width: 0; max-width: 100%; min-height: 48px;
-    margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; -webkit-appearance: none; appearance: none; }
-  #scheduledate::-webkit-date-and-time-value { min-height: 24px; line-height: 24px; text-align: left; }
   #explainask { min-height: 44px; }
-  .disclosure summary:focus-visible, .exercise-actions button:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
-  .workout-meta { margin: 6px 0 16px; color: var(--ink-2); font-size: 13px; }
+  .disclosure summary:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
   .history-card > summary { position: relative; cursor: pointer; list-style: none; min-height: 44px; padding-right: 20px; }
   .history-card > summary::-webkit-details-marker { display: none; }
   .history-card > summary::after { content: "Session details"; display: block; font-size: 11px; font-weight: 600; color: var(--ember-ink); margin-top: 8px; }
@@ -3157,8 +3261,6 @@ export const STYLE = String.raw`<style>
   .session-set span { color: var(--ink-2); flex-shrink: 0; }
   .session-set b { text-align: right; overflow-wrap: anywhere; }
   @media (prefers-reduced-motion: reduce) { .session-link { transition: none; } }
-  #scheduleerror { display: block; }
-  #scheduleerror:empty { display: none; }
   /* Measured height moves the following content with the opening section. Only
      the section in flight is clipped; settled content returns to natural height. */
   details { overflow-anchor: none; }
@@ -3170,19 +3272,14 @@ export const STYLE = String.raw`<style>
   .disclosure > summary::after, .guide-topic > summary::after { content: ""; flex: 0 0 auto; width: 6px; height: 6px;
     border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; margin-left: auto;
     transform: rotate(-45deg); transition: transform var(--t-3) var(--e-soft); }
-  .exercise-options > summary::after { margin-left: 0; }
   .disclosure[open] > summary::after, .guide-topic[open] > summary::after { transform: rotate(45deg); }
   .disclosure.details-closing > summary::after, .guide-topic.details-closing > summary::after { transform: rotate(-45deg); }
   @media (prefers-reduced-motion: reduce) {
-    .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before,
-    .exercise-options .pickrow, .restpill { transition: none; }
+    .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before { transition: none; }
   }
   .reader-offer { background: var(--ember-soft); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin: 16px 0; }
   .reader-offer p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin: 8px 0 12px; }
   .reader-offer .fixlink { background: none; border: 0; color: var(--ember-ink); font: inherit; text-align: left; padding: 0; display: block; margin-top: 12px; min-height: 44px; }
-  .set-goal { color: #bd3434; border: 1px solid currentColor; border-radius: 12px; padding: 12px; margin: 16px 0; font-size: 14px; font-weight: 650; text-align: center; }
-  .set-goal.reached { color: var(--good); }
-  @media (prefers-color-scheme: dark) { .set-goal:not(.reached) { color: #ff9292; } }
   /* ---------- the rows that can be swiped away ----------
      A card's exercise rows and its block heading each hide one action, Delete,
      behind a leftward swipe. They bleed to the card's inner edge like every
@@ -3193,7 +3290,6 @@ export const STYLE = String.raw`<style>
      16px by padding. */
   .delete-swipe { border-radius: 0; }
   .delete-swipe > .exmain { display: block; padding: 0 16px; background: var(--card); }
-  .delete-swipe .exercise-card { width: 100%; box-sizing: border-box; }
   .delete-swipe.open > .exmain { transform: translateX(-64px); }
   .exact.danger { background: #bb3030; color: #fff; }
   /* The drawer is a rounded red button standing off the row's edge, not a slab

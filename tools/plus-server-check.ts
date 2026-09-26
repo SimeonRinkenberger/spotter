@@ -143,7 +143,7 @@ await check("a Basic account at the shelf is shown Plus, and told where it is fr
   M.setSellable(["plus"]);
   const r = await body(await M.capLimit("library", basic, 20, {}));
   eq([r.http, r.upgrade, r.next_plan, r.next_cap, r.cap, r.used, r.resets_at], [429, true, "plus", null, 20, 20, null]);
-  ok(r.message.startsWith("That is 20 saved workouts — the whole Basic library."), r.message);
+  ok(r.message.startsWith("That is 20 saved workouts, the most the Basic plan keeps."), r.message);
   ok(r.message.endsWith(" Spotter Plus keeps every workout — open Spotter to see it."), r.message);
   ok(r.message.length <= 300, "the Share Extension shows 300 characters: " + r.message.length);
 });
