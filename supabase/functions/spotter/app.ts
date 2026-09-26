@@ -3458,8 +3458,9 @@ export const APP = String.raw`
 
     var dead = isPending(w) || isFailed(w), art = cardArt(w);
     // A coach's card has no video, and an upload's file is gone by the time its
-    // card exists: neither has an original to go back to.
-    var canWatch = !isUpload(w) && w.platform !== "pumpy";
+    // card exists: neither has an original to go back to. Nor has a Spotter
+    // Starter, whose "link" is spotter://starter/gym, the app's own name for it.
+    var canWatch = !isUpload(w) && w.platform !== "pumpy" && w.kind !== "starter";
 
     // The original in the clip sheet with its caption under it: what the folded
     // "Watch original" row used to hold, now a tap on the picture. The player
@@ -3855,8 +3856,10 @@ export const APP = String.raw`
     // What used to stand between a new user and Start — the Basic/Plus read offer —
     // with the repairs for a card that came out thin: one fold under the list.
     // Built when it opens, because its Plus count is a request and most cards are
-    // never asked about.
-    if (w.platform !== "pumpy") {
+    // never asked about. A starter was written by hand, not read: there is
+    // nothing to read again and no caption to paste (a re-read would spend a
+    // Basic extract on fetching spotter://starter/gym).
+    if (w.platform !== "pumpy" && w.kind !== "starter") {
       var imp = disclosure("Improve this read"), ib = imp.lastChild;
       imp._prepareDisclosure = function () {
         if (ib.firstChild) return;
@@ -5653,7 +5656,7 @@ export const APP = String.raw`
     $("dren").hidden = isPending(w);
     $("dcoln").textContent = n ? String(n) : "";
     $("dorder").hidden = dead || !ordCan(w);
-    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
+    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy" || w.kind === "starter";
     syncRereadButton(w);
   }
 
@@ -22299,7 +22302,9 @@ export const APP = String.raw`
         lines.push("• " + ex.name + (doseText(ex) ? " — " + doseText(ex) : ""));
       });
     });
-    lines.push(current.url);
+    // A starter's url is spotter://starter/gym, which opens nothing for whoever
+    // it is sent to: the list is the whole of it.
+    if (current.kind !== "starter") lines.push(current.url);
     var text = lines.join("\n");
     if (navigator.share) navigator.share({ title: current.title || "Workout", text: text }).catch(function () { });
     else if (navigator.clipboard) { navigator.clipboard.writeText(text); toast("Copied."); }
