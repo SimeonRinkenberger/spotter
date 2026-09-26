@@ -13188,7 +13188,11 @@ export const APP = String.raw`
     var at = k === "lift" ? st.latest || b : st.latest, n = ((g.program && g.program.days_per_week) || t || 3) * st.weeks, short = st.due - st.sessions;
     var d = k !== "lift" ? "" : st.status === "ahead" ? " · +" + (at - st.expected) + u
       : st.status === "behind" ? " · " + short + (short === 1 ? " session" : " sessions") : "";
-    var nums = w ? (at === null ? "Weigh in to track it" : (fat ? "" : "est. ") + at + " → " + t + u) : at + " of ~" + st.expected + " sessions";
+    // Past the target (a lift over it, a weight under it) the arrow would point back:
+    // "est. 309 lb · 295 reached".
+    var past = at !== null && w && (fat ? at <= t : at >= t);
+    var nums = w ? (at === null ? "Weigh in to track it" : (fat ? "" : "est. ") + at + (past ? u + " · " + t + " reached" : " → " + t + u))
+      : at + " of ~" + st.expected + " sessions";
     function f(x, y) { return fat ? (x === null ? 0 : clamp((x - b) / (t - b || 1), 0, 1)) : clamp(y / (n || 1), 0, 1); }
     // Before its first day a program is on no line yet, so it is neither ahead
     // nor behind: the pill says when it starts and the line how long it runs.
