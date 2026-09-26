@@ -15252,10 +15252,13 @@ export const APP = String.raw`
     return t;
   }
 
-  // What a new chat never takes off the page: an answer still arriving, or a
-  // change Pumpy is waiting on a yes or no for.
+  // What a new chat never takes off the page: an answer still arriving, a
+  // change Pumpy is waiting on a yes or no for, or an ask card still waiting on
+  // its answers (the last word in the chat) — stepping out to look up a max
+  // must not bury the form in Chats.
   function pumpyHolds(msgs) {
-    if (pumpy.busy || pumpy.live) return true;
+    var last = msgs[msgs.length - 1];
+    if (pumpy.busy || pumpy.live || (last && last.meta && last.meta.ask && !last.meta.ask.answered)) return true;
     return msgs.some(function (m) {
       return m.role === "assistant" && m.meta && m.meta.proposal && m.meta.status === "pending";
     });
@@ -16011,7 +16014,7 @@ export const APP = String.raw`
   // 3%, never more than two plates (intermediates add a few pounds a month,
   // Latella 2022) and never past what the chip asked for.
   function previewCard(g) {
-    var out = document.createDocumentFragment(), card = out.appendChild(el("div", "proposal"));
+    var out = document.createDocumentFragment(), card = out.appendChild(el("div", "proposal pview"));
     var u = g.unit || state.unit, n = goalSetting() || 3, lift = g.type === "lift" && goalLift(g.exercise), est = g.baseline, m;
     var P = { lift: ["A " + (lift ? lift.word : "strength") + " plan for you", "8 weeks", n + " days a week", "Build, Deload, Heavy, Peak, Test"],
       fat: ["A fat-loss plan for you", "10 weeks", n + " training days a week", "daily steps and a weekly weigh-in"],
@@ -16223,9 +16226,13 @@ export const APP = String.raw`
     var ui = pumpyUI(m.id), u = p.unit || g.unit || "", v = VERDICTS[p.verdict], ws = p.weeks || [], st = m.meta.status;
     card.appendChild(el("h4", null, p.free ? "Your free plan" : "Program"));
     card.appendChild(el("div", "ptitle", g.title || "Your plan"));
+    // A fat-loss plan is training plus a daily target and a weekly weigh-in:
+    // all three are what it asks of the person, so all three are on the card.
     card.appendChild(el("div", "pmeta", [g.target ? (g.baseline ? (g.type === "lift" ? "est. " : "") + g.baseline + " → " : "") +
-      g.target + " " + u : "", g.weeks ? g.weeks + " weeks" : "", g.days_per_week ? g.days_per_week + " days a week" : ""]
-      .filter(Boolean).join(" · ")));
+      g.target + " " + u : "", g.weeks ? g.weeks + " weeks" : "", g.days_per_week ? g.days_per_week + " days a week" : "",
+      g.daily ? (g.daily.steps ? g.daily.steps.toLocaleString() + " steps" : g.daily.cardio_minutes + " min cardio") + " a day" : "",
+      g.weigh_in_dow ? "weigh in " + addDays(mondayOf(new Date()), g.weigh_in_dow - 1)
+        .toLocaleDateString(undefined, { weekday: "long" }) + "s" : ""].filter(Boolean).join(" · ")));
     if (p.replaces) card.appendChild(icon(el("div", "pswap"), "swap", "Replaces " + p.replaces.title));
     if (v) card.appendChild(icon(el("span", "verdict " + p.verdict), v[0], v[1]));
     [p.verdict_note, p.medical_note].forEach(function (t) { if (t) card.appendChild(el("p", "pnote", t)); });
@@ -16263,7 +16270,7 @@ export const APP = String.raw`
       yes.onclick = function () { confirmPumpy(m, true, no, yes); };
     } else {
       card.appendChild(st === "done" ? icon(el("div", "done"), "check", "On your calendar")
-        : el("div", "declined", st === "undone" ? "Undone. Your calendar is back as it was." : "Skipped"));
+        : el("div", "declined", st === "undone" ? "Undone" : "Skipped"));
     }
     // Decisions §1: the trial is offered right under the free plan, on day 0.
     if (st === "done" && p.free && isFree()) {
@@ -16543,9 +16550,11 @@ export const APP = String.raw`
     // Pumpy is Plus, with one door for Basic (decisions §1): its free goal plan —
     // the thread that plan is being made in, or a goal door opening it. The
     // server draws the same line; anything else opens the Plus page and sends
-    // nothing, as it always did. Not knowing yet, a goal door may try.
+    // nothing, as it always did. Before the free plan's state is known only a new
+    // chat nobody opened as a goal is certainly not it; the rest may try, and
+    // the server's refusal is drawn like any other.
     if (isFree() && !(fp ? fp.state !== "used" && (fresh ? goal && fp.state === "available"
-      : fp.thread_id === pumpy.thread.id) : goal)) {
+      : fp.thread_id === pumpy.thread.id) : goal || !fresh)) {
       openPlans({ kind: goal ? "goal" : "pumpy" });
       return false;
     }
@@ -16681,6 +16690,8 @@ export const APP = String.raw`
           return;
         }
         m.meta.status = accept ? "done" : "declined";
+        // A yes or a no is the person acting: the five-minute rule counts it.
+        pumpy.lastAt = Date.now();
         (r.messages || []).forEach(function (x) { pumpy.messages.push(x); });
         if (r.workout) {
           if (r.created && !state.workouts.some(function (w) { return w.id === r.workout.id; })) state.workouts.unshift(r.workout);

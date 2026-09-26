@@ -2857,6 +2857,8 @@ export const STYLE = String.raw`<style>
   .pwk .pline span { flex: 1; min-width: 0; }
   .pwk .pline em { font-style: normal; font-weight: 650; color: var(--ink); white-space: nowrap; }
   .proposal .linkbtn { margin-top: 8px; }
+  /* A preview writes nothing, so it does not wear the ember of a card that does. */
+  .proposal.pview { border: 1px solid var(--line); box-shadow: var(--sh-sm); }
   @media (prefers-color-scheme: dark) {
     .verdict { background: #173026; }
     .verdict.stretch { background: #33270F; color: var(--warn); }
