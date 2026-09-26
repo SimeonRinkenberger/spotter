@@ -16854,6 +16854,28 @@ export const APP = String.raw`
     return out;
   }
 
+  // A program lands with its head in view. Its verdict and the honest note (and a
+  // fat-loss plan's medical line and sources) come before its weeks, and
+  // following the answer to its foot left them above the fold beside Build my
+  // plan (QA F9). From where the reader was, gliding as the library's section
+  // jumps do, and under reduced motion there at once; a card that fits whole
+  // is shown whole, the glide stopping at the foot. An ask card still folding
+  // above it (askFold, when the answer was quick) moves it up as it goes, so
+  // the glide waits for the fold.
+  function programTop(m, from) {
+    var pg = $("pumpyview"), fold = $("pumpylog").querySelector(".askcard.sent");
+    var run = fold && fold.getAnimations ? fold.getAnimations() : [];
+    pg.scrollTop = from;
+    if (run.length) run[0].finished.then(go, go); else go();
+    function go() {
+      var e = pumpy.nodes && pumpy.nodes[m.id], card = e && e.node.isConnected && e.node.querySelector(".proposal"), top;
+      if (!card) return;
+      top = Math.max(0, pg.scrollTop + card.getBoundingClientRect().top - $("pumpybar").getBoundingClientRect().bottom - 10);
+      if (lessMotion() || !pg.scrollTo) pg.scrollTop = top;
+      else pg.scrollTo({ top: top, behavior: "smooth" });
+    }
+  }
+
   // The card's Undo, when its window has closed: it fades where it stands.
   function undoGone(b) {
     if (!b.isConnected || b.classList.contains("gone")) return;
@@ -17199,7 +17221,7 @@ export const APP = String.raw`
       pumpy.live = null;
       // renderPumpy() ends at the bottom, which is right for a reader who was
       // following along and rude to one who had scrolled up to re-read.
-      var keep = pumpy.stick ? -1 : $("pumpyview").scrollTop;
+      var keep = pumpy.stick ? -1 : $("pumpyview").scrollTop, from = $("pumpyview").scrollTop;
       // Every answer carries the meter, the refusal at the cap most of all.
       absorbMeter(r && r.pumpy);
       pumpy.messages = pumpy.messages.filter(function (m) { return String(m.id).indexOf("local-") !== 0; });
@@ -17237,6 +17259,7 @@ export const APP = String.raw`
       }
       renderPumpy();
       if (keep >= 0) $("pumpyview").scrollTop = keep;
+      else if (last && last.meta && last.meta.proposal && last.meta.proposal.kind === "program") programTop(last, from);
     }).then(function () {
       // Still busy means the body ended with no final line — a dead isolate or a
       // dropped connection. Same recovery as a throw, one handler below.
