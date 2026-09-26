@@ -81,6 +81,13 @@ function isJavaScript(openTag) {
 // whitespace minification stay off for debugging; the es5 target
 // matches the house rule for app.ts, so the printer keeps { a: a } rather than reaching
 // for shorthand the target does not have.
+//
+// The printer's indentation does go (B.2, ~80 KB, a tenth of the page): every line
+// stays where it was, so a stack trace's line number still finds its line and Web
+// Inspector's pretty-print restores the rest. It is safe on the printer's output and
+// only there: esbuild never lets a token span a line (strings come back with \n
+// escaped, comments are gone, and the es5 target has no template literals), so the
+// start of a line is always between two tokens, where whitespace is only a separator.
 function stripCode(source, loader, where) {
   const { code, warnings } = transformSync(source, {
     loader,
@@ -99,7 +106,8 @@ function stripCode(source, loader, where) {
   if (code.toLowerCase().includes(closer)) {
     throw new Error(where + " contains " + closer + " after stripping — it would close its own tag");
   }
-  return code;
+  if (code.includes("`")) throw new Error(where + " has a backtick after stripping — its indentation cannot be dropped safely");
+  return code.replace(/^[ \t]+/gm, "");
 }
 
 // Walks one template as markup: drops <!-- --> comments, hands <script>/<style> bodies to
