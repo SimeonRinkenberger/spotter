@@ -1183,29 +1183,64 @@ export const APP = String.raw`
   // account feature). Nothing in it asks the server anything as anybody. The
   // finished session waits on this phone, and the first sign-in here puts it in
   // that account as the ordinary log row it would have been.
-  var GUEST_KEY = "spotter.guest.session";
+  // Every session done before an account waits, not only the last: two
+  // starters tried before signing up are two sessions in the history.
+  var GUEST_KEY = "spotter.guest.session", GUEST_MAX = 5;
 
+  // The waiting sessions, newest last. A build before this one kept a single
+  // session as the object itself, which reads as a list of one.
+  function guestList() {
+    var g = null;
+    try { g = JSON.parse(localStorage.getItem(GUEST_KEY)); } catch (e) { /* none */ }
+    return Array.isArray(g) ? g.filter(Boolean) : g ? [g] : [];
+  }
+
+  function guestPut(list) {
+    try {
+      if (list.length) localStorage.setItem(GUEST_KEY, JSON.stringify(list));
+      else localStorage.removeItem(GUEST_KEY);
+    } catch (e) { /* private mode: kept for this visit only */ }
+  }
+
+  // One session, one entry: by its id, or by when it started where this
+  // WebView had no randomUUID to give it one.
+  function guestSame(a, b) { return a.id || b.id ? a.id === b.id : a.started_at === b.started_at; }
+
+  // A recap's correction replaces its session's entry; a new session joins the
+  // end, and past five the oldest goes.
   function guestKeep(p) {
     // An id of its own, so a retry after a lost answer is refused as a
     // duplicate rather than saved twice.
     if (!p.id && window.crypto && crypto.randomUUID) p.id = crypto.randomUUID();
-    try { localStorage.setItem(GUEST_KEY, JSON.stringify(p)); } catch (e) { /* private mode: kept for this visit only */ }
+    var list = guestList(), i = 0;
+    while (i < list.length && !guestSame(list[i], p)) i++;
+    list[i] = p;
+    guestPut(list.slice(-GUEST_MAX));
   }
 
+  // Each waiting session goes in as the ordinary log row it would have been,
+  // oldest first. A copy already there (landed before its answer was lost) is
+  // refused as a duplicate id, 23505, and counts as landed. Only what landed
+  // leaves this phone; the rest waits for the next sign-in to try again.
   function guestLanded() {
-    var g = null, epoch = accountEpoch, uid = state.user && state.user.id;
+    var list = guestList(), epoch = accountEpoch, uid = state.user && state.user.id, landed = [];
     // The sheet that asked them to keep it has been answered.
     if (askKeep) closeSheet("asksheet");
-    try { g = JSON.parse(localStorage.getItem(GUEST_KEY)); } catch (e) { /* none */ }
-    if (!g || !uid) return;
-    g.user_id = uid;
-    sb.from("workout_logs").insert(g).then(function (r) {
-      // Anything but a copy already there waits for the next sign-in to try again.
-      if (!accountNow(epoch, uid) || (r.error && r.error.code !== "23505")) return;
-      localStorage.removeItem(GUEST_KEY);
+    if (!list.length || !uid) return;
+    list.reduce(function (before, g) {
+      return before.then(function () {
+        if (!accountNow(epoch, uid)) return;
+        return sb.from("workout_logs").insert(Object.assign({}, g, { user_id: uid })).then(function (r) {
+          if (!r.error || r.error.code === "23505") landed.push(g);
+        }, function () { /* no connection: it waits */ });
+      });
+    }, Promise.resolve()).then(function () {
+      if (!accountNow(epoch, uid) || !landed.length) return;
+      guestPut(guestList().filter(function (x) { return !landed.some(function (g) { return guestSame(g, x); }); }));
       invalidateLogs();
       quietly(loadLogs().then(function (logs) {
-        toast(logs.length > 1 ? "Saved your workout" : "Saved your first workout");
+        toast(landed.length > 1 ? "Saved your " + landed.length + " workouts"
+          : logs.length > 1 ? "Saved your workout" : "Saved your first workout");
         publishSummary();
         if (drawn.train) renderTrain();
       }));
