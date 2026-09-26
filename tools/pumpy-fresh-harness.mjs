@@ -65,7 +65,7 @@ function setup(opts = {}) {
     state: { user: { id: 'u1' }, view: opts.view || 'pumpy' },
     $: (id) => ids[id],
     el: (tag, cls, text) => { const n = new El(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; },
-    isFree: () => false, lessMotion: () => true, NO_TOUCH: false, MAX_REFS: 6, pumpyReset: null,
+    isFree: () => false, lessMotion: () => true, NO_TOUCH: false, MAX_REFS: 6, PUMPY_CAPS: ['ask', 'program'], pumpyReset: null,
     pumpyArt: () => new El('span'), pumpyMark: () => new El('span'),
     renderPumpyCtx() {}, renderPumpyCredits() {}, guidePage() {}, guideLearn() {}, haptic() {},
     renderMsg: (m) => { const n = new El('div'); n.className = 'msg ' + m.role; n.textContent = m.content || ''; return n; },

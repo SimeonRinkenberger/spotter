@@ -19,6 +19,9 @@ const c=vm.createContext({console,Request,Response,deterministicCombine,
  dbInsert:async(table,row)=>{writes.push({table,row});return {...row,id:writes.length};},dbPatch:async()=>{},
  pumpyRecordUsage:async(...args)=>usage.push(args),pumpyBlock:()=>({}),
  PUMPY_TRIVIAL:/^thanks$/i,haveAI:()=>{aiChecks++;return false;},
+ // B.2: a Plus turn with no caps, no answers and nothing the safety check stops.
+ capsOf:()=>new Set(),pumpyAnswers:async()=>({}),safetyCheck:()=>null,mentionsMinor:()=>false,pumpyMinorKnown:async()=>false,
+ freeGoalGate:async()=>({refuse:{status:'limit'}}),
 });
 vm.runInContext(transformSync(['pumpyInputError','pumpyReferenceIds','pumpyAttachmentError','pumpyRefBlock','handlePumpyChat'].map(lift).join('\n'),{loader:'ts',format:'cjs'}).code,c);
 const req=body=>new Request('https://fixture.invalid',{method:'POST',body:JSON.stringify(body)});

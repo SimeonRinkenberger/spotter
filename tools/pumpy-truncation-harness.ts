@@ -556,6 +556,103 @@ await aiActor.run({ userId: USER, workKey: "adapter-fixture" }, async () => {
   check("gemini stream: STOP → no flag", !("truncated" in g4) && g4.text === "{}");
 });
 
+// ---------- 9. a goal program must fit in one reply (B.2) ----------
+//
+// The largest program the prompt allows in practice: 12 weeks, 4 days a week, the goal
+// lift prescribed twice a week, two new compact templates. Written to the prompt's
+// rules (nulls left out, rx only on the lift's days), it has to leave the model room
+// to think under pumpy.max_out; and a build that did not declare "program" must never
+// be handed one.
+function program12x4() {
+  const tpl = (ref: string, title: string, names: string[]) => ({ ref, title, category: "Push", duration_minutes: 60,
+    blocks: [{ title: null, type: "straight", exercises: names.map((name, i) => ({ name, sets: i ? 3 : 5, reps: i ? "10" : "5" })) }] });
+  const pct = [0.75, 0.775, 0.8, 0.65, 0.8, 0.825, 0.85, 0.7, 0.85, 0.875, 0.9, 1];
+  const labels = ["Build", "Build", "Build", "Deload", "Build", "Build", "Heavy", "Deload", "Heavy", "Heavy", "Peak", "Test"];
+  const start = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  return {
+    kind: "program",
+    goal: { type: "lift", title: "Bench 305", exercise: "bench-press", target: 305, unit: "lb", baseline: 287 },
+    verdict: "stretch", verdict_note: "305 is a stretch in 12 weeks; we test at the end.",
+    templates: [tpl("t1", "Bench Day", ["Bench Press", "Incline Dumbbell Press", "Dumbbell Row", "Lateral Raise", "Tricep Pushdown"]),
+      tpl("t2", "Legs and Pull", ["Back Squat", "Romanian Deadlift", "Lat Pulldown", "Leg Curl", "Plank"])],
+    weeks: pct.map((p, i) => ({ week: i + 1, label: labels[i], days: [
+      { dow: 1, ref: "t1", rx: { exercise: "bench-press", sets: i === 11 ? 1 : 5, reps: i === 11 ? "1" : "5", pct: p, rpe: 8 } },
+      { dow: 2, ref: "t2" },
+      { dow: 4, ref: "t1", rx: { exercise: "bench-press", sets: 4, reps: "8", pct: Math.round((p - 0.1) * 100) / 100 } },
+      { dow: 5, ref: "t2" }] })),
+    start, summary: "Twelve weeks, four days a week, building your bench toward 305.",
+  };
+}
+const GOAL_SAY = "It's a stretch in 12 weeks, so we build, deload, peak and test at the end.";
+{
+  const text = JSON.stringify({ say: GOAL_SAY, tool: null, proposal: program12x4() });
+  const est = estTokens(text);
+  console.log(`measure  program 12×4 ${text.length} chars · ≈${est} tokens (chars/4 ${Math.ceil(text.length / 4)}, chars/3 ${Math.ceil(text.length / 3)})`);
+  check("a 12-week, 4-day program plus low reasoning uses under three-quarters of the cap",
+    est + REASONING_ALLOWANCE <= DEFAULTS.maxOut * 0.75, (est + REASONING_ALLOWANCE) + " vs " + DEFAULTS.maxOut);
+  const legacy = S.pumpySystem(new Date("2026-09-23T12:00:00Z"), [], "LIBRARY — empty; nothing saved yet.");
+  const goals = S.pumpySystem(new Date("2026-09-23T12:00:00Z"), [], "LIBRARY — empty; nothing saved yet.", { goals: true, ask: true });
+  check("a build without caps gets no goals prompt", !legacy.includes("GOALS.") && !legacy.includes("get_lift_history"));
+  check("a build with caps gets it, inside the static prefix", goals.includes("GOALS.") && goals.includes("get_lift_history") &&
+    goals.indexOf("GOALS.") < goals.indexOf("--- CURRENT STATE"));
+  check("the goals prompt forbids calorie targets and names the pace cap", /Never set calorie targets/.test(goals) && /1% of body weight and 2 lb/.test(goals));
+}
+await aiActor.run({ userId: USER, workKey: "validate-program" }, async () => {
+  const none: any = await S.validateProposal(USER, program12x4());
+  eq("no caps: a program is not a proposal kind", none.error, "unknown proposal kind program");
+  const today = new Date().toISOString().slice(0, 10);
+  const vctx = { caps: new Set(["ask", "program"]), free: null, unit: "lb", today, answers: [], minor: false, safetyStop: false, bodyWeight: null };
+  const p: any = await S.validateProposal(USER, program12x4(), vctx);
+  check("with caps it expands: 12 weeks, 48 sessions, two new templates", p.kind === "program" && p.counts?.weeks === 12 &&
+    p.counts?.sessions === 48 && p.counts?.new_templates === 2, JSON.stringify(p).slice(0, 300));
+  check("the verdict is the server's: 287 → 305 in 12 weeks is a stretch", p.verdict === "stretch" && p.goal?.target === 305);
+  check("every new template has an id and its normalized workout", p.templates?.every((t: any) => t.new && /^[0-9a-f-]{36}$/.test(t.workout_id) && t.create?.blocks?.length));
+  const free: any = await S.validateProposal(USER, combine(1, 3, "compact"), { ...vctx, free: THREAD });
+  check("in Basic's free conversation only a program can be proposed", String(free.error ?? "").includes("only a program"));
+});
+{
+  // The whole turn: streamed, one call, the program arrives, and the prompt carried GOALS.
+  script = [{ content: JSON.stringify({ say: GOAL_SAY, tool: null, proposal: program12x4() }), finish: "stop" }];
+  bodies.length = 0; inserted.length = 0; log = [];
+  const cfg = S.buildPumpyCfg({});
+  const meter = { plan: "plus", day: 400, month: 5000, totals: { day: 0, month: 0, minute: 0 }, profile: { settings: { unit: "lb", tz: "America/Chicago" } } };
+  const sink = { send(ev: any) { log.push(ev); }, dead: false };
+  console.log = () => {};
+  let res: any;
+  try {
+    res = await aiActor.run({ userId: USER, workKey: crypto.randomUUID(), deadline: Date.now() + 60_000 }, () =>
+      S.pumpyRun({ userId: USER, thread: { id: THREAD }, userMsg: { id: 901 }, message: "Get my bench to 305", refs: [], meter, cfg,
+        caps: new Set(["ask", "program"]), free: null }, sink as any));
+  } finally { console.log = realLog; }
+  const msg = inserted.filter((x) => x.table === "pumpy_messages" && x.row.role === "assistant").map((x) => x.row)[0];
+  check("one model call, no retry", bodies.length === 1, String(bodies.length));
+  check("the program arrived as the pending proposal", !!res?.pending && msg?.meta?.proposal?.kind === "program");
+  check("the call carried the goals prompt", String(bodies[0]?.messages?.[0]?.content ?? "").includes("GOALS."));
+  check("the say streamed", log.some((e) => e.t === "delta"));
+
+  // An ask card, drawn by a build that declared it; spoken to one that did not.
+  const askReply = JSON.stringify({ say: "A few details first:", ask: { fields: [
+    { id: "days", label: "Days a week", type: "choice", options: ["3", "4"], value: "4" },
+    { id: "adult", label: "Are you 18 or older?", type: "choice", options: ["Yes", "No"], value: "Yes" }], submit: "Build my plan" }, tool: null, proposal: null });
+  for (const withAsk of [true, false]) {
+    script = [{ content: askReply, finish: "stop" }];
+    bodies.length = 0; inserted.length = 0; log = [];
+    console.log = () => {};
+    try {
+      await aiActor.run({ userId: USER, workKey: crypto.randomUUID(), deadline: Date.now() + 60_000 }, () =>
+        S.pumpyRun({ userId: USER, thread: { id: THREAD }, userMsg: { id: 902 }, message: "Help me lose 10 lb", refs: [], meter, cfg,
+          caps: new Set(withAsk ? ["ask", "program"] : ["program"]), free: null }, null));
+    } finally { console.log = realLog; }
+    const m = inserted.filter((x) => x.table === "pumpy_messages" && x.row.role === "assistant").map((x) => x.row)[0];
+    if (withAsk) {
+      check("caps ask: the card rides on the message, the 18+ question unanswered", m?.meta?.ask?.fields?.length === 2 &&
+        m.meta.ask.fields[1].value === undefined, JSON.stringify(m?.meta));
+    } else {
+      check("no ask cap: the questions are said instead", !m?.meta?.ask && /To build it I need a few things: days a week, are you 18 or older/.test(m?.content ?? ""), m?.content);
+    }
+  }
+}
+
 globalThis.fetch = realFetch;
 console.warn = realWarn;
 console.log((failures ? "FAILED " : "ok ") + (checks - failures) + "/" + checks + " checks — mocked OpenAI and database, no paid calls");

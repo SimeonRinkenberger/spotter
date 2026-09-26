@@ -40,6 +40,7 @@ const checks = [
   ['Library search X: clears and puts the keyboard away on a finger\'s lift', 'node', ['tools/search-x-harness.mjs']],
   ['Speed: cache before the token, Train read once at launch and cached, library columns', 'node', ['tools/speed-harness.mjs']],
   ['Train is home: Up next S1–S6, Ready to try, card status, the plan fortnight, the ready sheet, one set door, wording', 'node', ['tools/simplify-b-harness.mjs']],
+  ['Goals (B.2): goal chips, the estimated max, prescriptions, goal status, program expansion and verdicts, the red team, asks, caps, the free program, the starters', 'node', ['tools/goals-harness.mjs']],
   ['Train: the dot language, the segment memory, the plan and progress links', 'node', ['tools/train-harness.mjs']],
   ['Card-size covers: fit, header walk, re-encode, upload order', 'deno', ['run','--allow-read','--allow-env','tools/cover-check.ts']],
   ['One declaration per name in app.ts', 'node', ['tools/unique-decls.mjs']],
