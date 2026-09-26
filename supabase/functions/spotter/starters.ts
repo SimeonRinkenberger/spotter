@@ -9,7 +9,10 @@ export type Starter = {
   key: "bodyweight" | "dumbbells" | "gym"; title: string; where: string; minutes: number; category: string;
   equipment: string[]; muscle_groups: string[];
   blocks: { title: string | null; type: string; rounds: number | null; rest_seconds: number | null;
-    exercises: { name: string; canonical_id: string; sets: number; reps?: string; duration_seconds?: number; rest_seconds: number; cue: string }[] }[];
+    exercises: { name: string; canonical_id: string; sets: number; reps?: string; duration_seconds?: number; rest_seconds: number; cue: string;
+      // The catalog's own clip (row zero of exercise_demo_videos, what /api/demo-video answers), so a
+      // guest sees how a movement goes with no account and no server call (app.ts starterDemo).
+      demo?: { id: string; title: string; channel: string; secs: number | null } }[] }[];
 };
 
 export const STARTERS: Starter[] = [
@@ -39,7 +42,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "12",
             "rest_seconds": 45,
-            "cue": "Sit back and down, chest tall, heels flat."
+            "cue": "Sit back and down, chest tall, heels flat.",
+            "demo": {
+              "id": "BKU3FCkS3-k",
+              "title": "Body Weight Squat",
+              "channel": "MuscleWiki",
+              "secs": 13
+            }
           },
           {
             "name": "Push-Up",
@@ -47,7 +56,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "8",
             "rest_seconds": 45,
-            "cue": "Hands under shoulders, body in one line. Knees down is fine."
+            "cue": "Hands under shoulders, body in one line. Knees down is fine.",
+            "demo": {
+              "id": "mm6_WcoCVTA",
+              "title": "Pushup",
+              "channel": "Renaissance Periodization",
+              "secs": 11
+            }
           },
           {
             "name": "Reverse Lunge",
@@ -55,7 +70,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "8 each leg",
             "rest_seconds": 45,
-            "cue": "Step back, lower the back knee, drive up through the front heel."
+            "cue": "Step back, lower the back knee, drive up through the front heel.",
+            "demo": {
+              "id": "TQfhY5oJ_Sc",
+              "title": "Reverse Lunge",
+              "channel": "Renaissance Periodization",
+              "secs": 11
+            }
           },
           {
             "name": "Glute Bridge",
@@ -63,7 +84,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "12",
             "rest_seconds": 45,
-            "cue": "Squeeze at the top and hold for a second."
+            "cue": "Squeeze at the top and hold for a second.",
+            "demo": {
+              "id": "1PzFtQZhIgU",
+              "title": "Glute Loop Glute Bridges",
+              "channel": "Functional Bodybuilding",
+              "secs": 11
+            }
           },
           {
             "name": "Plank",
@@ -71,7 +98,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "duration_seconds": 30,
             "rest_seconds": 30,
-            "cue": "Elbows under shoulders, ribs down, keep breathing."
+            "cue": "Elbows under shoulders, ribs down, keep breathing.",
+            "demo": {
+              "id": "P3FR4GUl2QM",
+              "title": "Plank",
+              "channel": "Catalyst Athletics",
+              "secs": 57
+            }
           }
         ]
       }
@@ -107,7 +140,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "10",
             "rest_seconds": 60,
-            "cue": "Hold one dumbbell at your chest, elbows inside the knees at the bottom."
+            "cue": "Hold one dumbbell at your chest, elbows inside the knees at the bottom.",
+            "demo": {
+              "id": "OmPAYXdeRAo",
+              "title": "Goblet Squat",
+              "channel": "MuscleWiki",
+              "secs": 26
+            }
           },
           {
             "name": "Dumbbell Floor Press",
@@ -115,7 +154,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "10",
             "rest_seconds": 60,
-            "cue": "Lie on the floor, upper arms touch down, press straight up."
+            "cue": "Lie on the floor, upper arms touch down, press straight up.",
+            "demo": {
+              "id": "6G-fNatzuSk",
+              "title": "Floor Press",
+              "channel": "CrossFit",
+              "secs": 33
+            }
           },
           {
             "name": "Dumbbell Row",
@@ -123,7 +168,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "10 each arm",
             "rest_seconds": 60,
-            "cue": "Hand on a knee or a chair, pull the bell to your hip."
+            "cue": "Hand on a knee or a chair, pull the bell to your hip.",
+            "demo": {
+              "id": "QvJZNnUcbsQ",
+              "title": "Dumbbell Row",
+              "channel": "MuscleWiki",
+              "secs": 19
+            }
           },
           {
             "name": "Dumbbell Romanian Deadlift",
@@ -131,7 +182,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "10",
             "rest_seconds": 60,
-            "cue": "Soft knees, push the hips back, bells close to your legs."
+            "cue": "Soft knees, push the hips back, bells close to your legs.",
+            "demo": {
+              "id": "_U9KjljQyd0",
+              "title": "Romanian Deadlift (RDL)",
+              "channel": "Catalyst Athletics",
+              "secs": 84
+            }
           },
           {
             "name": "Dumbbell Shoulder Press",
@@ -139,7 +196,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "10",
             "rest_seconds": 60,
-            "cue": "Ribs down, press up until your arms are straight."
+            "cue": "Ribs down, press up until your arms are straight.",
+            "demo": {
+              "id": "Raemd3qWgJc",
+              "title": "Standing Dumbbell Shoulder Press",
+              "channel": "Renaissance Periodization",
+              "secs": 11
+            }
           },
           {
             "name": "Plank",
@@ -147,7 +210,13 @@ export const STARTERS: Starter[] = [
             "sets": 2,
             "duration_seconds": 40,
             "rest_seconds": 30,
-            "cue": "Elbows under shoulders, ribs down, keep breathing."
+            "cue": "Elbows under shoulders, ribs down, keep breathing.",
+            "demo": {
+              "id": "P3FR4GUl2QM",
+              "title": "Plank",
+              "channel": "Catalyst Athletics",
+              "secs": 57
+            }
           }
         ]
       }
@@ -185,7 +254,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "8",
             "rest_seconds": 120,
-            "cue": "Bar on your upper back, brace, sit down between your heels."
+            "cue": "Bar on your upper back, brace, sit down between your heels.",
+            "demo": {
+              "id": "i7J5h7BJ07g",
+              "title": "High Bar Squat",
+              "channel": "Renaissance Periodization",
+              "secs": 10
+            }
           },
           {
             "name": "Bench Press",
@@ -193,7 +268,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "8",
             "rest_seconds": 120,
-            "cue": "Feet down, shoulder blades pinned, touch the lower chest."
+            "cue": "Feet down, shoulder blades pinned, touch the lower chest.",
+            "demo": {
+              "id": "gMgvBspQ9lk",
+              "title": "Medium Grip Bench Press",
+              "channel": "Renaissance Periodization",
+              "secs": 13
+            }
           },
           {
             "name": "Lat Pulldown",
@@ -201,7 +282,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "10",
             "rest_seconds": 90,
-            "cue": "Pull the bar to your upper chest, elbows down and back."
+            "cue": "Pull the bar to your upper chest, elbows down and back.",
+            "demo": {
+              "id": "YCKPD4BSD2E",
+              "title": "Wide Grip Pulldown",
+              "channel": "Renaissance Periodization",
+              "secs": 15
+            }
           },
           {
             "name": "Leg Curl",
@@ -209,7 +296,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "10",
             "rest_seconds": 90,
-            "cue": "Slow on the way back, hips stay down."
+            "cue": "Slow on the way back, hips stay down.",
+            "demo": {
+              "id": "Orxowest56U",
+              "title": "Seated Leg Curl",
+              "channel": "Renaissance Periodization",
+              "secs": 11
+            }
           },
           {
             "name": "Seated Cable Row",
@@ -217,7 +310,13 @@ export const STARTERS: Starter[] = [
             "sets": 3,
             "reps": "10",
             "rest_seconds": 90,
-            "cue": "Sit tall, pull to your stomach, squeeze your shoulder blades."
+            "cue": "Sit tall, pull to your stomach, squeeze your shoulder blades.",
+            "demo": {
+              "id": "UCXxvVItLoM",
+              "title": "Seated Cable Row",
+              "channel": "Renaissance Periodization",
+              "secs": 18
+            }
           }
         ]
       }
