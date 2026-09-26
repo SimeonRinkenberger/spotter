@@ -16366,11 +16366,19 @@ export const APP = String.raw`
   // server's word; pumpy.free covers a session whose limits read failed.
   function freeProgram() { return (billing.limits && billing.limits.free_program) || pumpy.free || null; }
 
-  function setFree(st, id) {
+  // built: whether a program was ever confirmed there (the server says, beside
+  // the state), so "used" can be told apart from eight turns spent talking.
+  function setFree(st, id, built) {
     if (!isFree()) return;
-    pumpy.free = { state: st, thread_id: id || null };
+    pumpy.free = { state: st, thread_id: id || null, built: built };
     if (billing.limits) billing.limits.free_program = pumpy.free;
   }
+
+  // A spent free plan that was built is "yours to keep"; one whose turns ran out
+  // before any plan was confirmed has nothing to keep, so the words say the
+  // chat is used up. A server from before the field says nothing: built, the
+  // case its words were written for.
+  function freeBuilt(fp) { return !fp || fp.built !== false; }
 
   // The empty chat opens on outcomes: four goal chips and two quiet links from
   // goalStarters, and the promise that nothing changes until you say so. Basic's
@@ -16484,7 +16492,9 @@ export const APP = String.raw`
     card.appendChild(el("div", "ptitle", P[0]));
     card.appendChild(el("div", "pmeta", P.slice(1).join(" · ")));
     card.appendChild(el("p", "pnote", "A preview, not a plan: nothing goes on your calendar."));
-    out.appendChild(plusOffer("You’ve used your free plan", "With Plus, Pumpy builds this around your week and adjusts it as you go."));
+    out.appendChild(freeBuilt(freeProgram())
+      ? plusOffer("You’ve used your free plan", "With Plus, Pumpy builds this around your week and adjusts it as you go.")
+      : plusOffer("Your free goal chat is used up", "With Plus, Pumpy builds plans for any goal."));
     return out;
   }
 
@@ -16776,7 +16786,7 @@ export const APP = String.raw`
       if (!state.workouts.some(function (x) { return x.id === w.id; })) state.workouts.unshift(w);
     });
     if (made.length) render();
-    if (m.meta.proposal.free) setFree("used", m.thread_id || (pumpy.thread && pumpy.thread.id));
+    if (m.meta.proposal.free) setFree("used", m.thread_id || (pumpy.thread && pumpy.thread.id), true);
     remindOnTrain = true;
     goalsReload();
     offerUndo("Plan on your calendar", function () {}, function () { undoProgram(m); });
@@ -17097,7 +17107,7 @@ export const APP = String.raw`
         // Basic's free plan already built (or its turns spent): what Plus would
         // build instead, beside the offer, rather than a refusal.
         var fr = r.kind === "goal" && r.free_program;
-        if (fr) setFree(fr.state, fr.thread_id);
+        if (fr) setFree(fr.state, fr.thread_id, fr.built);
         if (fr && fr.state === "used" && pumpy.goal && pumpy.goal.type) { goalPreview(text, pumpy.goal); return; }
         // The ceiling and the outage both come back as something Pumpy says.
         pumpy.messages.push({ id: "local-err-" + Date.now(), role: "user", content: text });
@@ -17500,8 +17510,15 @@ export const APP = String.raw`
         ? "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up)
         : "Pumpy is part of Spotter Plus.";
     }
-    // A goal door once Basic's one free plan is built (B.2, decisions §1).
-    if (c.kind === "goal") return "Your free plan is yours to keep. With " + up + ", Pumpy adjusts it week to week and builds the next one.";
+    // A goal door once Basic's one free plan is spent (B.2, decisions §1): kept
+    // when it was built, and only the chat's turns gone when it never was. A
+    // refusal carries the server's word on it; a door opened here asks this
+    // session's.
+    if (c.kind === "goal") {
+      return freeBuilt(c.free_program || freeProgram())
+        ? "Your free plan is yours to keep. With " + up + ", Pumpy adjusts it week to week and builds the next one."
+        : "Your free goal chat is used up. With " + up + ", Pumpy builds plans for any goal.";
+    }
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
     var month = c.scope === "month";

@@ -101,7 +101,7 @@ const LIFTED = ['num', 'capNum', 'capMany', 'planWord', 'money', 'dayMonth', 'bi
   'loadCaps', 'loadUse', 'loadSub', 'planRows', 'paintTable', 'pumpyRoom', 'planCtxLine', 'skelRow', 'priceCard', 'goneCard',
   'setBuyLabel', 'finePrint', 'paintChoice', 'pickInterval', 'planState', 'paintPlans', 'paintSoon', 'retryPrices', 'paintCtx',
   'openPlans', 'paintPlanGroup', 'adoptPlan', 'shelf', 'shelfHeld', 'withShelf', 'renderLibCount', 'limitHit', 'storeName', 'nativePurchase',
-  'syncNativePurchase', 'absorbPlan', 'setPending'];
+  'syncNativePurchase', 'absorbPlan', 'setPending', 'freeBuilt'];
 const VARS = [block('  var billing = {', '\n  };'), block('  var AWARDS_KEPT = ', ';'), block('  var CAP_WORDS = {', '\n  };'),
   block('  var MULT = ', ';'), block('  var PLAN_RESET = ', '";'), block('  var BILL_FLAG = ', ';')];
 
@@ -131,6 +131,9 @@ function paintPlanCode() {}
 function loadCreator() { return Promise.resolve(null); }
 function loadProfile() {}
 function renderPumpy() { calls.pumpy++; }
+// Basic's free program as this session last heard it (app.ts freeProgram).
+var freeNow = null;
+function freeProgram() { return freeNow; }
 function refreshDetail(w, force) { calls.detail++; calls.forced = force; }
 function openPortal() { calls.portal++; }
 `;
@@ -418,6 +421,20 @@ await ok('Pumpy on Basic (B.2): Plus-tagged links, a refused send and the in-thr
   assert(/openPlans\(\{ kind: "goal" \}\)/.test(offer), 'the offer under the free plan (and beside a preview) opens the page on the goal line');
   assert.equal(run('planCtxLine({ kind: "goal", plan: "free", next_plan: "plus" })'),
     'Your free plan is yours to keep. With Plus, Pumpy adjusts it week to week and builds the next one.');
+  // Spent with no plan ever confirmed (built: false): nothing to keep, so the
+  // line says the free goal chat is used up — from the refusal's own word, or
+  // from what the session last heard. A server without the field reads as built.
+  const KEPT = 'Your free plan is yours to keep. With Plus, Pumpy adjusts it week to week and builds the next one.';
+  const TALKED = 'Your free goal chat is used up. With Plus, Pumpy builds plans for any goal.';
+  const refusal = (fp) => run('planCtxLine(' + JSON.stringify({ status: 'limit', kind: 'goal', plan: 'free', upgrade: true, free_program: fp }) + ')');
+  assert.equal(refusal({ state: 'used', thread_id: 't', built: false }), TALKED);
+  assert.equal(refusal({ state: 'used', thread_id: 't', built: true }), KEPT);
+  assert.equal(refusal({ state: 'used', thread_id: 't' }), KEPT, 'no built field: the server before it');
+  run('freeNow = { state: "used", thread_id: "t", built: false }');
+  assert.equal(run('planCtxLine({ kind: "goal" })'), TALKED);
+  run('freeNow = { state: "used", thread_id: "t", built: true }');
+  assert.equal(run('planCtxLine({ kind: "goal" })'), KEPT);
+  run('freeNow = null');
   assert(!/attachments/.test(fn('renderPumpy') + hello), 'Basic has no Pumpy, with or without attachments');
 });
 await ok('a Basic refusal with upgrade opens the page on the reason; without, it is a toast', async () => {
