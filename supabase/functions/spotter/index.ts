@@ -81,6 +81,9 @@ import {
   deleteRevenueCatSubscriber, type Eraser, eraseAtProvider, type Provider as ErasureProvider, runErasureOutbox,
 } from "./erasure.ts";
 import { pushConfig, runPushTick, sendPush, sendReady } from "./push.ts";
+// The one retry the gateway's clock needs (a 401 PGRST303 on a token dated a moment ahead),
+// for the routes too: it refused this function's own reads on 26 Sept as it did the ticks'.
+import { serviceFetch } from "./rest.ts";
 import { opsScorecard, runOpsAlert } from "./ops.ts";
 import { CATALOG, type CatalogEntry, canonicalize, catalogById, standardOf } from "./catalog.ts";
 import { assertPublicUrl, checkUrl, dnsAvailable, safeFetch } from "./net.ts";
@@ -7683,13 +7686,13 @@ function rest(table: string): string {
 }
 
 async function dbSelect(table: string, query: string): Promise<any[]> {
-  const r = await fetch(`${rest(table)}?${query}`, { headers: dbHeaders });
+  const r = await serviceFetch(`${rest(table)}?${query}`, { headers: dbHeaders });
   if (!r.ok) throw new Error(`db select ${r.status}: ${await r.text()}`);
   return await r.json();
 }
 
 async function dbInsert(table: string, row: Record<string, unknown>): Promise<any> {
-  const r = await fetch(rest(table), {
+  const r = await serviceFetch(rest(table), {
     method: "POST",
     headers: { ...dbHeaders, prefer: "return=representation" },
     body: JSON.stringify(row),
@@ -7700,7 +7703,7 @@ async function dbInsert(table: string, row: Record<string, unknown>): Promise<an
 
 async function dbInsertMany(table: string, rows: Record<string, unknown>[]): Promise<any[]> {
   if (!rows.length) return [];
-  const r = await fetch(rest(table), {
+  const r = await serviceFetch(rest(table), {
     method: "POST",
     headers: { ...dbHeaders, prefer: "return=representation" },
     body: JSON.stringify(rows),
@@ -7710,7 +7713,7 @@ async function dbInsertMany(table: string, rows: Record<string, unknown>[]): Pro
 }
 
 async function dbUpsert(table: string, row: Record<string, unknown>): Promise<void> {
-  const r = await fetch(rest(table), {
+  const r = await serviceFetch(rest(table), {
     method: "POST",
     headers: { ...dbHeaders, prefer: "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(row),
@@ -7719,7 +7722,7 @@ async function dbUpsert(table: string, row: Record<string, unknown>): Promise<vo
 }
 
 async function dbPatchMany(table: string, query: string, body: Record<string, unknown>): Promise<any[]> {
-  const r = await fetch(`${rest(table)}?${query}`, {
+  const r = await serviceFetch(`${rest(table)}?${query}`, {
     method: "PATCH",
     headers: { ...dbHeaders, prefer: "return=representation" },
     body: JSON.stringify(body),
@@ -7733,7 +7736,7 @@ async function dbPatch(table: string, query: string, body: Record<string, unknow
 }
 
 async function dbDelete(table: string, query: string): Promise<void> {
-  const r = await fetch(`${rest(table)}?${query}`, { method: "DELETE", headers: dbHeaders });
+  const r = await serviceFetch(`${rest(table)}?${query}`, { method: "DELETE", headers: dbHeaders });
   if (!r.ok) throw new Error(`db delete ${table} ${r.status}: ${await r.text()}`);
   await r.body?.cancel();
 }

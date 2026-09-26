@@ -146,6 +146,8 @@ const NAMES = [
 const SHIM = "\n" +
   "globalThis.rest = function (t) { return 'https://db.test/rest/v1/' + t; };\n" +
   "globalThis.dbHeaders = {};\n" +
+  // index.ts's db helpers go through rest.ts's serviceFetch (one retry on a 401 PGRST303); here it is the mock's fetch.
+  "globalThis.serviceFetch = function (input, init) { return globalThis.fetch(input, init); };\n" +
   // cleanTitle drags the whole title ladder behind it; the one behaviour the
   // citation walk needs from it is whitespace-collapsed trimming.
   "globalThis.cleanTitle = function (s) { return String(s || '').replace(/\\s+/g, ' ').trim(); };\n" +
