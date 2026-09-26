@@ -112,6 +112,11 @@ export const STYLE = String.raw`<style>
      height left over is shared either side of the loop, which then sits in the
      middle of the band between the headline and the buttons. */
   #landing { display: none; min-height: 100vh; min-height: var(--vvh, 100dvh); }
+  /* The shells set --vvh to 100%, which only a fixed layer resolves against the
+     frame. The landing is in the flow of an auto-height body, so there it fell
+     to its content's height and the body's grain stopped short of the screen
+     (QA F7). The frame's height directly, then. */
+  html.native #landing { min-height: 100vh; }
   #landing.open { display: block; }
   .land { max-width: 460px; min-height: inherit; margin: 0 auto; display: flex; flex-direction: column;
     padding: calc(14px + env(safe-area-inset-top)) 16px calc(6px + var(--sab)); }
