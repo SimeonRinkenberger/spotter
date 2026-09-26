@@ -4845,8 +4845,9 @@ export const APP = String.raw`
       row("play", "Watch original", src.author ? "@" + src.author : null, function () { openWatch(src, ex); });
     }
     // A demo, a swap and the exercise bank ask the server as somebody, so a
-    // guest's session goes without them rather than failing at them.
-    if (state.user) row("help", "Demo and how-to", null, function () { explain(ex, w); });
+    // guest's session goes without them rather than failing at them — all but a
+    // starter exercise's own clip, which asks nobody (starterDemo).
+    if (state.user || starterDemo(ex)) row("help", "Demo and how-to", null, function () { explain(ex, w); });
     if (!live) row("pencil", "Edit exercise", null, function () { openExEdit(w, ctx.bi, ctx.ei, ex); });
     if (state.user) row("swap", "Swap exercise", null, function () {
       openSwap(ex.name, w.title, live ? swapTarget(w, ex) : { w: w, bi: ctx.bi, ei: ctx.ei, ex: ex });
@@ -6951,6 +6952,18 @@ export const APP = String.raw`
     return box;
   }
 
+  // A starter exercise's own clip, when starters.json carries one as demo:
+  // { id, title, channel, secs } — row zero of exercise_demo_videos, the clip
+  // /api/demo-video answers with — made into that route's answer, so the sheet
+  // draws it the same. A guest is shown it without the server being asked
+  // anything; an account asks the route as ever, which adds the alternates.
+  function starterDemo(ex) {
+    var d = ex && ex.demo;
+    return d && d.id ? { status: "ok", alternates: [], search_url: null, video: { id: d.id, title: d.title || "",
+      channel: d.channel || "", secs: d.secs || null, url: "https://www.youtube.com/watch?v=" + d.id, curated: true,
+      relation: { kind: "same", differs: null, shared: [] } } } : null;
+  }
+
   // The slot grows from nothing to whatever it turned out to need, so the
   // explanation below it glides down rather than jumping when the answer lands
   // late. One frame between filling it and opening it, or the browser has nothing
@@ -7075,9 +7088,13 @@ export const APP = String.raw`
     if (pn) perf.appendChild(pn);
     // Spotter's pending vocabulary is reading, listening, watching. "Thinking" is
     // a chatbot's word for the same wait and belongs to a different app.
+    // A guest's sheet is the clip alone: explaining and swapping ask the server
+    // as somebody (and the thumbs only follow an explanation).
+    var guest = !state.user;
     $("explaintext").textContent = "";
     $("explaintext").classList.add("hide");
-    $("explainask").classList.remove("hide");
+    $("explainask").classList.toggle("hide", guest);
+    $("swapgo").parentNode.classList.toggle("hide", guest);
     $("explainvotes").classList.add("hide");
     var voteId = ex.canonical_id || name;
     paintVotes(voteId);
@@ -7106,7 +7123,9 @@ export const APP = String.raw`
     // questions with two very different latencies — a cached clip is one round trip
     // and a completion is several seconds — and neither should wait for the other.
     var vk = vidKey(ex), who = authorOf(ex, w);
-    if (vidCache[vk]) {
+    if (guest) {
+      if (starterDemo(ex)) vidFill(starterDemo(ex), who);
+    } else if (vidCache[vk]) {
       vidFill(vidCache[vk], who);
     } else {
       api("demo-video", {
