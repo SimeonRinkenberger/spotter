@@ -13022,6 +13022,9 @@ export const APP = String.raw`
     planHide();
     drawShelf();
     var k = selKey(), u = k === ymd(new Date()) ? upNext() : dayState(k), sig = k + JSON.stringify(u), h = cardBox.offsetHeight;
+    // S6 changes its words once today has a session (firstCard), which its
+    // state does not carry: a guest's sessions landing after sign-in, say.
+    if (u.s === 6) sig += "|" + daySessions(state.logs, k).length;
     if (sig === daySig) return;
     var card = u.key ? dayCard(u) : upCard(u);
     cardBox.innerHTML = "";
