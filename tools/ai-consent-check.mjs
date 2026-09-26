@@ -101,6 +101,7 @@ function pumpyFixture(settings) {
   Object.assign(t.c, {
     toast: (m) => toasts.push(m), renderPumpy() {}, guideLearn() {}, isFree: () => false, openPlans() {},
     absorbMeter() {}, liveEvent() {}, NO_TOUCH: false, MAX_REFS: 6, PUMPY_CAPS: ['ask', 'program'],
+    freeProgram: () => null, setFree() {}, askBack() {},
     pumpy: { thread: null, messages: [], busy: false, refs: [], live: null, stick: true },
   });
   vm.runInContext(oneLine('aiDeclined') + '\n' + fn('sendPumpy'), t.c);

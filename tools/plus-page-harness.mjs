@@ -411,11 +411,14 @@ await ok('planCtxLine for Pumpy never says used up without a cap that is used up
   run('billing.caps = ' + JSON.stringify({ free: CAPS.free, plus: CAPS.plus }));
   assert(/^That is this month’s coaching used up/.test(run('planCtxLine({ kind: "pumpy", cap: 5000, used: 5000, plan: "plus" })')));
 });
-await ok('Pumpy’s offer and send open the page with that line, and the attachments promise is gone', () => {
-  const offer = fn('renderPumpy'), send = fn('sendPumpy');
-  assert(/upgrade\.onclick = function \(\) \{ openPlans\(\{ kind: "pumpy" \}\); \};/.test(offer));
-  assert(/if \(isFree\(\)\) \{ openPlans\(\{ kind: "pumpy" \}\); return; \}/.test(send));
-  assert(!/attachments/.test(offer), 'Basic has no Pumpy, with or without attachments');
+await ok('Pumpy on Basic (B.2): Plus-tagged links, a refused send and the in-thread offer open the page with their line', () => {
+  const hello = fn('pumpyHello'), send = fn('sendPumpy'), offer = fn('plusOffer');
+  assert(/if \(free\) b\.appendChild\(el\("i", null, "Plus"\)\);/.test(hello), 'the two quiet links say Plus on Basic');
+  assert(/openPlans\(\{ kind: goal \? "goal" : "pumpy" \}\);\s*return false;/.test(send), 'Basic outside its free goal thread: the Plus page, no request');
+  assert(/openPlans\(\{ kind: "goal" \}\)/.test(offer), 'the offer under the free plan (and beside a preview) opens the page on the goal line');
+  assert.equal(run('planCtxLine({ kind: "goal", plan: "free", next_plan: "plus" })'),
+    'Your free plan is yours to keep. With Plus, Pumpy adjusts it week to week and builds the next one.');
+  assert(!/attachments/.test(fn('renderPumpy') + hello), 'Basic has no Pumpy, with or without attachments');
 });
 await ok('a Basic refusal with upgrade opens the page on the reason; without, it is a toast', async () => {
   reset({ platform: null });
