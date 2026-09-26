@@ -94,11 +94,13 @@ everything else is as rendered. Before-screens from the iPhone 16e on build 10 a
   keeping a starter gives its earlier card-less sessions the kept card (server, deployed and live-checked).
 
 ## Page size
-`web-dist/index.html`: main 872,635 B → B.2 850,710 B (**−21.9 KB net**). The cycle's features cost about +57 KB (the
-seams +15.2, goals on Train +13.9, the front door +9.6 after retiring the web sign-in and the old landing, Pumpy's goal
-front +19.4 after retiring the fixed asks and Basic's offer card). `build.mjs` now drops the printer's leading
-indentation from the script and the style (−79 KB): every line stays where it was, so a stack trace still finds its
-line, and it is safe only because esbuild never lets a token span a line — the build refuses a backtick to keep it so.
+`web-dist/index.html`: main 872,635 B → B.2 858,083 B (**−14.6 KB net**). The cycle's features cost about +60 KB (the
+seams, goals on Train, the front door after retiring the web sign-in and the old landing, Pumpy's goal front after
+retiring the fixed asks and Basic's offer card, then the review's and QA's fixes); with main's build.mjs the page
+would be about 931 KB. `build.mjs` now drops the printer's leading indentation from the script and the style
+(−79 KB): every line stays where it was, so a stack trace still finds its line, and it is safe only because esbuild
+never lets a token span a line — the build refuses a backtick to keep it so (the reviewer rebuilt with and without it:
+script and style are token-identical after minification, and the CSP hash matches).
 
 ## The server and the data (additive; builds 5–10 unchanged)
 
