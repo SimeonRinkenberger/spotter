@@ -748,6 +748,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div id="gsbody"></div>
   <div class="btnrow"><button class="btn ghost" data-close="goalsheet">Done</button><button class="btn" id="gsadjust">Adjust with Pumpy</button></div>
   <button class="danger" id="gsend">End goal</button>
+  <p class="setnote hide" id="gsfree">This is your one free plan. Ending it is for good.</p>
 </div></div>
 
 <div class="sheet" id="copysheet"><div class="sheetbody">

@@ -13229,8 +13229,11 @@ export const APP = String.raw`
   function openGoalSheet() { gsFill(); openSheet("goalsheet"); }
 
   function gsFill() {
-    var g = activeGoal(), b = $("gsbody"), v, p, x, ws, to, rows, le;
+    var g = activeGoal(), b = $("gsbody"), v, p, x, ws, to, rows, le, fp = freeProgram();
     if (!g) return;
+    // Basic's one free plan, ever (decisions §1): an ended program still counts,
+    // so the sheet says so beside End goal — for the goal that plan built only.
+    $("gsfree").classList.toggle("hide", !(isFree() && fp && fp.thread_id && g.thread_id === fp.thread_id));
     v = goalView(g); p = g.program || {}; x = goalLift(g.exercise);
     b.innerHTML = GCARD;
     gPaint(b, g, v);

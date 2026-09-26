@@ -1896,6 +1896,8 @@ export const STYLE = String.raw`<style>
   #gsbody .gtop b { font-size: 20px; }
   #gsbody .gbar { margin-bottom: 18px; }
   #gsbody .nobr { white-space: nowrap; }
+  /* Under End goal and bound to it: the button's own 12px is the gap. */
+  #gsfree { text-align: center; padding-top: 0; margin-top: -4px; }
   .gsrc { display: flex; align-items: center; gap: 5px; min-height: 40px; }
   @media (prefers-reduced-motion: reduce) {
     .gbar i { transition: none; }
