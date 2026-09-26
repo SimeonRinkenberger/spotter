@@ -15930,10 +15930,12 @@ export const APP = String.raw`
       if (c.badge) b.appendChild(el("i", null, c.badge));
       b.onclick = function () { openGoalChat({ message: c.message, goal: c.goal }); };
     });
+    // A quiet link is never a goal door, even in a chat one opened: on Basic it
+    // is the Plus page, and nowhere may it claim the free plan.
     st.links.forEach(function (l) {
       var b = links.appendChild(el("button", null, l.label));
       if (free) b.appendChild(el("i", null, "Plus"));
-      b.onclick = function () { sendPumpy(l.message); };
+      b.onclick = function () { pumpy.goal = null; sendPumpy(l.message); };
     });
     hello.appendChild(list);
     hello.appendChild(links);
@@ -15955,23 +15957,18 @@ export const APP = String.raw`
   // at once; an adjustment puts its facts in the composer instead, so the person
   // can say what should change before it goes; send overrides either. With no
   // message it is simply Pumpy's empty chat, on the chips.
+  // Basic's first goal turn needs no word from the client about its free plan:
+  // the server claims it, or carries the turn on in the thread already claimed,
+  // or refuses a spent one with the 403 sendPumpy turns into the preview. Known
+  // to be spent here, the preview comes without a request at all.
   function openGoalChat(ctx) {
     ctx = ctx || {};
     var free = isFree(), fp = freeProgram(), box = $("pumpyinput");
     var text = ctx.message || (ctx.adjust ? adjustText(ctx.adjust) : "");
     // Decisions §1: once the free plan is built, adjusting it is Plus.
     if (free && ctx.adjust) { openPlans({ kind: "goal" }); return; }
-    // Which door a Basic account gets hangs on whether its free plan is spent,
-    // and only the server knows that: asked once, then on either way.
-    if (free && !fp && !ctx.asked) {
-      ctx.asked = true;
-      recentLimits().then(function () { openGoalChat(ctx); }, function () { openGoalChat(ctx); });
-      return;
-    }
     if (pumpy.thread || pumpy.messages.length || pumpy.busy) { pumpyBlank(); renderPumpy(); }
     pumpy.goal = ctx.goal || {};
-    // The free thread carries on until its plan is built, whichever chip.
-    if (free && fp && fp.state === "open") pumpy.thread = { id: fp.thread_id };
     setView("pumpy");
     if (!text) return;
     // A chip's goal can be previewed; a door with words and no goal cannot.
@@ -16064,6 +16061,9 @@ export const APP = String.raw`
   function renderAskCard(m, ask) {
     var ui = pumpyUI(m.id), fields = (ask.fields || []).slice(0, 6), vals = {}, card = el("div", "askcard"), go;
     if (ask.answered || ui.sent) return askFold(card);
+    // Answered by typing instead (the composer is the card's escape hatch): the
+    // chat has moved on, and a live form left above it would invite a second go.
+    if (!ui.back && pumpy.messages.slice(pumpy.messages.indexOf(m) + 1).some(function (x) { return x.role === "user"; })) return null;
     fields.forEach(function (f) {
       var box = card.appendChild(el("div"));
       box.appendChild(el("div", "askl", f.label + (f.unit && f.type === "choice" ? " (" + f.unit + ")" : "")));
@@ -16102,10 +16102,11 @@ export const APP = String.raw`
     return card;
   }
 
-  // A send that never arrived leaves the answers unsent, so the form comes back.
+  // A send that never arrived leaves the answers unsent, so the form comes back,
+  // live, even though the failed answers now stand under it as a bubble.
   function askBack(id) {
     var u = pumpyUI(id);
-    if (u.sent && pumpy.nodes) { u.sent = false; delete pumpy.nodes[id]; }
+    if (u.sent && pumpy.nodes) { u.sent = false; u.back = true; delete pumpy.nodes[id]; }
   }
 
   // A choice of up to five short answers is a segmented control; a longer one,
@@ -16548,13 +16549,12 @@ export const APP = String.raw`
     extra = extra || {};
     var fp = freeProgram(), fresh = !pumpy.thread, goal = fresh && !!pumpy.goal;
     // Pumpy is Plus, with one door for Basic (decisions §1): its free goal plan —
-    // the thread that plan is being made in, or a goal door opening it. The
-    // server draws the same line; anything else opens the Plus page and sends
-    // nothing, as it always did. Before the free plan's state is known only a new
-    // chat nobody opened as a goal is certainly not it; the rest may try, and
-    // the server's refusal is drawn like any other.
-    if (isFree() && !(fp ? fp.state !== "used" && (fresh ? goal && fp.state === "available"
-      : fp.thread_id === pumpy.thread.id) : goal || !fresh)) {
+    // a goal door (the server claims the plan, or carries on in the thread that
+    // already has it), or that thread itself. The server draws the same line;
+    // anything else opens the Plus page and sends nothing, as it always did.
+    // With the free plan's state not yet read, an older thread may try, and the
+    // server's refusal is drawn like any other.
+    if (isFree() && (fp && fp.state === "used" || (fresh ? !goal : fp && fp.thread_id !== pumpy.thread.id))) {
       openPlans({ kind: goal ? "goal" : "pumpy" });
       return false;
     }
@@ -16571,6 +16571,11 @@ export const APP = String.raw`
     pumpy.lastAt = Date.now();
     var asked = { id: "local-" + Date.now(), role: "user", content: text };
     pumpy.messages.push(asked);
+    // Typed rather than sent from the card: an open ask card above is answered
+    // now, so it is drawn again, and draws nothing (renderAskCard).
+    if (!extra.answers && pumpy.nodes) {
+      pumpy.messages.forEach(function (x) { if (x.meta && x.meta.ask) { delete pumpy.nodes[x.id]; pumpyUI(x.id).back = false; } });
+    }
     renderPumpy();
     var ids = pumpy.refs.slice(0, MAX_REFS);
     var payload = {
