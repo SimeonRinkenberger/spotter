@@ -319,7 +319,7 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="grabber"></div>
   <h2 id="wleavetitle">Leave this workout?</h2>
   <p class="lede" id="wleavelede">Nothing is lost either way.</p>
-  <button class="pickrow leaverow" id="wpause"><svg class="ic"><use href="#i-pause"></use></svg><span class="pt"><b>Pause workout</b><span>Pick it up later from any tab. The clock stops.</span></span></button>
+  <button class="pickrow leaverow" id="wpause"><svg class="ic"><use href="#i-pause"></use></svg><span class="pt"><b>Pause workout</b><span id="wpausesub">Pick it up later from any tab. The clock stops.</span></span></button>
   <button class="pickrow leaverow" id="wend"><svg class="ic"><use href="#i-flag"></use></svg><span class="pt"><b>Finish workout</b><span id="wendsub">Saves what you logged.</span></span></button>
   <button class="btn ghost" data-close="wleavesheet">Keep going</button>
 </div></div>

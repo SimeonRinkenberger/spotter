@@ -10492,13 +10492,16 @@ export const APP = String.raw`
   // The X asks how to leave. The Finish pill asks only when planned sets are
   // left (left: how many), and leads with the answer it was asked for. Neither
   // door has a Discard: finishing saves what was logged, pausing keeps it all.
+  // A guest has no history and no tabs yet (QA F10): their sets wait on this
+  // phone for an account (guestKeep), and a paused starter comes back from Try
+  // a workout first, on this phone, until then.
   function openLeave(left) {
-    var n = loggedSets(), fin = $("wend"), pause = $("wpause");
+    var n = loggedSets(), fin = $("wend"), pause = $("wpause"), guest = !!(wo && wo.guest), sets = n + (n === 1 ? " set" : " sets");
     $("wleavetitle").textContent = left ? left + (left === 1 ? " set" : " sets") + " not logged" : "Leave this workout?";
     fin.parentNode.insertBefore(left ? fin : pause, left ? pause : fin);
-    $("wendsub").textContent = n
-      ? "Saves " + n + (n === 1 ? " set" : " sets") + " to your history."
-      : "Nothing logged yet — closes without saving.";
+    $("wendsub").textContent = !n ? "Nothing logged yet — closes without saving."
+      : guest ? "Keeps " + sets + " on this phone until you sign in." : "Saves " + sets + " to your history.";
+    $("wpausesub").textContent = guest ? "Pick it up later on this phone. The clock stops." : "Pick it up later from any tab. The clock stops.";
     openSheet("wleavesheet");
   }
 
