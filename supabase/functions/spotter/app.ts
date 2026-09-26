@@ -77,7 +77,7 @@ export const APP = String.raw`
     user: null, profile: null, workouts: [], logs: null, plan: null,
     collections: [], colItems: [],
     filter: "All", q: "", view: "library", weekStart: null, unit: "lb",
-    sounds: true, haptics: true, goal: null, awards: null
+    sounds: true, haptics: true, goal: null, awards: null, goals: null
   };
 
   function $(id) { return document.getElementById(id); }
@@ -1293,6 +1293,16 @@ export const APP = String.raw`
     return p ? String(p) : null;
   }
 
+
+  // ---------- the front door (seams, B.2; built by b2-door) ----------
+  //
+  // introCheck: a new account (no workouts, no settings.intent) is asked two
+  // questions once — what for, and where — and can skip both. firstPlanMoment:
+  // the first plan a person ever makes offers reminders on training days, a
+  // single-button ask before the system's own.
+  function introCheck() {}
+  function firstPlanMoment() {}
+
   function showLanding() {
     if (native) $("pumpyinput").value = "";
     // Whoever signs in next is not the person who was told to check an inbox.
@@ -1338,7 +1348,7 @@ export const APP = String.raw`
     booting = null; earlyUid = null; reconnecting = false; state.profile = null; state.workouts = []; state.logs = null;
     state.logsLite = false; state.libReady = false; clearTimeout(trainCacheTimer); trainWantMonth = false;
     trainCacheGoal = null;
-    state.plan = null; state.awards = null; state.goal = null; heroPct = 0; trainSeg = null;
+    state.plan = null; state.awards = null; state.goal = null; state.goals = null; heroPct = 0; trainSeg = null;
     state.unit = "lb"; state.sounds = true; state.haptics = true;
     state.collections = []; state.colItems = []; seenCards = {}; gridCards = {};
     expCache = {}; expWaiting = {}; vidCache = {}; expKey = ""; capWaiting = {};
@@ -1428,6 +1438,7 @@ export const APP = String.raw`
     drawn.train = true;
     quietly(prepareTrain());
     var profileReady = loadProfile();
+    quietly(loadGoals());
     watchWorkouts();
     // A shared link is saved only once the library is in hand, so the card it
     // creates lands in a rendered grid rather than into an empty one.
@@ -1445,6 +1456,9 @@ export const APP = String.raw`
       .then(function () {
         if (!accountNow(epoch, uid)) return;
         welcomeMaybe();
+        // A new account's one question screen (B.2), once the profile and the
+        // library have both said what this account has.
+        introCheck();
       });
     return booting;
   }
@@ -13005,6 +13019,14 @@ export const APP = String.raw`
       [["btn", "Start workout", startWorkout, w], ["btn ghost tmove", "Plan it", openPlanSheet, { w: w, from: "upnext" }]]);
   }
 
+
+  // ---------- train · the goal card (seam, B.2; built by b2-goal) ----------
+  //
+  // Under Up next, the active goal on one line (goalStatusOf's), which opens the
+  // goal sheet: details, Adjust with Pumpy, End goal with Undo. sync() is cheap
+  // and idempotent; goalsChanged and anything that moves the logs call it.
+  var goalCard = { sync: function () {} };
+
   // S6: nothing on the shelf to do yet. The lesson is the add sheet's own share
   // row, the one used every day after this, as the empty library shows it.
   function firstCard(n) {
@@ -13652,7 +13674,7 @@ export const APP = String.raw`
       }
       ids = (r.data || []).map(function (x) { return x.id; });
       if (undone) return;
-      if (!old) { loadPlan(true); return; }
+      if (!old) { loadPlan(true); firstPlanMoment(); return; }
       return sb.from("plan").delete().eq("id", old.id).then(function (x) {
         if (!accountNow(epoch, uid)) return;
         off = !x.error;
@@ -13963,6 +13985,396 @@ export const APP = String.raw`
   }
 
   function readyToTry() { return readyList(state.workouts, state.logs); }
+
+  // ---------- goals and programs (seams, B.2) ----------
+  //
+  // "Get my bench to 305" becomes weeks on the calendar, and the calendar then
+  // has to speak in that week's numbers wherever a set is offered: Up next, the
+  // big button, the Lock Screen's dial. What follows is the rule underneath all of
+  // those, pure and handed everything it reads, so tools/goals-harness.mjs can
+  // hold it to its truth tables the way simplify-b-harness holds Up next. The
+  // screens that draw it (the goal card, the ask card, the program card, the
+  // intent screen) are built on top and never work a number out for themselves.
+  //
+  // Two words that sound alike and are not: state.goal is the week ring's number
+  // ("Workouts per week"), a setting since the ring was built. A training goal is
+  // a row of the goals table, and lives in state.goals.
+
+  // The lifts a goal can be about, in the words people type them. Front squat
+  // comes before squat, or "front squat 100" would read as a back squat.
+  var GOAL_LIFTS = [
+    { id: "bench-press", word: "bench", name: "bench press", re: /\bbench(\s*press)?\b(?!\s*dip)/ },
+    { id: "front-squat", word: "front squat", name: "front squat", re: /\bfront\s*squats?\b/ },
+    { id: "back-squat", word: "squat", name: "squat", re: /\b(back\s*)?squats?\b/ },
+    { id: "deadlift", word: "deadlift", name: "deadlift", re: /\bdead\s*lifts?\b|\bdl\b/ },
+    { id: "overhead-press", word: "overhead press", name: "overhead press", re: /\b(overhead|military|shoulder)\s*press\b|\bohp\b/ },
+    { id: "hip-thrust", word: "hip thrust", name: "hip thrust", re: /\bhip\s*thrusts?\b/ }
+  ];
+
+  function goalLift(id) {
+    for (var i = 0; i < GOAL_LIFTS.length; i++) if (GOAL_LIFTS[i].id === id) return GOAL_LIFTS[i];
+    return null;
+  }
+
+  // "bench 305", "Squat 140kg", "305": the optional lift on the intent screen,
+  // read the way a person wrote it. The number has to be a plausible load in its
+  // unit; a lift with no number, or a number with no lift, is still an answer.
+  function parseLiftText(text, unit) {
+    var s = String(text || "").toLowerCase(), lift = null, i, m, n = null, u = unit === "kg" ? "kg" : "lb";
+    if (!s.replace(/\s+/g, "")) return null;
+    for (i = 0; i < GOAL_LIFTS.length && !lift; i++) if (GOAL_LIFTS[i].re.test(s)) lift = GOAL_LIFTS[i];
+    m = s.match(/(\d{2,4}(?:[.,]\d)?)\s*(kgs?|kilos?|lbs?|pounds?)?/);
+    if (m) {
+      n = parseFloat(m[1].replace(",", "."));
+      if (m[2]) u = m[2].charAt(0) === "k" ? "kg" : "lb";
+      if (!(n >= (u === "kg" ? 10 : 20) && n <= (u === "kg" ? 700 : 1500))) n = null;
+    }
+    if (!lift && n === null) return null;
+    return { exercise: lift ? lift.id : null, word: lift ? lift.word : null, target: n, unit: u };
+  }
+
+  // A weight in another unit, the way toUnit converts for the screen, but to any
+  // unit rather than to the account's — a goal keeps the unit it was set in.
+  function unitTo(w, from, to) {
+    w = Number(w) || 0;
+    if (!w || !from || !to || from === to) return w;
+    return Math.round((to === "kg" ? w / LB_PER_KG : w * LB_PER_KG) * 10) / 10;
+  }
+
+  // The smallest jump a loaded bar makes: a pair of 2.5 lb plates, or of 1.25 kg.
+  function plateOf(unit) { return unit === "kg" ? 2.5 : 5; }
+  function toPlate(x, unit) { var p = plateOf(unit); return Math.round(x / p) * p; }
+
+  // Epley, as Records and the best-set check already use it: an estimate, never a
+  // lift anybody did, and every screen that prints it says "est.".
+  function e1rm(weight, reps) { return weight * (1 + reps / 30); }
+
+  // One lift's estimated max as it stood at a moment: sets of ten reps or fewer
+  // from the eight weeks before it (the moment itself excluded). Heavy, low-rep
+  // sets predict a max best, so when any set of five or fewer is in the window
+  // only those count. In the unit asked for, whatever each set was logged in;
+  // null when nothing qualifies.
+  var MAX_WINDOW = 56 * 86400000;
+
+  function liftMax(logs, exercise, before, unit) {
+    var end = before ? new Date(before).getTime() : Date.now(), from = end - MAX_WINDOW, best = null, low = null;
+    (logs || []).forEach(function (l) {
+      var t = l && l.started_at ? new Date(l.started_at).getTime() : NaN;
+      if (!(t >= from && t < end)) return;
+      (l.entries || []).forEach(function (e) {
+        if (!e || !exercise || e.canonical_id !== exercise) return;
+        (e.sets || []).forEach(function (s) {
+          if (!s || !(s.weight > 0) || !(s.reps >= 1 && s.reps <= 10)) return;
+          var w = unitTo(s.weight, s.unit || unit, unit), hit = { est: e1rm(w, s.reps), weight: w, reps: s.reps, at: l.started_at };
+          if (!best || hit.est > best.est) best = hit;
+          if (s.reps <= 5 && (!low || hit.est > low.est)) low = hit;
+        });
+      });
+    });
+    return low || best;
+  }
+
+  // Of the lifts a goal can name, the one the last eight weeks of logs hold most
+  // loaded sets of: the lift somebody is already training is the one they have
+  // a number for.
+  function topLift(logs, now) {
+    var n = {}, end = now.getTime(), from = end - MAX_WINDOW, best = null, i, id;
+    (logs || []).forEach(function (l) {
+      var t = l && l.started_at ? new Date(l.started_at).getTime() : NaN;
+      if (!(t >= from && t <= end)) return;
+      (l.entries || []).forEach(function (e) {
+        if (!e || !e.canonical_id) return;
+        (e.sets || []).forEach(function (s) { if (s && s.weight > 0) n[e.canonical_id] = (n[e.canonical_id] || 0) + 1; });
+      });
+    });
+    for (i = 0; i < GOAL_LIFTS.length; i++) {
+      id = GOAL_LIFTS[i].id;
+      if (n[id] && (!best || n[id] > n[best.id])) best = GOAL_LIFTS[i];
+    }
+    return best;
+  }
+
+  // ---------- goal starters (seam) ----------
+  //
+  // Pumpy's empty chat opens on outcomes, not features: four goal chips and two
+  // quiet links, made from what the person told us (settings.intent) and what
+  // they have done (logs, saves). Pure, so the harness can hold every branch:
+  //   d = { intent, logs, workouts, now, unit, perWeek, free, freeState }
+  // freeState is the server's word on Basic's one free program ("available",
+  // "open", "used"). Numbers are rounded the way people say them, and no chip ever
+  // promises a pace: "about 10 weeks" is a length, not a rate.
+  var GOAL_CATS = { "Legs": "leg", "Push": "push", "Pull": "pull", "Upper Body": "upper-body",
+    "Full Body": "full-body", "Core": "core", "Cardio": "cardio", "HIIT": "HIIT", "Mobility": "mobility", "Yoga": "yoga" };
+
+  function goalStarters(d) {
+    d = d || {};
+    var unit = d.unit === "kg" ? "kg" : "lb", intent = d.intent || {}, now = d.now || new Date();
+    var chips = [gsLift(d, unit, intent, now), gsFat(unit), gsCat(d.workouts, intent), gsKeep(d.perWeek)];
+    var order = { strength: ["lift", "cat", "keep", "fat"], muscle: ["cat", "lift", "keep", "fat"],
+      fat: ["fat", "keep", "cat", "lift"], consistency: ["keep", "cat", "lift", "fat"] }[intent.aim] ||
+      ["lift", "fat", "cat", "keep"];
+    chips.sort(function (a, b) { return order.indexOf(a.id) - order.indexOf(b.id); });
+    // Basic's one real program is why a Basic account sees these chips at all, and
+    // the chip says so until it has been spent.
+    if (d.free && d.freeState !== "used") chips.forEach(function (c) { c.badge = "1 free plan"; });
+    return { chips: chips, links: [
+      { id: "week", label: "Plan my week from what I’ve saved", message: "Plan my week from what I’ve saved." },
+      { id: "sore", label: "Work around a sore shoulder", message: "My shoulder is sore. How do I train around it this week?" }
+    ] };
+  }
+
+  function gsLift(d, unit, intent, now) {
+    var want = intent.lift || null, lift = goalLift(want && want.exercise) || topLift(d.logs, now), est = null, target = null, m;
+    if (!lift) {
+      if (intent.where === "home") {
+        return { id: "lift", label: "Get stronger with what you have", sub: "4 weeks at home",
+          message: "Build me a 4-week strength plan I can do at home.", goal: { type: "muscle" } };
+      }
+      lift = GOAL_LIFTS[0];
+    }
+    m = liftMax(d.logs, lift.id, new Date(now.getTime() + 1), unit);
+    if (m) est = Math.round(m.est);
+    // What was asked for, when it is ahead of where they are; else the next number
+    // worth saying out loud: about five per cent up, rounded up to a plate.
+    if (want && want.exercise === lift.id && want.target) target = toPlate(unitTo(want.target, want.unit || unit, unit), unit);
+    if (est && (!target || target <= est)) target = Math.ceil(est * 1.05 / plateOf(unit)) * plateOf(unit);
+    if (!target) {
+      return { id: "lift", label: "Get my " + lift.word + " to a new best", sub: "I’ll ask where you’re at",
+        message: "Help me get my " + lift.name + " to a new best.",
+        goal: { type: "lift", exercise: lift.id, target: null, unit: unit, baseline: null } };
+    }
+    return { id: "lift", label: "Get my " + lift.word + " to " + target + (unit === "kg" ? " kg" : ""),
+      sub: est ? "your best ~" + est : "start from where you are",
+      message: "Get my " + lift.name + " to " + target + " " + unit + "." +
+        (est ? " My estimated max is about " + est + " " + unit + "." : ""),
+      goal: { type: "lift", exercise: lift.id, target: target, unit: unit, baseline: est } };
+  }
+
+  function gsFat(unit) {
+    var n = unit === "kg" ? 5 : 10;
+    return { id: "fat", label: "Lose " + n + " " + unit + ", keep my strength", sub: "about 10 weeks",
+      message: "Help me lose " + n + " " + unit + " and keep my strength.", goal: { type: "fat", loss: n, unit: unit } };
+  }
+
+  // The kind of workout saved most often, counted over saved videos only: a
+  // Pumpy card or a starter is not a video anybody chose.
+  function gsCat(ws, intent) {
+    var n = {}, best = null, word, where = intent && intent.where;
+    (ws || []).forEach(function (w) {
+      if (!w || w.platform === "pumpy" || w.kind === "starter" || isPending(w) || isFailed(w) || !GOAL_CATS[w.category]) return;
+      n[w.category] = (n[w.category] || 0) + 1;
+      if (!best || n[w.category] > n[best]) best = w.category;
+    });
+    if (best && n[best] >= 2) {
+      word = GOAL_CATS[best];
+      return { id: "cat", label: "4-week " + word + " program", sub: "from your " + n[best] + " " + word + " videos",
+        message: "Build me a 4-week " + word + " program from my saved " + word + " workouts.",
+        goal: { type: "muscle", category: best } };
+    }
+    return { id: "cat", label: "4-week full-body program",
+      sub: where === "home" ? "no equipment" : where === "gym" ? "gym basics" : "from what you have",
+      message: "Build me a 4-week full-body program" + (where === "home" ? " with no equipment." : "."), goal: { type: "muscle" } };
+  }
+
+  function gsKeep(perWeek) {
+    var n = Math.max(2, Math.min(6, perWeek || 3));
+    return { id: "keep", label: "Train " + n + "× a week this month", sub: "I’ll plan the days",
+      message: "Help me train " + n + " times a week this month.", goal: { type: "consistency", target: n } };
+  }
+
+  // ---------- a planned day's prescription (seam) ----------
+  //
+  // A program's plan row carries what that day asks of the goal lift
+  // (plan.prescription: week, label, exercise, sets, reps, pct, the weight the
+  // server worked out, rpe, note, goal_id). The server wrote the weight from the
+  // baseline when the program was made; here it is worked out again, so week
+  // three is lifted off what weeks one and two actually logged. That is the
+  // adaptation rule, the same for Basic and Plus, and no model is involved.
+  // d = { goals, logs, unit }.
+
+  // Where week w of a goal's program starts: its first day, plus seven a week.
+  function rxWeekStart(g, week) { return addDays(dayDate(g.start_day), 7 * (Math.max(1, week) - 1)); }
+
+  // The max a week's loads come from. Week one is the baseline the program was
+  // built on; every later week is the newest estimate from sets logged before it
+  // began. Held near the baseline, so one mistyped set cannot throw a week.
+  function rxBasis(g, week, logs) {
+    var base = Number(g.baseline) || 0, top = Math.max(base, Number(g.target) || 0), m;
+    if (!base) return 0;
+    if (week <= 1) return base;
+    m = liftMax(logs, g.exercise, rxWeekStart(g, week), g.unit);
+    return m ? clamp(m.est, base * 0.9, top * 1.1) : base;
+  }
+
+  function prescriptionFor(row, d) {
+    var rx = row && row.prescription, goals = (d && d.goals) || [], unit = (d && d.unit) || "lb", g = null, i, w = null, out;
+    if (!rx || typeof rx !== "object") return null;
+    for (i = 0; i < goals.length; i++) if (goals[i].id === rx.goal_id) g = goals[i];
+    if (rx.pct && g && g.kind === "lift" && g.exercise && rx.exercise === g.exercise && g.baseline) {
+      // Rounded to a plate in the goal's unit, then again in the reader's: a
+      // program set in kg and read in lb still lands on a bar somebody can load.
+      w = toPlate(unitTo(toPlate(rx.pct * rxBasis(g, rx.week || 1, d && d.logs), g.unit), g.unit, unit), unit);
+    } else if (rx.weight) {
+      w = toPlate(unitTo(rx.weight, rx.unit || unit, unit), unit);
+    }
+    out = { goal_id: rx.goal_id || null, week: rx.week || null, label: rx.label || null, exercise: rx.exercise || null,
+      sets: rx.sets || null, reps: rx.reps ? String(rx.reps) : null, pct: rx.pct || null, rpe: rx.rpe || null,
+      note: rx.note || null, weight: w || null, unit: unit };
+    out.text = rxText(out);
+    return out;
+  }
+
+  // "W5 · Heavy · 5×3 @ 250 lb": the line Up next and a day's card print.
+  function rxText(p) {
+    var dose = p.sets && p.reps ? p.sets + "×" + p.reps : p.reps ? p.reps + " reps" : "";
+    return [p.week ? "W" + p.week : "", p.label || "", dose + (p.weight ? " @ " + p.weight + " " + p.unit : "")]
+      .filter(Boolean).join(" · ");
+  }
+
+  // ---------- where a goal stands (seam) ----------
+  //
+  // Against the straight line from where it started to where it is going: the
+  // latest estimated max for a lift, the latest weigh-in for fat loss, sessions
+  // against the plan's pace for the rest. Inside a plate (or one per cent) of
+  // the line is "on track"; past its last day it is "reached" or "done". A fat
+  // goal with no weigh-in after its first week says so ("no data") rather than
+  // guessing. d = { logs, body (settings.body), now }.
+  function goalStatusOf(g, d) {
+    d = d || {};
+    var now = d.now || new Date(), today = dayDate(ymd(now)), start = dayDate(g.start_day), end = dayDate(g.end_day);
+    var span = Math.max(1, Math.round((end - start) / 86400000)), day = Math.round((today - start) / 86400000);
+    var weeks = g.weeks || Math.max(1, Math.ceil((span + 1) / 7));
+    var base = Number(g.baseline) || 0, target = Number(g.target) || 0, frac = clamp(day / span, 0, 1), tol, got, m, per;
+    var out = { kind: g.kind, week: clamp(Math.floor(day / 7) + 1, 1, weeks), weeks: weeks, status: "on track",
+      latest: null, expected: null, started: day >= 0, over: day > span, unit: g.unit || null };
+    if (g.kind === "lift" && base && target) {
+      m = liftMax(d.logs, g.exercise, addDays(today, 1), g.unit);
+      out.latest = m ? Math.round(m.est) : null;
+      out.expected = Math.round(base + (target - base) * frac);
+      tol = Math.max(plateOf(g.unit), target * 0.01);
+      got = out.latest === null ? base : out.latest;
+      out.status = out.over ? (got >= target ? "reached" : "done")
+        : got >= out.expected + tol ? "ahead" : got < out.expected - tol ? "behind" : "on track";
+    } else if (g.kind === "fat" && base && target) {
+      out.latest = lastWeighIn(d.body, g.start_day, g.unit);
+      out.expected = Math.round((base - (base - target) * frac) * 10) / 10;
+      tol = g.unit === "kg" ? 0.5 : 1;
+      m = out.latest;
+      out.status = m === null ? (day >= 7 ? "no data" : "on track")
+        : out.over ? (m <= target ? "reached" : "done")
+        : m <= out.expected - tol ? "ahead" : m > out.expected + tol ? "behind" : "on track";
+    } else {
+      // Sessions since the start against the program's pace, pro rata.
+      per = (g.program && g.program.days_per_week) || (g.kind === "consistency" && target) || 3;
+      out.latest = 0;
+      (d.logs || []).forEach(function (l) {
+        if (isSession(l) && l.started_at && ymd(new Date(l.started_at)) >= g.start_day && ymd(new Date(l.started_at)) <= ymd(now)) out.latest++;
+      });
+      out.expected = Math.round(per * Math.max(0, Math.min(day, span + 1)) / 7);
+      out.status = out.over ? "done" : out.latest > out.expected ? "ahead"
+        : out.expected && out.latest < out.expected * 0.75 ? "behind" : "on track";
+    }
+    out.text = goalLine(g, out);
+    return out;
+  }
+
+  // The newest weigh-in on or after a day, in a unit. settings.body.log is
+  // [{ d: "YYYY-MM-DD", v: number, u: "lb"|"kg" }], newest last.
+  function lastWeighIn(body, since, unit) {
+    var log = (body && body.log) || [], i;
+    for (i = log.length - 1; i >= 0; i--) {
+      if (log[i] && log[i].d >= since && log[i].v > 0) return unitTo(log[i].v, log[i].u || unit, unit);
+    }
+    return null;
+  }
+
+  // "Bench 305 · est. 287 → 295 · week 2 of 8 · on track": the goal card's one line.
+  function goalLine(g, st) {
+    var tail = "week " + st.week + " of " + st.weeks + " · " + st.status;
+    if (g.kind === "lift") return g.title + " · est. " + (st.latest || g.baseline) + " → " + g.target + " · " + tail;
+    if (g.kind === "fat") {
+      return g.title + " · " + (st.latest !== null ? st.latest + " → " + g.target + " " + g.unit : "weigh in to track it") + " · " + tail;
+    }
+    return g.title + " · " + st.latest + " of ~" + st.expected + " sessions · " + tail;
+  }
+
+  // The goal a person is working toward: v1 holds one active goal at a time
+  // (the table's unique index says so too).
+  function activeGoal() {
+    var gs = state.goals || [];
+    for (var i = 0; i < gs.length; i++) if (gs[i].status === "active") return gs[i];
+    return null;
+  }
+
+  // Read once a boot, and again after a program is confirmed or undone or a goal
+  // ended. A read that fails — a build ahead of its migration, a blip — leaves
+  // the last answer, and null reads as no goals everywhere.
+  function loadGoals() {
+    if (!state.user) return Promise.resolve([]);
+    var uid = state.user.id, epoch = accountEpoch;
+    return sb.from("goals").select("*").eq("user_id", uid).order("created_at", { ascending: false }).limit(20)
+      .then(function (r) {
+        if (!accountNow(epoch, uid)) return [];
+        if (!r.error) { state.goals = r.data || []; goalsChanged(); }
+        return state.goals || [];
+      }).catch(function () { return state.goals || []; });
+  }
+
+  // Everything that prints a goal's numbers, told at once. Workout Mode reads a
+  // prescription when a session starts, so a session under way keeps the numbers
+  // it began with.
+  function goalsChanged() {
+    goalCard.sync();
+    sessionChanged();
+  }
+
+  // ---------- Spotter Starters (seam) ----------
+  //
+  // Three workouts that ship inside the app, so a first session needs no video,
+  // no AI and no account: bodyweight (~20 min, nothing needed), one pair of
+  // dumbbells (~25), and a gym with machines and a barbell (~35). Every movement
+  // is a catalog id with a demo clip. The server holds the same three
+  // (supabase/functions/spotter/starters.ts) and writes a kept copy from ITS
+  // list, never from the client's; tools/goals-harness.mjs holds the two equal.
+  // starterFor(intent, list) and starterCard(s) take what loadStarters() gave.
+  // A kept copy is a workouts row of kind "starter", which the library cap does
+  // not count.
+  // Kept out of the page and read the first time something shows a starter:
+  // three workouts are data, not code, and the page is parsed on every launch.
+  // docs/assets/starters.json ships in both native bundles (tools/ios/build.mjs
+  // copies docs/assets), so it is there offline and before any account exists.
+  var starters = null, startersLoad = null;
+
+  function loadStarters() {
+    if (starters) return Promise.resolve(starters);
+    if (startersLoad) return startersLoad;
+    var base = location.hostname.endsWith("supabase.co") ? "https://simeonrinkenberger.github.io/spotter/" : "./";
+    startersLoad = fetch(base + "assets/starters.json?v=1").then(function (r) { return r.json(); }).then(function (j) {
+      starters = (j && j.starters) || [];
+      startersLoad = null;
+      return starters;
+    }).catch(function () { startersLoad = null; return []; });
+    return startersLoad;
+  }
+
+  // Which starter a person sees first, from "Where do you train?": home is
+  // bodyweight, a gym is the gym, both is a pair of dumbbells. Nobody has said
+  // yet: bodyweight, which needs nothing.
+  function starterFor(intent, list) {
+    var where = intent && intent.where, key = where === "gym" ? "gym" : where === "both" ? "dumbbells" : "bodyweight";
+    list = list || [];
+    for (var i = 0; i < list.length; i++) if (list[i].key === key) return list[i];
+    return list[0] || null;
+  }
+
+  // A starter in the shape every card has, for Workout Mode and the card view.
+  // It has no id until it is kept: a session on it logs with no workout_id,
+  // which still counts (isSession asks for a finish and a set, not a card).
+  function starterCard(s) {
+    return { id: null, starter: s.key, title: s.title, author: "Spotter", platform: "spotter", kind: "starter",
+      category: s.category, duration_minutes: s.minutes, equipment: s.equipment.slice(), muscle_groups: s.muscle_groups.slice(),
+      blocks: JSON.parse(JSON.stringify(s.blocks)), has_full_workout: true, ingest_status: "ready" };
+  }
 
   // ---------- one status per card (seam) ----------
   //
@@ -15426,6 +15838,8 @@ export const APP = String.raw`
       see.onclick = function () { openPlans(m.meta.limit); };
       col.appendChild(see);
     }
+    var ak = m.meta && m.meta.ask && renderAskCard(m, m.meta.ask);
+    if (ak) col.appendChild(ak);
     var p = m.meta && m.meta.proposal;
     if (p) col.appendChild(renderProposal(m, p));
     appendResponseReport(col, m);
@@ -15473,7 +15887,33 @@ export const APP = String.raw`
     card.appendChild(line);
   }
 
+
+  // ---------- Pumpy · goals, asks and programs (seams, B.2; built by b2-pumpy-ui) ----------
+  //
+  // What this build can draw, sent with every turn. The server emits an ask card
+  // or a program only to a build that declared it.
+  var PUMPY_CAPS = ["ask", "program"];
+
+  // The coach's one compact form for what it cannot infer (meta.ask): choice,
+  // number with a unit, date, pre-filled; one submit. A node, or null for none.
+  function renderAskCard(m, ask) { return null; }
+
+  // A program proposal, as the server expanded it (kind "program"): the goal,
+  // the verdict, the weeks, the templates, and Build my plan / Not now.
+  function renderProgramProposal(m, p) {
+    var card = el("div", "proposal");
+    card.appendChild(el("h4", null, "Program"));
+    card.appendChild(el("div", "ptitle", (p.goal && p.goal.title) || "Program"));
+    return card;
+  }
+
+  // Pumpy opened on a goal: a goal chip, "Set a goal with Pumpy" (Train's empty
+  // state), "Adjust with Pumpy" (the goal sheet, the weekly check-in).
+  // ctx = { message, goal (a chip's hint), adjust (a goal row), send }.
+  function openGoalChat(ctx) { setView("pumpy"); }
+
   function renderProposal(m, p) {
+    if (p.kind === "program") return renderProgramProposal(m, p);
     var card = el("div", "proposal");
     card.appendChild(el("h4", null, p.kind === "create_workout" ? "New workout"
       : (p.kind === "append_exercises" ? "Add to a workout" : "Plan")));
@@ -15723,7 +16163,10 @@ export const APP = String.raw`
       // Both shapes: workout_id is what every deployed function already reads, so
       // the chips still do something during the minutes between the two deploys.
       workout_id: ids[0] || null,
-      workout_ids: ids
+      workout_ids: ids,
+      // What this build can draw (B.2): the server sends an ask card or a program
+      // only to a build that said it can, so TestFlight 5-10 never meet either.
+      caps: PUMPY_CAPS
     };
     apiStream("pumpy/chat", payload, function (r) {
       if (pumpy !== owner) return;
