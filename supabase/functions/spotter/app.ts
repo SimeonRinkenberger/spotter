@@ -10420,10 +10420,13 @@ export const APP = String.raw`
   // entry is spent here in the same go() so two navigations are never in flight
   // at once (Chrome resolves each against the entry current when it is called,
   // and two back-to-back land on the same one). extra is that entry, or nothing.
+  // extra: how many more history entries go with it — a number or nothing. Handed a
+  // click event instead (the recap's Done was wired straight to this), history.go got
+  // NaN and the whole page reloaded on the first workout's last tap (QA F2, since build 9).
   function leaveWorkout(extra, pause) {
     var openedFromDetail = $("detail").classList.contains("open");
     exitWorkout(pause);
-    history.go(-((extra || 0) + (openedFromDetail ? 2 : 1)));
+    history.go(-((typeof extra === "number" ? extra : 0) + (openedFromDetail ? 2 : 1)));
     sessionChanged();
   }
 
@@ -10721,7 +10724,7 @@ export const APP = String.raw`
     if (logged.length) main.appendChild(sumLog(logged));
 
     var done = el("button", "btn sumdone", past ? "Back" : "Done");
-    done.onclick = past ? function () { history.back(); } : leaveWorkout;
+    done.onclick = past ? function () { history.back(); } : function () { leaveWorkout(); };
     main.appendChild(done);
     viewIn(main);
     // Last, so the awards are evaluated against a screen that is already drawn.

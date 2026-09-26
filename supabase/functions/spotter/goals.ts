@@ -514,7 +514,7 @@ export function expandProgram(raw: any, ctx: ExpandCtx): { program: Program } | 
   const start: string = raw.start;
   if (start < ctx.today) return { error: "start must be today (" + ctx.today + ") or later" };
   if (daysBetween(ctx.today, start) > 28) return { error: "start within four weeks of today" };
-  const rawWeeks = Array.isArray(raw?.weeks) ? raw.weeks : [];
+  let rawWeeks = Array.isArray(raw?.weeks) ? raw.weeks : [];
   if (!rawWeeks.length) return { error: "a program needs weeks" };
   if (rawWeeks.length > PROGRAM_MAX_WEEKS) return { error: "a program is at most " + PROGRAM_MAX_WEEKS + " weeks" };
   if (ctx.templates.size > PROGRAM_MAX_TEMPLATES) return { error: "use at most " + PROGRAM_MAX_TEMPLATES + " workouts" };
@@ -527,8 +527,8 @@ export function expandProgram(raw: any, ctx: ExpandCtx): { program: Program } | 
     if (ctx.adult !== true) return { error: "ask 'Are you 18 or older?' (ask field id adult, options Yes/No) before a weight-loss program" };
   }
 
-  const weeksN = rawWeeks.length;
-  const end = addDaysYmd(start, 7 * weeksN - 1);
+  let weeksN = rawWeeks.length;
+  let end = addDaysYmd(start, 7 * weeksN - 1);
   let exercise: string | null = null, baseline: number | null = null, target: number | null = null;
   // The program's own words pass the filter the chat does: a calorie target or a
   // supplement in a note, a summary or a day's cue reached the card, the goal sheet
@@ -571,11 +571,32 @@ export function expandProgram(raw: any, ctx: ExpandCtx): { program: Program } | 
       return { error: "goal.baseline (current body weight) is needed for a weight-loss goal — ask for it" };
     }
     target = num(g.target);
+    // A number far under the body weight is the amount to lose, not the goal weight:
+    // the model wrote "target": 10 for "lose 10 lb", and the plan set out to lose 190
+    // (QA F1). A goal weight under 40 % of today's is not one anybody states; an amount
+    // to lose over 40 % of it is not one either.
+    if (target && target < baseline * 0.4) target = baseline - target;
     if (!target || target >= baseline) return { error: "goal.target (the goal weight) must be below the current weight" };
+    // Asked faster than the cap allows, the plan takes the weeks it needs, up to twelve,
+    // repeating its own weeks in order: "lose 10 lb in a month" becomes a five-week plan
+    // to the person's own number — the spec's reframe, "a realistic range and a longer
+    // plan" — rather than a smaller goal in the month. Past twelve weeks the block aims
+    // for what twelve reach, and says so (fatVerdict's too fast).
+    const asked = weeksN, need = Math.ceil((baseline - target) / fatCap(baseline, unit) - 1e-9);
+    if (need > weeksN) {
+      const grow = Math.min(need, PROGRAM_MAX_WEEKS), own = rawWeeks;
+      rawWeeks = Array.from({ length: grow }, (_, i) => own[i % asked]);
+      weeksN = grow;
+      end = addDaysYmd(start, 7 * weeksN - 1);
+    }
     const v = fatVerdict(baseline, target, weeksN, unit);
     verdict = v.verdict === "too_fast" ? "too_fast" : modelVerdict === "too_fast" ? "realistic" : modelVerdict;
     target = Math.round(v.target * 2) / 2;
-    if (v.verdict === "too_fast") {
+    if (weeksN > asked && v.verdict !== "too_fast") {
+      note = "Losing " + round1(baseline - target) + " " + unit + " in " + asked + (asked === 1 ? " week" : " weeks") +
+        " is faster than health guidance of about " + (unit === "kg" ? "0.5–1 kg" : "1–2 lb") + " a week, so this plan takes " +
+        weeksN + " weeks, to " + target + " " + unit + " by " + shortDate(end) + " — a pace people tend to keep.";
+    } else if (v.verdict === "too_fast") {
       dream = v.dream;
       note = "Losing " + round1(baseline - (dream ?? target)) + " " + unit + " in " + weeksN + " weeks is faster than health guidance of about " +
         (unit === "kg" ? "0.5–1 kg" : "1–2 lb") + " a week. This plan aims for " + target + " " + unit + " by " + shortDate(end) +
