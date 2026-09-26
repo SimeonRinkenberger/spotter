@@ -102,6 +102,11 @@ check(r.undo && r.undo.message_id === mid, 'the answer says how to undo');
 const again = await confirm(BASIC, mid, true, { goal_id: 'eeeeeeee-0000-4000-8000-000000000001', today });
 check(JSON.stringify(again) === JSON.stringify(r), 'a retried confirm returns the same receipt');
 check(await count(`select count(*) n from public.plan where user_id = $1`, [BASIC]) === 3, 'the retry wrote nothing twice');
+// A program day moved in the app (Move is a delete and an insert that carries the numbers).
+const moved = r.plan[0];
+await as('authenticated', BASIC, () => db.query(`delete from public.plan where id = $1`, [moved.id]));
+await as('authenticated', BASIC, () => db.query(`insert into public.plan(user_id, day, workout_id, prescription) values ($1, $2, $3, $4)`,
+  [BASIC, add(5), moved.workout_id, JSON.stringify(moved.prescription)]));
 
 const mid2 = await proposal(BASIC, FREE_THREAD, program(W1, { newId: 'bbbbbbbb-0000-4000-8000-000000000009', title: 'Bench 315' }));
 r = await confirm(BASIC, mid2, true, { goal_id: 'eeeeeeee-0000-4000-8000-000000000002', today });
@@ -111,6 +116,8 @@ check(await count(`select count(*) n from public.goals where user_id = $1`, [BAS
 const u = await undo(BASIC, mid);
 check(u.status === 'ok' && u.removed.plan === 3 && u.removed.workouts === 1, 'undo takes the days and the new workout back (' + JSON.stringify(u.removed) + ')');
 check((await db.query(`select status from public.goals where id = 'eeeeeeee-0000-4000-8000-000000000001'`)).rows[0].status === 'undone', 'the goal reads undone');
+check(await count(`select count(*) n from public.plan where user_id = $1 and prescription->>'goal_id' = 'eeeeeeee-0000-4000-8000-000000000001'`, [BASIC]) === 0,
+  'a program day moved since the confirm goes with the undo (review 14)');
 check(JSON.stringify(await undo(BASIC, mid)) === JSON.stringify(u), 'a repeated undo returns the same receipt');
 r = await confirm(BASIC, mid2, true, { goal_id: 'eeeeeeee-0000-4000-8000-000000000002', today });
 check(r.status === 'ok', 'after an undo the free thread can confirm again');
