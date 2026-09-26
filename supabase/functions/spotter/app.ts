@@ -8925,8 +8925,9 @@ export const APP = String.raw`
   // Half a second first, so a tap is never read as a hold; the click that ends a
   // hold is dropped, the repeats having counted it. A click with no pointer
   // before it is a keyboard, and steps once, as it always did.
+  // id may be the button itself: the ask card's steppers are built off the page.
   function wireStep(id, step) {
-    var btn = $(id), t = 0, n = 0;
+    var btn = id.nodeType ? id : $(id), t = 0, n = 0;
     function tick() {
       n++;
       if (!step()) { stop(); return; }
@@ -15654,14 +15655,6 @@ export const APP = String.raw`
   // carries the library index and the transcript.
   var MAX_REFS = 6;
 
-  // Short enough to wrap into a chip on a phone, long enough to still be a real ask.
-  var QUICK_ASKS = [
-    "Build a 25-min kettlebell shoulders + core",
-    "Plan my week from what I’ve saved",
-    "Edit one of my workouts",
-    "Shoulder pain — what should I strengthen?"
-  ];
-
   // A keyboard sends on Enter; a phone keyboard's return key must still make a
   // new line, so only ask for that where there is no touch screen.
   var NO_TOUCH = !("ontouchstart" in window) && !(navigator.maxTouchPoints > 0);
@@ -15701,10 +15694,13 @@ export const APP = String.raw`
     return t;
   }
 
-  // What a new chat never takes off the page: an answer still arriving, or a
-  // change Pumpy is waiting on a yes or no for.
+  // What a new chat never takes off the page: an answer still arriving, a
+  // change Pumpy is waiting on a yes or no for, or an ask card still waiting on
+  // its answers (the last word in the chat) — stepping out to look up a max
+  // must not bury the form in Chats.
   function pumpyHolds(msgs) {
-    if (pumpy.busy || pumpy.live) return true;
+    var last = msgs[msgs.length - 1];
+    if (pumpy.busy || pumpy.live || (last && last.meta && last.meta.ask && !last.meta.ask.answered)) return true;
     return msgs.some(function (m) {
       return m.role === "assistant" && m.meta && m.meta.proposal && m.meta.status === "pending";
     });
@@ -15814,7 +15810,7 @@ export const APP = String.raw`
     pumpy = Object.assign({}, pumpy, { thread: null, messages: [], refs: [],
       refsRev: pumpy.refsRev + 1, openSeq: (pumpy.openSeq || 0) + 1,
       loaded: true, loading: false, busy: false, live: null, nodes: {}, shownCount: 0, stick: true,
-      lastAt: 0, ctxAt: 0 });
+      lastAt: 0, ctxAt: 0, goal: null });
   }
 
   function newPumpyThread() {
@@ -16197,14 +16193,6 @@ export const APP = String.raw`
     // is noise: for the one moment of valid layout it leaves, which is what lets
     // the single scrollTop at the foot of this function land on the right pixel.
     var frag = document.createDocumentFragment();
-    if (isFree()) {
-      var offer = el("div", "reader-offer");
-      offer.appendChild(el("b", null, "Pumpy · Included with Spotter Plus"));
-      offer.appendChild(el("p", null, "Combine your saved workouts, build a routine for your goals, get coaching and find alternate exercises."));
-      var upgrade = el("button", "btn", "Explore Spotter Plus");
-      upgrade.onclick = function () { openPlans({ kind: "pumpy" }); };
-      offer.appendChild(upgrade); frag.appendChild(offer);
-    }
     var shown = pumpy.messages.filter(function (m) { return m.role === "user" || m.role === "assistant"; });
     // With nothing said yet the log is empty space, so the greeting sits in the
     // middle of it rather than clinging to the top.
@@ -16214,22 +16202,7 @@ export const APP = String.raw`
     $("pumpybar").classList.toggle("labelled", !!pumpy.loaded && !shown.length && !pumpy.busy);
     // And only once we KNOW there is nothing: before the first fetch lands it is a
     // final state that has to be taken away again, which reads as a flash.
-    if (!shown.length && pumpy.loaded) {
-      var hello = el("div", "pumpyhello");
-      hello.appendChild(pumpyArt("hello", true));
-      hello.appendChild(el("h2", null, "Hey, I’m Pumpy"));
-      hello.appendChild(el("p", null,
-        "I know what you’ve saved. Ask me to build a workout from it, add to one, or plan your week. " +
-        "I’ll show you before I change anything."));
-      var q = el("div", "quick");
-      QUICK_ASKS.forEach(function (t) {
-        var c = el("button", "chip", t);
-        c.onclick = function () { sendPumpy(t); };
-        q.appendChild(c);
-      });
-      hello.appendChild(q);
-      frag.appendChild(hello);
-    }
+    if (!shown.length && pumpy.loaded) frag.appendChild(pumpyHello());
     // The thread is rebuilt every render; animating every bubble would replay it.
     var before = pumpy.shownCount || 0;
     var previous = pumpy.nodes || {}, next = {};
@@ -16275,18 +16248,30 @@ export const APP = String.raw`
     row.appendChild(pumpyMark("pmark"));
     var col = el("div", "msgcol");
     if (m.content) col.appendChild(el("div", "msg pumpy", m.content));
-    if (m.meta && m.meta.limit) {
-      var see = el("button", "chip", "See " + planWord(m.meta.limit.next_plan || "plus"));
-      see.onclick = function () { openPlans(m.meta.limit); };
-      col.appendChild(see);
-    }
-    var ak = m.meta && m.meta.ask && renderAskCard(m, m.meta.ask);
-    if (ak) col.appendChild(ak);
-    var p = m.meta && m.meta.proposal;
-    if (p) col.appendChild(renderProposal(m, p));
-    appendResponseReport(col, m);
+    msgCards(row, col, m);
     row.appendChild(col);
     return row;
+  }
+
+  // What rides under Pumpy's words, drawn the same whether the answer streamed in
+  // or was loaded with the thread (the live path used to draw a proposal and
+  // nothing else, so an ask card arriving live would have been missing until a
+  // reload): the Plus chip on a refusal, an ask card, a proposal, a preview,
+  // then Report. A form or a program is given the chat's whole width (research
+  // §3, as ChatGPT's inline cards): at 92% beside the avatar a five-way
+  // segmented control has no room for its numbers on a small phone.
+  function msgCards(row, col, m) {
+    var x = m.meta || {}, ak = x.ask && renderAskCard(m, x.ask);
+    if (x.limit) {
+      var see = el("button", "chip", "See " + planWord(x.limit.next_plan || "plus"));
+      see.onclick = function () { openPlans(x.limit); };
+      col.appendChild(see);
+    }
+    if (ak) col.appendChild(ak);
+    if (x.proposal) col.appendChild(renderProposal(m, x.proposal));
+    if (x.preview) col.appendChild(previewCard(x.preview));
+    row.classList.toggle("wide", !!(ak || x.preview || (x.proposal && x.proposal.kind === "program")));
+    appendResponseReport(col, m);
   }
 
   function appendResponseReport(col, m) {
@@ -16330,29 +16315,458 @@ export const APP = String.raw`
   }
 
 
-  // ---------- Pumpy · goals, asks and programs (seams, B.2; built by b2-pumpy-ui) ----------
+  // ---------- Pumpy · goals, asks and programs (B.2) ----------
+  //
+  // "Get my bench to 305" in one exchange: a goal chip, one ask card for what
+  // the coach cannot infer, one program card, one yes. Every number is the
+  // seams' (goalStarters, liftMax, rxText, goalStatusOf); what is here is how
+  // they are drawn, and which door opens for whom.
   //
   // What this build can draw, sent with every turn. The server emits an ask card
   // or a program only to a build that declared it.
   var PUMPY_CAPS = ["ask", "program"];
 
-  // The coach's one compact form for what it cannot infer (meta.ask): choice,
-  // number with a unit, date, pre-filled; one submit. A node, or null for none.
-  function renderAskCard(m, ask) { return null; }
+  // Per-message screen state that is not the message: an ask card sent, a
+  // program's weeks unfolded, the workouts a program made. Kept off the message
+  // because renderPumpy reuses a node while its message's JSON is unchanged, and
+  // a card that has just been sent has to fold in place, not be drawn again.
+  function pumpyUI(id) {
+    var u = pumpy.ui || (pumpy.ui = {});
+    return u[id] || (u[id] = {});
+  }
 
-  // A program proposal, as the server expanded it (kind "program"): the goal,
-  // the verdict, the weeks, the templates, and Build my plan / Not now.
-  function renderProgramProposal(m, p) {
-    var card = el("div", "proposal");
-    card.appendChild(el("h4", null, "Program"));
-    card.appendChild(el("div", "ptitle", (p.goal && p.goal.title) || "Program"));
-    return card;
+  // Basic's one free program as the server last said it (/api/limits, or the
+  // 403 that refused a turn) — { state: "available"|"open"|"used", thread_id } —
+  // else what this session saw happen since: a first goal turn opened the free
+  // thread, a confirm spent it, an Undo gave it back. null when nothing is
+  // known, and on Plus. The next limits read replaces all of it with the
+  // server's word; pumpy.free covers a session whose limits read failed.
+  function freeProgram() { return (billing.limits && billing.limits.free_program) || pumpy.free || null; }
+
+  function setFree(st, id) {
+    if (!isFree()) return;
+    pumpy.free = { state: st, thread_id: id || null };
+    if (billing.limits) billing.limits.free_program = pumpy.free;
+  }
+
+  // The empty chat opens on outcomes: four goal chips and two quiet links from
+  // goalStarters, and the promise that nothing changes until you say so. Basic's
+  // Plus card used to stand on top of it all and push the starters under the
+  // fold (evidence/before/06). It is gone from here: the "1 free plan" badge
+  // tells a Basic account what a chip costs, a "Plus" tag marks the two links
+  // that are Plus, and the offer itself waits for a moment it can point at —
+  // under the free plan just built (decisions §1: trials start on day 0), or
+  // beside the preview once that plan is spent. One call to action at a time.
+  function pumpyHello() {
+    var hello = el("div", "pumpyhello"), free = isFree(), fp = freeProgram();
+    var s = (state.profile && state.profile.settings) || {}, list = el("div", "gchips"), links = el("div", "glinks");
+    var st = goalStarters({ intent: s.intent, logs: state.logs, workouts: state.workouts, now: new Date(),
+      unit: state.unit, perWeek: goalSetting(), free: free && !!fp, freeState: fp && fp.state });
+    hello.appendChild(pumpyArt("hello", true));
+    hello.appendChild(el("h2", null, "What are we working toward?"));
+    hello.appendChild(el("p", null, "Give me a goal and I’ll put a plan on your calendar. Nothing changes until you say so."));
+    st.chips.forEach(function (c) {
+      var b = list.appendChild(el("button", "gchip")), t = b.appendChild(el("span"));
+      t.appendChild(el("b", null, c.label));
+      t.appendChild(el("small", null, c.sub));
+      if (c.badge) b.appendChild(el("i", null, c.badge));
+      b.onclick = function () { openGoalChat({ message: c.message, goal: c.goal }); };
+    });
+    // A quiet link is never a goal door, even in a chat one opened: on Basic it
+    // is the Plus page, and nowhere may it claim the free plan.
+    st.links.forEach(function (l) {
+      var b = links.appendChild(el("button", null, l.label));
+      if (free) b.appendChild(el("i", null, "Plus"));
+      b.onclick = function () { pumpy.goal = null; sendPumpy(l.message); };
+    });
+    hello.appendChild(list);
+    hello.appendChild(links);
+    // The chips are made of the logs and, on Basic, of whether the free plan is
+    // spent. A chat drawn before either answer landed asks once and draws again,
+    // so "Get my bench to a new best" becomes "to 305 · your best ~287".
+    if (!pumpy.helloAsked && (!state.logs || (free && !fp))) {
+      pumpy.helloAsked = true;
+      var again = function () { if (pumpy.loaded && !pumpy.messages.length && !pumpy.busy) renderPumpy(); };
+      Promise.all([loadLogs(), free ? recentLimits() : null]).then(again, again);
+    }
+    return hello;
   }
 
   // Pumpy opened on a goal: a goal chip, "Set a goal with Pumpy" (Train's empty
   // state), "Adjust with Pumpy" (the goal sheet, the weekly check-in).
-  // ctx = { message, goal (a chip's hint), adjust (a goal row), send }.
-  function openGoalChat(ctx) { setView("pumpy"); }
+  // ctx = { message, goal (a chip's hint), adjust (a goal row), send }. Always a
+  // new chat, marked a goal chat so its first turn says goal: true. A chip sends
+  // at once; an adjustment's facts (its caller writes them) wait in the composer,
+  // focused, so the person says what should change and a model turn is their
+  // tap; send overrides either. With no message it is Pumpy's chat on the chips.
+  // Basic's first goal turn needs no word from the client about its free plan:
+  // the server claims it, or carries the turn on in the thread already claimed,
+  // or refuses a spent one with the 403 sendPumpy turns into the preview. Known
+  // to be spent here, the preview comes without a request at all.
+  function openGoalChat(ctx) {
+    ctx = ctx || {};
+    var free = isFree(), fp = freeProgram(), box = $("pumpyinput"), text = ctx.message || "";
+    // Decisions §1: once the free plan is built, adjusting it is Plus. (A free
+    // plan still open — undone, say — is still Basic's to talk over.)
+    if (free && ctx.adjust && !(fp && fp.state === "open")) { openPlans({ kind: "goal" }); return; }
+    if (pumpy.thread || pumpy.messages.length || pumpy.busy) { pumpyBlank(); renderPumpy(); }
+    pumpy.goal = ctx.goal || {};
+    setView("pumpy");
+    if (!text) return;
+    // A chip's goal can be previewed; a door with words and no goal cannot.
+    if (free && fp && fp.state === "used") {
+      if (pumpy.goal.type) goalPreview(text, pumpy.goal); else openPlans({ kind: "goal" });
+      return;
+    }
+    if (ctx.send === false || (ctx.send === undefined && ctx.adjust)) {
+      box.value = text;
+      box.style.height = "auto";
+      box.style.height = Math.min(box.scrollHeight, 138) + "px";
+      // Inside the tap that asked, this is the one call iOS answers with a keyboard.
+      box.focus({ preventScroll: true });
+      return;
+    }
+    sendPumpy(text);
+  }
+
+  // Basic with the free plan spent: no request, no AI. What Pumpy would build,
+  // made here from the chip's goal, the intent and the logs, and called exactly
+  // that — a preview, not a plan — beside the Plus offer. It lives only on this
+  // screen: never sent, and gone with the next new chat.
+  function goalPreview(text, goal) {
+    var t = pumpy.lastAt = Date.now();
+    pumpy.messages.push({ id: "local-q" + t, role: "user", content: text },
+      { id: "local-pv" + t, role: "assistant", meta: { preview: goal } });
+    renderPumpy();
+  }
+
+  // Per goal type: the title, then the plan's facts. A lift adds its numbers:
+  // what an eight-week block honestly reaches from the estimated max — about
+  // 3%, never more than two plates (intermediates add a few pounds a month,
+  // Latella 2022) and never past what the chip asked for.
+  function previewCard(g) {
+    var out = document.createDocumentFragment(), card = out.appendChild(el("div", "proposal pview"));
+    var u = g.unit || state.unit, n = goalSetting() || 3, lift = g.type === "lift" && goalLift(g.exercise), est = g.baseline, m;
+    var P = { lift: ["A " + (lift ? lift.word : "strength") + " plan for you", "8 weeks", n + " days a week", "Build, Deload, Heavy, Peak, Test"],
+      fat: ["A fat-loss plan for you", "10 weeks", n + " training days a week", "daily steps and a weekly weigh-in"],
+      consistency: ["Train " + (g.target || n) + "× a week this month", "4 weeks", "the days picked for you"] }[g.type] ||
+      ["A 4-week " + (GOAL_CATS[g.category] || "full-body") + " program for you", "4 weeks", n + " days a week", "from your saved workouts"];
+    m = lift && !est ? liftMax(state.logs, lift.id, null, u) : null;
+    if (m) est = Math.round(m.est);
+    if (lift && est) {
+      P.splice(3, 0, "est. " + est + " → " + Math.min(g.target || Infinity, Math.max(toPlate(est + Math.min(est * 0.03, 2 * plateOf(u)), u),
+        Math.ceil((est + 1) / plateOf(u)) * plateOf(u))));
+    }
+    card.appendChild(el("h4", null, "What Pumpy would build with Plus"));
+    card.appendChild(el("div", "ptitle", P[0]));
+    card.appendChild(el("div", "pmeta", P.slice(1).join(" · ")));
+    card.appendChild(el("p", "pnote", "A preview, not a plan: nothing goes on your calendar."));
+    out.appendChild(plusOffer("You’ve used your free plan", "With Plus, Pumpy builds this around your week and adjusts it as you go."));
+    return out;
+  }
+
+  // Plus, offered in the thread when it has something to point at — under the
+  // free plan just built, or beside the preview of one — and never as a sheet
+  // thrown over it. The button promises a trial only when the store has one
+  // to give; the Plus page says the rest.
+  function plusOffer(head, line) {
+    var box = el("div", "reader-offer"), p = billing.prices, y = p && p.plans && p.plans.plus && p.plans.plus.year;
+    var trial = (y && num(y.trial_days)) || num(p && p.trial_days);
+    box.appendChild(el("b", null, head));
+    box.appendChild(el("p", null, line));
+    box.appendChild(el("button", "btn", trial > 0 ? "Start free trial" : "See Spotter Plus")).onclick = function () {
+      openPlans({ kind: "goal" });
+    };
+    return box;
+  }
+
+  // ---------- Pumpy · the ask card ----------
+  //
+  // One compact form for what the coach cannot infer (meta.ask), after research
+  // §3: the chat's full width, a label above every control, one Build my plan.
+  // Up to five short answers are a segmented control (Apple's, Train's own); a
+  // longer choice wraps as chips; a number is the set sheet's own stepper, held
+  // to repeat and tapped to type; a date is Today, Tomorrow, next Monday or the
+  // phone's own picker. A pre-filled answer is a real answer, shown selected,
+  // and a number the server filled in says where it came from. A choice left
+  // empty — are you 18 or older? — is never pre-selected, and the button waits
+  // for it. Sent, the card folds to one line: the answers are the bubble under
+  // it, and a live form left in the history would invite a second go.
+  function renderAskCard(m, ask) {
+    var ui = pumpyUI(m.id), fields = (ask.fields || []).slice(0, 6), vals = {}, card = el("div", "askcard"), go;
+    if (ask.answered || ui.sent) return askFold(card);
+    // Answered by typing instead (the composer is the card's escape hatch): the
+    // chat has moved on, and a live form left above it would invite a second go.
+    if (!ui.back && pumpy.messages.slice(pumpy.messages.indexOf(m) + 1).some(function (x) { return x.role === "user"; })) return null;
+    fields.forEach(function (f) {
+      var box = card.appendChild(el("div"));
+      box.appendChild(el("div", "askl", f.label + (f.unit && f.type === "choice" ? " (" + f.unit + ")" : "")));
+      vals[f.id] = f.value === undefined || f.value === "" ? null : f.value;
+      box.appendChild((f.type === "number" ? askNum : askChoice)(f, vals, ready));
+      if (f.type === "number" && vals[f.id] !== null) box.appendChild(el("small", "askfrom", "From your history"));
+    });
+    go = card.appendChild(el("button", "btn", ask.submit || "Build my plan"));
+    function ready() { go.disabled = fields.some(function (f) { return vals[f.id] === null; }); }
+    go.onclick = function () {
+      endEdit();
+      // One sentence a person can read in the history, beside the answers the
+      // server reads by field id.
+      var said = fields.map(function (f) {
+        var v = vals[f.id];
+        return f.label + (/\?$/.test(f.label) ? " " : ": ") + (f.type === "date" ? dayMon(v) : v) + (f.unit ? " " + f.unit : "");
+      }).join(" · ");
+      if (!go.disabled && sendPumpy(said, { answers: vals, ask_id: m.id })) { ui.sent = true; askFold(card); }
+    };
+    ready();
+    return card;
+  }
+
+  // The sent card: one quiet line where the form stood, its height folding to
+  // the line's as the form goes; under reduced motion only the crossfade.
+  function askFold(card) {
+    var h = card.offsetHeight;
+    card.innerHTML = "";
+    card.className = "askcard sent";
+    card.appendChild(icon(el("div"), "check", "Answers sent"));
+    if (h && card.animate) {
+      card.animate(lessMotion() ? [{ opacity: 0.4 }, { opacity: 1 }]
+        : [{ height: h + "px", opacity: 0.6 }, { height: card.offsetHeight + "px", opacity: 1 }],
+        { duration: 220, easing: "cubic-bezier(.22,.9,.3,1)" });
+    }
+    return card;
+  }
+
+  // A send that never arrived leaves the answers unsent, so the form comes back,
+  // live, even though the failed answers now stand under it as a bubble.
+  function askBack(id) {
+    var u = pumpyUI(id);
+    if (u.sent && pumpy.nodes) { u.sent = false; u.back = true; delete pumpy.nodes[id]; }
+  }
+
+  // A choice of up to five short answers is a segmented control; a longer one,
+  // and a date, wrap as chips. A date's chips are Today, Tomorrow and next
+  // Monday, then one over the phone's own date picker, which afterwards says the
+  // date it chose. Its input lies over the chip, unseen, so the tap is the
+  // input's own: the one way WebKit opens its picker without a script asking.
+  function askChoice(f, vals, ready) {
+    var date = f.type === "date", now = new Date(), btns, pick, inp;
+    var opts = date ? [ymd(now), ymd(addDays(now, 1)), ymd(addDays(mondayOf(now), 7))] : (f.options || []).map(String);
+    var words = date ? ["Today", "Tomorrow", dayMon(opts[2])] : opts;
+    var seg = !date && opts.length <= 5 && opts.every(function (o) { return o.length <= 6; });
+    var box = el("div", seg ? "seg none" : "askchips");
+    // On a Sunday, next Monday is tomorrow.
+    if (date && opts[2] === opts[1]) { opts.pop(); words.pop(); }
+    box.setAttribute("role", "radiogroup");
+    box.setAttribute("aria-label", f.label);
+    if (seg) {
+      box.appendChild(el("div", "segpill"));
+      box.style.setProperty("--n", opts.length);
+    }
+    btns = opts.map(function (o, i) {
+      var b = box.appendChild(el("button", seg ? "segbtn" : "chip", words[i]));
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.onclick = function () { haptic("select"); put(o); ready(); };
+      return b;
+    });
+    if (date) {
+      pick = box.appendChild(el("label", "chip askpick", "Pick a date…"));
+      inp = pick.appendChild(el("input"));
+      inp.type = "date";
+      inp.min = opts[0];
+      inp.max = ymd(addDays(now, 60));
+      inp.setAttribute("aria-label", f.label);
+      // iOS's calendar does not grey out what min and max forbid, so a day before
+      // today (a start the server refuses) is held to the window here.
+      inp.onchange = function () {
+        var v = inp.value;
+        if (v) { put(v < inp.min ? inp.min : v > inp.max ? inp.max : v); ready(); }
+      };
+    }
+    // The first answer to an empty segmented control puts the thumb down where
+    // it lands rather than sliding it in from the first seat: placed while
+    // .none still holds its transition off, then shown.
+    function put(v) {
+      var i = opts.indexOf(String(v));
+      vals[f.id] = v = v != null && (date || i >= 0) ? String(v) : null;
+      btns.forEach(function (b, j) {
+        b.setAttribute("aria-checked", String(i === j));
+        if (!seg) b.classList.toggle("active", i === j);
+      });
+      if (pick) {
+        pick.classList.toggle("active", !!v && i < 0);
+        pick.firstChild.data = v && i < 0 ? dayMon(v) : "Pick a date…";
+      }
+      if (!seg || i < 0) return;
+      box.style.setProperty("--s", i);
+      if (box.classList.contains("none")) { void box.offsetWidth; box.classList.remove("none"); }
+    }
+    put(vals[f.id]);
+    return box;
+  }
+
+  // The set sheet's stepper, reused whole: wireStep repeats while held, wireNum
+  // types on a tap. A barbell load steps by a plate (5 lb or 2.5 kg, a pair of
+  // the smallest plates) and body weight, told by the field's id or label, by a
+  // fifth of one (1 lb, 0.5 kg); anything without a weight unit by one.
+  // Clamped to what a person could mean.
+  function askNum(f, vals, ready) {
+    var row = el("div", "stepper"), val = el("div", "val"), inp = el("input", "numin"), u = f.unit || "";
+    var num = el("button", "num", vals[f.id] === null ? "–" : String(vals[f.id]));
+    var kg = u === "kg", load = kg || u === "lb", says = f.id + " " + f.label;
+    var step = load ? plateOf(u) / (/body|weigh/i.test(says) && !/max|lift/i.test(says) ? 5 : 1) : 1;
+    var lo = step, hi = load ? (kg ? 700 : 1500) : 9999;
+    function set(v) {
+      v = clamp(Math.round(v * 10) / 10, lo, hi);
+      if (v === vals[f.id]) return false;
+      vals[f.id] = v;
+      animateNumber(num, String(v), true);
+      ready();
+      return true;
+    }
+    [-1, 1].forEach(function (d) {
+      var b = row.appendChild(icon(el("button"), d < 0 ? "minus" : "plus"));
+      b.type = "button";
+      b.setAttribute("aria-label", (d < 0 ? "Less" : "More") + " — " + f.label);
+      wireStep(b, function () { return set(vals[f.id] === null ? lo : vals[f.id] + d * step); });
+      if (d < 0) row.appendChild(val);
+    });
+    num.type = "button";
+    num.setAttribute("aria-label", f.label + " — tap to type a number");
+    inp.type = "text";
+    inp.inputMode = "decimal";
+    inp.autocomplete = "off";
+    inp.setAttribute("enterkeyhint", "done");
+    inp.setAttribute("aria-label", f.label);
+    val.appendChild(num);
+    val.appendChild(inp);
+    val.appendChild(el("small", null, u));
+    wireNum(val, num, inp, set);
+    return row;
+  }
+
+  // Typing into the ask card: where the frame follows the keyboard (Android, a
+  // browser), the field can land behind Pumpy's own composer, which rides the
+  // keys; once they have settled it is brought up above it. The iOS shell's
+  // keyboard section already does this for any field (kbPlain).
+  $("pumpylog").addEventListener("focusin", function (e) {
+    var f = e.target;
+    if (kbOver() || !f.closest(".askcard")) return;
+    setTimeout(function () {
+      var d = f.getBoundingClientRect().bottom + 12 - $("pumpycomposer").getBoundingClientRect().top;
+      if (d > 0 && document.activeElement === f) $("pumpyview").scrollTop += d;
+    }, 450);
+  });
+
+  // "Mon, Sep 28": a day the way the plan proposal already writes one.
+  function dayMon(k) { return dayDate(k).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); }
+
+  // ---------- Pumpy · the program card ----------
+  //
+  // A program as the server expanded it: what it is for and its numbers; what it
+  // replaces; the verdict as a labelled pill (a mark and a word, never colour
+  // alone) with its honest note in full; a fat-loss plan's medical line and its
+  // sources, always shown and never folded (Apple has turned down health advice
+  // that cites nothing); the weeks, each day with its numbers, two weeks shown
+  // and the rest a tap away so the card never becomes a wall; the workouts it
+  // uses or makes; then Build my plan or Not now. "W1", never "Week 1": the
+  // wording table keeps Week-and-a-number for dates, and W5 is how Up next
+  // writes a program week (rxText).
+  var VERDICTS = { realistic: ["check", "Realistic"], stretch: ["trend", "Stretch"], too_fast: ["alert", "Too fast"] };
+
+  function renderProgramProposal(m, p) {
+    var out = document.createDocumentFragment(), card = out.appendChild(el("div", "proposal")), g = p.goal || {};
+    var ui = pumpyUI(m.id), u = p.unit || g.unit || "", v = VERDICTS[p.verdict], ws = p.weeks || [], st = m.meta.status;
+    card.appendChild(el("h4", null, p.free ? "Your free plan" : "Program"));
+    card.appendChild(el("div", "ptitle", g.title || "Your plan"));
+    // A fat-loss plan is training plus a daily target and a weekly weigh-in:
+    // all three are what it asks of the person, so all three are on the card.
+    card.appendChild(el("div", "pmeta", [g.target ? (g.baseline ? (g.type === "lift" ? "est. " : "") + g.baseline + " → " : "") +
+      g.target + " " + u : "", g.weeks ? g.weeks + " weeks" : "", g.days_per_week ? g.days_per_week + " days a week" : "",
+      g.daily ? (g.daily.steps ? g.daily.steps.toLocaleString() + " steps" : g.daily.cardio_minutes + " min cardio") + " a day" : "",
+      g.weigh_in_dow ? "weigh in " + addDays(mondayOf(new Date()), g.weigh_in_dow - 1)
+        .toLocaleDateString(undefined, { weekday: "long" }) + "s" : ""].filter(Boolean).join(" · ")));
+    if (p.replaces) card.appendChild(icon(el("div", "pswap"), "swap", "Replaces " + p.replaces.title));
+    if (v) card.appendChild(icon(el("span", "verdict " + p.verdict), v[0], v[1]));
+    [p.verdict_note, p.medical_note].forEach(function (t) { if (t) card.appendChild(el("p", "pnote", t)); });
+    (p.sources || []).forEach(function (s) {
+      var a = card.appendChild(icon(el("a", "pill accent olink", s.title), "arrow-up-right"));
+      a.href = s.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+    });
+    ws.forEach(function (w, i) {
+      var wk = card.appendChild(el("div", i > 1 && !ui.all ? "pwk hide" : "pwk"));
+      wk.appendChild(el("div", "pblock", "W" + w.week + " · " + w.label +
+        (p.start ? " · " + weekLabel(addDays(dayDate(p.start), 7 * (w.week - 1))) : "")));
+      (w.days || []).forEach(function (d) {
+        var line = wk.appendChild(el("div", "pline"));
+        line.appendChild(el("b", null, dayDate(d.day).toLocaleDateString(undefined, { weekday: "short" })));
+        line.appendChild(el("span", null, d.title || ""));
+        if (d.rx) line.appendChild(el("em", null, rxText(d.rx)));
+      });
+    });
+    if (ws.length > 2 && !ui.all) {
+      var more = card.appendChild(el("button", "linkbtn", "Show all " + ws.length + " weeks"));
+      more.onclick = function () {
+        ui.all = true;
+        card.querySelectorAll(".pwk.hide").forEach(function (n) { n.classList.remove("hide"); n.classList.add("msgin"); });
+        more.remove();
+      };
+    }
+    var ts = (p.templates || []).map(function (t) { return t.title + (t.new ? " (new)" : ""); });
+    if (ts.length) card.appendChild(el("div", "pmeta", "Uses " + ts.join(", ")));
+    if (st === "pending") {
+      var row = card.appendChild(el("div", "btnrow")), no = row.appendChild(el("button", "btn ghost", "Not now"));
+      var yes = row.appendChild(el("button", "btn", "Build my plan"));
+      no.onclick = function () { confirmPumpy(m, false, no, yes); };
+      yes.onclick = function () { confirmPumpy(m, true, no, yes); };
+    } else {
+      card.appendChild(st === "done" ? icon(el("div", "done"), "check", "On your calendar")
+        : el("div", "declined", st === "undone" ? "Undone" : "Skipped"));
+    }
+    // Decisions §1: the trial is offered right under the free plan, on day 0.
+    if (st === "done" && p.free && isFree()) {
+      out.appendChild(plusOffer("Pumpy can keep coaching this plan",
+        "With Plus, Pumpy adjusts it week to week and builds anything else you want."));
+    }
+    return out;
+  }
+
+  // A program on the calendar: its new workouts join the list, Basic's free plan
+  // is spent, Train and Up next learn at once (loadGoals tells goalsChanged,
+  // loadPlan brings the days), and Undo stands for as long as its toast. The
+  // server keeps fifteen minutes; after that, End goal on Train is the way out.
+  function programIn(m, r) {
+    var made = (r.program && r.program.workouts) || [];
+    pumpyUI(m.id).made = made.map(function (w) { return w.id; });
+    made.forEach(function (w) {
+      if (!state.workouts.some(function (x) { return x.id === w.id; })) state.workouts.unshift(w);
+    });
+    if (made.length) render();
+    if (m.meta.proposal.free) setFree("used", m.thread_id || (pumpy.thread && pumpy.thread.id));
+    goalsReload();
+    offerUndo("Plan on your calendar", function () {}, function () { undoProgram(m); });
+  }
+
+  function goalsReload() { loadGoals(); planRev++; loadPlan(true); }
+
+  function undoProgram(m) {
+    var epoch = accountEpoch, uid = state.user && state.user.id, made = pumpyUI(m.id).made || [];
+    api("pumpy/undo", { method: "POST", body: JSON.stringify({ message_id: m.id }) }).then(function (r) {
+      if (!accountNow(epoch, uid)) return;
+      // Past the server's fifteen minutes this is a 409 that says so.
+      if (r.status !== "ok") { toast(r.message || "That plan can’t be undone now. End the goal from Train instead."); return; }
+      m.meta.status = "undone";
+      if (pumpy.messages.indexOf(m) >= 0) (r.messages || []).forEach(function (x) { pumpy.messages.push(x); });
+      state.workouts = state.workouts.filter(function (w) { return made.indexOf(w.id) < 0; });
+      // An Undo inside the window gives Basic its free thread back (SHARED §3).
+      if (m.meta.proposal.free) setFree("open", m.thread_id || (pumpy.thread && pumpy.thread.id));
+      goalsReload();
+      render();
+      renderPumpy();
+    }).catch(function () { toast("Could not reach Spotter — check your connection."); });
+  }
 
   function renderProposal(m, p) {
     if (p.kind === "program") return renderProgramProposal(m, p);
@@ -16580,10 +16994,22 @@ export const APP = String.raw`
     haptic("stream");
   }
 
-  function sendPumpy(text) {
+  // extra: { answers, ask_id } from a sent ask card. True when a turn went out.
+  function sendPumpy(text, extra) {
     text = String(text || $("pumpyinput").value || "").trim();
-    if (!text || pumpy.busy) return;
-    if (isFree()) { openPlans({ kind: "pumpy" }); return; }
+    if (!text || pumpy.busy) return false;
+    extra = extra || {};
+    var fp = freeProgram(), fresh = !pumpy.thread, goal = fresh && !!pumpy.goal;
+    // Pumpy is Plus, with one door for Basic (decisions §1): its free goal plan —
+    // a goal door (the server claims the plan, or carries on in the thread that
+    // already has it), or that thread itself. The server draws the same line;
+    // anything else opens the Plus page and sends nothing, as it always did.
+    // With the free plan's state not yet read, an older thread may try, and the
+    // server's refusal is drawn like any other.
+    if (isFree() && (fp && fp.state === "used" || (fresh ? !goal : fp && fp.thread_id !== pumpy.thread.id))) {
+      openPlans({ kind: goal ? "goal" : "pumpy" });
+      return false;
+    }
     var owner = pumpy;
     $("pumpyannounce").textContent = "";
     if (pumpy.refs.length) guideLearn("refs");
@@ -16597,6 +17023,11 @@ export const APP = String.raw`
     pumpy.lastAt = Date.now();
     var asked = { id: "local-" + Date.now(), role: "user", content: text };
     pumpy.messages.push(asked);
+    // Typed rather than sent from the card: an open ask card above is answered
+    // now, so it is drawn again, and draws nothing (renderAskCard).
+    if (!extra.answers && pumpy.nodes) {
+      pumpy.messages.forEach(function (x) { if (x.meta && x.meta.ask) { delete pumpy.nodes[x.id]; pumpyUI(x.id).back = false; } });
+    }
     renderPumpy();
     var ids = pumpy.refs.slice(0, MAX_REFS);
     var payload = {
@@ -16610,6 +17041,10 @@ export const APP = String.raw`
       // only to a build that said it can, so TestFlight 5-10 never meet either.
       caps: PUMPY_CAPS
     };
+    // The first turn of a chat a goal door opened; and a sent ask card's answers,
+    // by field id, beside the sentence that reads them out for the history.
+    if (goal) payload.goal = true;
+    if (extra.answers) { payload.answers = extra.answers; payload.ask_id = extra.ask_id; }
     apiStream("pumpy/chat", payload, function (r) {
       if (pumpy !== owner) return;
       pumpy.lastAt = Date.now();
@@ -16625,6 +17060,12 @@ export const APP = String.raw`
       absorbMeter(r && r.pumpy);
       pumpy.messages = pumpy.messages.filter(function (m) { return String(m.id).indexOf("local-") !== 0; });
       if (r.status !== "ok") {
+        if (extra.ask_id) askBack(extra.ask_id);
+        // Basic's free plan already built (or its turns spent): what Plus would
+        // build instead, beside the offer, rather than a refusal.
+        var fr = r.kind === "goal" && r.free_program;
+        if (fr) setFree(fr.state, fr.thread_id);
+        if (fr && fr.state === "used" && pumpy.goal && pumpy.goal.type) { goalPreview(text, pumpy.goal); return; }
         // The ceiling and the outage both come back as something Pumpy says.
         pumpy.messages.push({ id: "local-err-" + Date.now(), role: "user", content: text });
         pumpy.messages.push({
@@ -16638,14 +17079,15 @@ export const APP = String.raw`
         return;
       }
       if (!pumpy.thread || pumpy.thread.id !== r.thread_id) pumpy.thread = { id: r.thread_id };
+      // A first goal turn on Basic has just claimed the free thread.
+      if (!fp || fp.state === "available") setFree("open", r.thread_id);
       if (r.user_message) pumpy.messages.push(r.user_message);
       (r.messages || []).forEach(function (m) { pumpy.messages.push(m); });
       var last = (r.messages || []).slice(-1)[0];
       if (live && last && last.role === "assistant" && last.content) {
         live.st.classList.add("hide"); live.bub.classList.remove("live", "hide");
         live.tn.data = last.content;
-        if (last.meta && last.meta.proposal) live.bub.parentNode.appendChild(renderProposal(last, last.meta.proposal));
-        appendResponseReport(live.bub.parentNode, last);
+        msgCards(live.row, live.bub.parentNode, last);
         pumpy.nodes = pumpy.nodes || {};
         pumpy.nodes[last.id] = {sig:JSON.stringify(last),node:live.row};
       }
@@ -16658,12 +17100,14 @@ export const APP = String.raw`
     }).catch(function (e) {
       if (pumpy !== owner || !pumpy.busy) return;
       pumpy.busy = false;
+      if (extra.ask_id) askBack(extra.ask_id);
       if (aiDeclined(e)) {
         // "Not now" on the permission sheet: nothing was sent and nothing broke.
-        // The question comes off the log and goes back in the box, unsent.
+        // The question comes off the log and goes back in the box, unsent — an
+        // ask card's answers go back to its form instead.
         pumpy.live = null;
         pumpy.messages = pumpy.messages.filter(function (m) { return m !== asked; });
-        if (!box.value) {
+        if (!box.value && !extra.answers) {
           box.value = text;
           box.style.height = "auto";
           box.style.height = Math.min(box.scrollHeight, 138) + "px";
@@ -16682,30 +17126,40 @@ export const APP = String.raw`
       if (keep >= 0) $("pumpyview").scrollTop = keep;
       toast("The connection ended. Your partial answer is kept; reopen the chat before sending again.", 5200);
     });
+    return true;
   }
 
   function confirmPumpy(m, accept, noBtn, yesBtn) {
+    var said = yesBtn.textContent, prog = m.meta.proposal.kind === "program";
     noBtn.disabled = true;
     yesBtn.disabled = true;
-    if (accept) yesBtn.textContent = "Saving…";
+    if (accept) yesBtn.textContent = prog ? "Building…" : "Saving…";
+    // A refusal puts the button back as it was: "Saving…" on a button that is
+    // waiting to be pressed again reads as still saving.
+    function back() { noBtn.disabled = false; yesBtn.disabled = false; yesBtn.textContent = said; }
     api("pumpy/confirm", { method: "POST", body: JSON.stringify({ thread_id: pumpy.thread.id, message_id: m.id, accept: accept }) })
       .then(function (r) {
         if (r.status !== "ok") {
-          toast(r.message || "Could not apply that just now. Try again in a moment.");
-          noBtn.disabled = false; yesBtn.disabled = false;
+          // Basic's free plan spent since this card was drawn (another phone, an
+          // old card) is the Plus page on that reason, not an error.
+          limitHit(r, "Could not apply that just now. Try again in a moment.");
+          back();
           return;
         }
         m.meta.status = accept ? "done" : "declined";
+        // A yes or a no is the person acting: the five-minute rule counts it.
+        pumpy.lastAt = Date.now();
         (r.messages || []).forEach(function (x) { pumpy.messages.push(x); });
         if (r.workout) {
           if (r.created && !state.workouts.some(function (w) { return w.id === r.workout.id; })) state.workouts.unshift(r.workout);
           else absorbWorkout(r.workout);
         }
-        if (r.plan) state.plan = null;
+        if (prog && accept) programIn(m, r);
+        else if (r.plan) state.plan = null;
         renderPumpy();
       }).catch(function () {
         toast("Could not reach Spotter — check your connection.");
-        noBtn.disabled = false; yesBtn.disabled = false;
+        back();
       });
   }
 
@@ -17009,6 +17463,8 @@ export const APP = String.raw`
         ? "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up)
         : "Pumpy is part of Spotter Plus.";
     }
+    // A goal door once Basic's one free plan is built (B.2, decisions §1).
+    if (c.kind === "goal") return "Your free plan is yours to keep. With " + up + ", Pumpy adjusts it week to week and builds the next one.";
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
     var month = c.scope === "month";
