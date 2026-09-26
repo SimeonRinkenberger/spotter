@@ -1317,6 +1317,11 @@ export const APP = String.raw`
   // once, on a button that does not say Allow, and only then the phone's own
   // ask (HIG: ask in context, once the value is plain), through Settings ›
   // Reminders' own switch. The rest-end ask stays where it is.
+  // A program's first days are a first plan too, but its card is followed by an
+  // Undo toast and, on Basic, the Plus offer: the reminder waits for the next
+  // arrival on Train, where the days it would remind about are (arrive).
+  var remindOnTrain = false;
+
   function firstPlanMoment() {
     var s = state.profile && state.profile.settings, epoch = accountEpoch, uid = state.user && state.user.id;
     if (!s || s.remindAsked || remind.plan || !native) return;
@@ -16503,7 +16508,11 @@ export const APP = String.raw`
       box.appendChild(el("div", "askl", f.label + (f.unit && f.type === "choice" ? " (" + f.unit + ")" : "")));
       vals[f.id] = f.value === undefined || f.value === "" ? null : f.value;
       box.appendChild((f.type === "number" ? askNum : askChoice)(f, vals, ready));
-      if (f.type === "number" && vals[f.id] !== null) box.appendChild(el("small", "askfrom", "From your history"));
+      // Where a pre-filled number came from, when the field says so: a max is the
+      // logs', a body weight the one typed in Settings; any other is just the answer.
+      var said = f.id + " " + f.label, from = f.type === "number" && vals[f.id] !== null &&
+        (/body|weigh/i.test(said) ? "From Settings" : /max|best|1rm/i.test(said) ? "From your history" : "");
+      if (from) box.appendChild(el("small", "askfrom", from));
     });
     go = card.appendChild(el("button", "btn", ask.submit || "Build my plan"));
     function ready() { go.disabled = fields.some(function (f) { return vals[f.id] === null; }); }
@@ -16745,6 +16754,7 @@ export const APP = String.raw`
     });
     if (made.length) render();
     if (m.meta.proposal.free) setFree("used", m.thread_id || (pumpy.thread && pumpy.thread.id));
+    remindOnTrain = true;
     goalsReload();
     offerUndo("Plan on your calendar", function () {}, function () { undoProgram(m); });
   }
@@ -21040,6 +21050,7 @@ export const APP = String.raw`
     guide.visit = v;
     setTimeout(function () { guidePage(v); }, 450);
     if (v === "train" && state.logs) countStats();
+    if (v === "train" && remindOnTrain) { remindOnTrain = false; firstPlanMoment(); }
     // Settled somewhere else, with Pumpy off screen: the one place a chat can be
     // swapped without anybody seeing it happen.
     if (v !== "pumpy") pumpyAway();
