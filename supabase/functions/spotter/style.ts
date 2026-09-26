@@ -112,6 +112,11 @@ export const STYLE = String.raw`<style>
      height left over is shared either side of the loop, which then sits in the
      middle of the band between the headline and the buttons. */
   #landing { display: none; min-height: 100vh; min-height: var(--vvh, 100dvh); }
+  /* The shells set --vvh to 100%, which only a fixed layer resolves against the
+     frame. The landing is in the flow of an auto-height body, so there it fell
+     to its content's height and the body's grain stopped short of the screen
+     (QA F7). The frame's height directly, then. */
+  html.native #landing { min-height: 100vh; }
   #landing.open { display: block; }
   .land { max-width: 460px; min-height: inherit; margin: 0 auto; display: flex; flex-direction: column;
     padding: calc(14px + env(safe-area-inset-top)) 16px calc(6px + var(--sab)); }
@@ -266,7 +271,11 @@ export const STYLE = String.raw`<style>
      agreement has to look like one). */
   .legal { margin: 12px 0 0; font-size: 13px; line-height: 18px; text-align: center; }
   .legal a { color: var(--ink); font-weight: 600; padding: 13px 0; margin: -13px 0; }
-  .legal .codeask { display: inline; padding: 13px 0; margin: -13px 0; font-size: 13px; }
+  /* The links on the next line reach 13px up into this one, and later in the
+     paint order they won the tap on most of "Have a creator code?" (QA F4). On
+     top of them, and reaching up but not down, the button owns its own line and
+     the links keep theirs, and the room under them. */
+  .legal .codeask { display: inline; position: relative; z-index: 1; padding: 13px 0 0; margin: -13px 0 0; font-size: 13px; }
   #authcodefield { margin: 12px 0 0; }
   .tryfirst { display: flex; align-items: center; justify-content: center; gap: 3px; width: 100%;
     min-height: 44px; margin-top: 8px; border: none; background: none; color: var(--ember-ink);
@@ -1895,6 +1904,9 @@ export const STYLE = String.raw`<style>
   #gsbody .gtop { margin-bottom: 6px; }
   #gsbody .gtop b { font-size: 20px; }
   #gsbody .gbar { margin-bottom: 18px; }
+  #gsbody .nobr { white-space: nowrap; }
+  /* Under End goal and bound to it: the button's own 12px is the gap. */
+  #gsfree { text-align: center; padding-top: 0; margin-top: -4px; }
   .gsrc { display: flex; align-items: center; gap: 5px; min-height: 40px; }
   @media (prefers-reduced-motion: reduce) {
     .gbar i { transition: none; }
@@ -2907,6 +2919,11 @@ export const STYLE = String.raw`<style>
     display: flex; align-items: center; gap: 5px;
     animation: donein var(--t-3) var(--e-out); }
   .proposal .done .ic { width: 15px; height: 15px; }
+  /* A program's Undo, at the line's end for the server's fifteen minutes; it
+     fades when they are up (opacity only, so reduced motion keeps it). Its
+     padding hangs outside the line, so the card is the same height without it. */
+  .proposal .done .pundo { margin: -6px 0 -6px auto; transition: opacity var(--t-2) var(--e-soft); }
+  .proposal .done .pundo.gone { opacity: 0; pointer-events: none; }
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
@@ -3204,11 +3221,11 @@ export const STYLE = String.raw`<style>
      Insets come off the padding box: a bordered control needs a pixel more. */
   .iconbtn, .addbtn, .exhelp, .planadd, .addex, .danger, .libcount,
   .planlegal a, .planlegal button, .segbtn, .planbtn, .linkbtn,
-  .chips .chip, .said .chip, .votes .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
+  .chips .chip, .said .chip, .votes .chip, .strow .chip, .pumpyctx button, .threadrow .tdel, .ttitle { position: relative; }
   .iconbtn::after, .addbtn::after, .exhelp::after, .planadd::after,
   .segbtn::after, .planbtn::after, .linkbtn::after,
   .addex::after, .danger::after, .chips .chip::after, .said .chip::after,
-  .votes .chip::after,
+  .votes .chip::after, .strow .chip::after,
   .pumpyctx button::after, .threadrow .tdel::after, .ttitle::after,
   .libcount::after, .planlegal a::after, .planlegal button::after { content: ""; position: absolute; }
   .libcount::after { inset: -9px; }
@@ -3224,6 +3241,9 @@ export const STYLE = String.raw`<style>
   .linkbtn::after { inset: -9px -12px; }
   .danger::after, .threadrow .tdel::after { inset: -3px 0; }
   .chips .chip::after, .said .chip::after, .votes .chip::after { inset: -6px 0; }
+  /* A starter row's "2 more" and "Keep": 31px chips centred in 63px rows, so
+     7px up and down (45 tall) stays inside their own row. */
+  .strow .chip::after { inset: -7px 0; }
   /* A square control needs the inset on all four sides: 36 + 4 + 4 is 44 across as
      well as down, and -6px 0 would have left the thumbs 36 wide and 28 tall. */
   .votes .vote::after { inset: -4px; }

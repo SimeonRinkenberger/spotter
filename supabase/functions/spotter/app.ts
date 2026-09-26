@@ -1168,6 +1168,14 @@ export const APP = String.raw`
     saveSettings();
   }
 
+  // Pumpy's empty chat is drawn from the answers (goalStarters), and warmPages
+  // drew it at boot, while the question was still open: without this, "Lose
+  // fat" and "Home" would open Pumpy on "Get my bench to a new best". Continue,
+  // Skip and a drag away all close the sheet, so closeSheet calls this.
+  function introPumpy() {
+    if (pumpy.loaded && !pumpy.thread && !pumpy.messages.length && !pumpy.busy) renderPumpy();
+  }
+
   // ---------- a workout before an account ----------
   //
   // "Try a workout first" runs a Spotter Starter with nobody signed in (Apple:
@@ -1175,29 +1183,64 @@ export const APP = String.raw`
   // account feature). Nothing in it asks the server anything as anybody. The
   // finished session waits on this phone, and the first sign-in here puts it in
   // that account as the ordinary log row it would have been.
-  var GUEST_KEY = "spotter.guest.session";
+  // Every session done before an account waits, not only the last: two
+  // starters tried before signing up are two sessions in the history.
+  var GUEST_KEY = "spotter.guest.session", GUEST_MAX = 5;
 
+  // The waiting sessions, newest last. A build before this one kept a single
+  // session as the object itself, which reads as a list of one.
+  function guestList() {
+    var g = null;
+    try { g = JSON.parse(localStorage.getItem(GUEST_KEY)); } catch (e) { /* none */ }
+    return Array.isArray(g) ? g.filter(Boolean) : g ? [g] : [];
+  }
+
+  function guestPut(list) {
+    try {
+      if (list.length) localStorage.setItem(GUEST_KEY, JSON.stringify(list));
+      else localStorage.removeItem(GUEST_KEY);
+    } catch (e) { /* private mode: kept for this visit only */ }
+  }
+
+  // One session, one entry: by its id, or by when it started where this
+  // WebView had no randomUUID to give it one.
+  function guestSame(a, b) { return a.id || b.id ? a.id === b.id : a.started_at === b.started_at; }
+
+  // A recap's correction replaces its session's entry; a new session joins the
+  // end, and past five the oldest goes.
   function guestKeep(p) {
     // An id of its own, so a retry after a lost answer is refused as a
     // duplicate rather than saved twice.
     if (!p.id && window.crypto && crypto.randomUUID) p.id = crypto.randomUUID();
-    try { localStorage.setItem(GUEST_KEY, JSON.stringify(p)); } catch (e) { /* private mode: kept for this visit only */ }
+    var list = guestList(), i = 0;
+    while (i < list.length && !guestSame(list[i], p)) i++;
+    list[i] = p;
+    guestPut(list.slice(-GUEST_MAX));
   }
 
+  // Each waiting session goes in as the ordinary log row it would have been,
+  // oldest first. A copy already there (landed before its answer was lost) is
+  // refused as a duplicate id, 23505, and counts as landed. Only what landed
+  // leaves this phone; the rest waits for the next sign-in to try again.
   function guestLanded() {
-    var g = null, epoch = accountEpoch, uid = state.user && state.user.id;
+    var list = guestList(), epoch = accountEpoch, uid = state.user && state.user.id, landed = [];
     // The sheet that asked them to keep it has been answered.
     if (askKeep) closeSheet("asksheet");
-    try { g = JSON.parse(localStorage.getItem(GUEST_KEY)); } catch (e) { /* none */ }
-    if (!g || !uid) return;
-    g.user_id = uid;
-    sb.from("workout_logs").insert(g).then(function (r) {
-      // Anything but a copy already there waits for the next sign-in to try again.
-      if (!accountNow(epoch, uid) || (r.error && r.error.code !== "23505")) return;
-      localStorage.removeItem(GUEST_KEY);
+    if (!list.length || !uid) return;
+    list.reduce(function (before, g) {
+      return before.then(function () {
+        if (!accountNow(epoch, uid)) return;
+        return sb.from("workout_logs").insert(Object.assign({}, g, { user_id: uid })).then(function (r) {
+          if (!r.error || r.error.code === "23505") landed.push(g);
+        }, function () { /* no connection: it waits */ });
+      });
+    }, Promise.resolve()).then(function () {
+      if (!accountNow(epoch, uid) || !landed.length) return;
+      guestPut(guestList().filter(function (x) { return !landed.some(function (g) { return guestSame(g, x); }); }));
       invalidateLogs();
       quietly(loadLogs().then(function (logs) {
-        toast(logs.length > 1 ? "Saved your workout" : "Saved your first workout");
+        toast(landed.length > 1 ? "Saved your " + landed.length + " workouts"
+          : logs.length > 1 ? "Saved your workout" : "Saved your first workout");
         publishSummary();
         if (drawn.train) renderTrain();
       }));
@@ -3450,8 +3493,9 @@ export const APP = String.raw`
 
     var dead = isPending(w) || isFailed(w), art = cardArt(w);
     // A coach's card has no video, and an upload's file is gone by the time its
-    // card exists: neither has an original to go back to.
-    var canWatch = !isUpload(w) && w.platform !== "pumpy";
+    // card exists: neither has an original to go back to. Nor has a Spotter
+    // Starter, whose "link" is spotter://starter/gym, the app's own name for it.
+    var canWatch = !isUpload(w) && w.platform !== "pumpy" && w.kind !== "starter";
 
     // The original in the clip sheet with its caption under it: what the folded
     // "Watch original" row used to hold, now a tap on the picture. The player
@@ -3847,8 +3891,10 @@ export const APP = String.raw`
     // What used to stand between a new user and Start — the Basic/Plus read offer —
     // with the repairs for a card that came out thin: one fold under the list.
     // Built when it opens, because its Plus count is a request and most cards are
-    // never asked about.
-    if (w.platform !== "pumpy") {
+    // never asked about. A starter was written by hand, not read: there is
+    // nothing to read again and no caption to paste (a re-read would spend a
+    // Basic extract on fetching spotter://starter/gym).
+    if (w.platform !== "pumpy" && w.kind !== "starter") {
       var imp = disclosure("Improve this read"), ib = imp.lastChild;
       imp._prepareDisclosure = function () {
         if (ib.firstChild) return;
@@ -4799,8 +4845,9 @@ export const APP = String.raw`
       row("play", "Watch original", src.author ? "@" + src.author : null, function () { openWatch(src, ex); });
     }
     // A demo, a swap and the exercise bank ask the server as somebody, so a
-    // guest's session goes without them rather than failing at them.
-    if (state.user) row("help", "Demo and how-to", null, function () { explain(ex, w); });
+    // guest's session goes without them rather than failing at them — all but a
+    // starter exercise's own clip, which asks nobody (starterDemo).
+    if (state.user || starterDemo(ex)) row("help", "Demo and how-to", null, function () { explain(ex, w); });
     if (!live) row("pencil", "Edit exercise", null, function () { openExEdit(w, ctx.bi, ctx.ei, ex); });
     if (state.user) row("swap", "Swap exercise", null, function () {
       openSwap(ex.name, w.title, live ? swapTarget(w, ex) : { w: w, bi: ctx.bi, ei: ctx.ei, ex: ex });
@@ -5645,7 +5692,7 @@ export const APP = String.raw`
     $("dren").hidden = isPending(w);
     $("dcoln").textContent = n ? String(n) : "";
     $("dorder").hidden = dead || !ordCan(w);
-    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy";
+    $("dreproc").hidden = isUpload(w) || w.platform === "pumpy" || w.kind === "starter";
     syncRereadButton(w);
   }
 
@@ -6905,6 +6952,18 @@ export const APP = String.raw`
     return box;
   }
 
+  // A starter exercise's own clip, when starters.json carries one as demo:
+  // { id, title, channel, secs } — row zero of exercise_demo_videos, the clip
+  // /api/demo-video answers with — made into that route's answer, so the sheet
+  // draws it the same. A guest is shown it without the server being asked
+  // anything; an account asks the route as ever, which adds the alternates.
+  function starterDemo(ex) {
+    var d = ex && ex.demo;
+    return d && d.id ? { status: "ok", alternates: [], search_url: null, video: { id: d.id, title: d.title || "",
+      channel: d.channel || "", secs: d.secs || null, url: "https://www.youtube.com/watch?v=" + d.id, curated: true,
+      relation: { kind: "same", differs: null, shared: [] } } } : null;
+  }
+
   // The slot grows from nothing to whatever it turned out to need, so the
   // explanation below it glides down rather than jumping when the answer lands
   // late. One frame between filling it and opening it, or the browser has nothing
@@ -7029,9 +7088,13 @@ export const APP = String.raw`
     if (pn) perf.appendChild(pn);
     // Spotter's pending vocabulary is reading, listening, watching. "Thinking" is
     // a chatbot's word for the same wait and belongs to a different app.
+    // A guest's sheet is the clip alone: explaining and swapping ask the server
+    // as somebody (and the thumbs only follow an explanation).
+    var guest = !state.user;
     $("explaintext").textContent = "";
     $("explaintext").classList.add("hide");
-    $("explainask").classList.remove("hide");
+    $("explainask").classList.toggle("hide", guest);
+    $("swapgo").parentNode.classList.toggle("hide", guest);
     $("explainvotes").classList.add("hide");
     var voteId = ex.canonical_id || name;
     paintVotes(voteId);
@@ -7060,7 +7123,9 @@ export const APP = String.raw`
     // questions with two very different latencies — a cached clip is one round trip
     // and a completion is several seconds — and neither should wait for the other.
     var vk = vidKey(ex), who = authorOf(ex, w);
-    if (vidCache[vk]) {
+    if (guest) {
+      if (starterDemo(ex)) vidFill(starterDemo(ex), who);
+    } else if (vidCache[vk]) {
       vidFill(vidCache[vk], who);
     } else {
       api("demo-video", {
@@ -10449,13 +10514,16 @@ export const APP = String.raw`
   // The X asks how to leave. The Finish pill asks only when planned sets are
   // left (left: how many), and leads with the answer it was asked for. Neither
   // door has a Discard: finishing saves what was logged, pausing keeps it all.
+  // A guest has no history and no tabs yet (QA F10): their sets wait on this
+  // phone for an account (guestKeep), and a paused starter comes back from Try
+  // a workout first, on this phone, until then.
   function openLeave(left) {
-    var n = loggedSets(), fin = $("wend"), pause = $("wpause");
+    var n = loggedSets(), fin = $("wend"), pause = $("wpause"), guest = !!(wo && wo.guest), sets = n + (n === 1 ? " set" : " sets");
     $("wleavetitle").textContent = left ? left + (left === 1 ? " set" : " sets") + " not logged" : "Leave this workout?";
     fin.parentNode.insertBefore(left ? fin : pause, left ? pause : fin);
-    $("wendsub").textContent = n
-      ? "Saves " + n + (n === 1 ? " set" : " sets") + " to your history."
-      : "Nothing logged yet — closes without saving.";
+    $("wendsub").textContent = !n ? "Nothing logged yet — closes without saving."
+      : guest ? "Keeps " + sets + " on this phone until you sign in." : "Saves " + sets + " to your history.";
+    $("wpausesub").textContent = guest ? "Pick it up later on this phone. The clock stops." : "Pick it up later from any tab. The clock stops.";
     openSheet("wleavesheet");
   }
 
@@ -12989,6 +13057,9 @@ export const APP = String.raw`
     planHide();
     drawShelf();
     var k = selKey(), u = k === ymd(new Date()) ? upNext() : dayState(k), sig = k + JSON.stringify(u), h = cardBox.offsetHeight;
+    // S6 changes its words once today has a session (firstCard), which its
+    // state does not carry: a guest's sessions landing after sign-in, say.
+    if (u.s === 6) sig += "|" + daySessions(state.logs, k).length;
     if (sig === daySig) return;
     var card = u.key ? dayCard(u) : upCard(u);
     cardBox.innerHTML = "";
@@ -13238,14 +13309,26 @@ export const APP = String.raw`
   function openGoalSheet() { gsFill(); openSheet("goalsheet"); }
 
   function gsFill() {
-    var g = activeGoal(), b = $("gsbody"), v, p, x, ws, to, rows;
+    var g = activeGoal(), b = $("gsbody"), v, p, x, ws, to, rows, le, fp = freeProgram();
     if (!g) return;
+    // Basic's one free plan, ever (decisions §1): an ended program still counts,
+    // so the sheet says so beside End goal — for the goal that plan built only.
+    $("gsfree").classList.toggle("hide", !(isFree() && fp && fp.thread_id && g.thread_id === fp.thread_id));
     v = goalView(g); p = g.program || {}; x = goalLift(g.exercise);
     b.innerHTML = GCARD;
     gPaint(b, g, v);
     b.querySelector("b").id = "gstitle";
-    b.insertBefore(el("p", "lede", capWord((x ? x.name + " · " : "") + (g.baseline && g.target ? "from " + g.baseline + " to " +
+    le = b.insertBefore(el("p", "lede", capWord((x ? x.name + " · " : "") + (g.baseline && g.target ? "from " + g.baseline + " to " +
       g.target + " " + g.unit + " by " : "until ") + shortDate(dayDate(g.end_day)))), b.children[1]);
+    // A max read from the sets is an Epley estimate, and the spec asks that it
+    // be called one; a number the person typed, with no sets behind it, is not.
+    // Asked of liftMax itself, the one rule, rather than of the status (which
+    // reads the baseline where no set says more). One unbroken phrase, so a
+    // narrow phone never leaves "est." at a line's end.
+    if (g.kind === "lift" && liftMax(state.logs, g.exercise, addDays(dayDate(ymd(new Date())), 1), g.unit)) {
+      le.appendChild(document.createTextNode(" · "));
+      le.appendChild(el("span", "nobr", "est. from your sets, ±10%"));
+    }
     if (g.dream && g.dream !== g.target) b.appendChild(el("p", "lede", g.dream + " is the goal; this block aims for " + g.target + "."));
     if (p.verdict_note) b.appendChild(el("p", "setnote", p.verdict_note));
     // The program week the card's "week 2 of 8" names: seven days from the day
@@ -16070,9 +16153,12 @@ export const APP = String.raw`
   // same free cover, so the swap happens BEHIND it and the close starts after.
   // Tapping used to empty the log in the same frame: the hello card stood 208ms and
   // the page went 1858 to 576 to 1170px, scrollTop 1282 to 0 to 594, mid-slide.
+  //
+  // Answers whether that thread is the one on screen now, for a caller with
+  // something to do in it next (openGoalChat).
   function openThread(t, row) {
     if (pumpyReset) renderPumpy();
-    if (threadId() === t.id) { closeSheet("pumpysheet"); return; }   // already reading it
+    if (threadId() === t.id) { closeSheet("pumpysheet"); return Promise.resolve(true); }   // already reading it
     var seq = (pumpy.openSeq = (pumpy.openSeq || 0) + 1);
     var refsRev = pumpy.refsRev;
     var log = $("pumpylog"), swapped = false, closed = false;
@@ -16090,9 +16176,9 @@ export const APP = String.raw`
       $("pumpysend").disabled = true;
       closeSheet("pumpysheet");
     }, OPEN_WAIT);
-    sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
+    return sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
       .then(function (m) {
-        if (seq !== pumpy.openSeq) return;   // switched again while loading
+        if (seq !== pumpy.openSeq) return false;   // switched again while loading
         if (m.error) throw m.error;
         clearTimeout(timer);
         swapped = true;
@@ -16108,14 +16194,16 @@ export const APP = String.raw`
         log.classList.remove("waiting");
         renderPumpy();          // one fragment, one swap, one scrollTop
         if (!closed) closeSheet("pumpysheet");
+        return true;
       })
       .catch(function () {
-        if (seq !== pumpy.openSeq) return;
+        if (seq !== pumpy.openSeq) return false;
         clearTimeout(timer);
         log.classList.remove("waiting");
         $("pumpysend").disabled = !!pumpy.busy;
         closeSheet("pumpysheet");
         toast("That chat did not open — try again in a moment.");
+        return false;
       });
   }
 
@@ -16407,11 +16495,19 @@ export const APP = String.raw`
   // server's word; pumpy.free covers a session whose limits read failed.
   function freeProgram() { return (billing.limits && billing.limits.free_program) || pumpy.free || null; }
 
-  function setFree(st, id) {
+  // built: whether a program was ever confirmed there (the server says, beside
+  // the state), so "used" can be told apart from eight turns spent talking.
+  function setFree(st, id, built) {
     if (!isFree()) return;
-    pumpy.free = { state: st, thread_id: id || null };
+    pumpy.free = { state: st, thread_id: id || null, built: built };
     if (billing.limits) billing.limits.free_program = pumpy.free;
   }
+
+  // A spent free plan that was built is "yours to keep"; one whose turns ran out
+  // before any plan was confirmed has nothing to keep, so the words say the
+  // chat is used up. A server from before the field says nothing: built, the
+  // case its words were written for.
+  function freeBuilt(fp) { return !fp || fp.built !== false; }
 
   // The empty chat opens on outcomes: four goal chips and two quiet links from
   // goalStarters, and the promise that nothing changes until you say so. Basic's
@@ -16467,15 +16563,34 @@ export const APP = String.raw`
   // the server claims it, or carries the turn on in the thread already claimed,
   // or refuses a spent one with the 403 sendPumpy turns into the preview. Known
   // to be spent here, the preview comes without a request at all.
+  // The exception to "a new chat": Basic's free thread while it is still open.
+  // The server carries every goal turn on in that one, so a blank chat would be
+  // a conversation the model can read and the person cannot. The door opens it
+  // instead, as Chats opens a thread, and the turn goes on there.
   function openGoalChat(ctx) {
     ctx = ctx || {};
-    var free = isFree(), fp = freeProgram(), box = $("pumpyinput"), text = ctx.message || "";
+    var fp = freeProgram(), own = isFree() && fp && fp.state === "open" && fp.thread_id;
     // Decisions §1: once the free plan is built, adjusting it is Plus. (A free
     // plan still open — undone, say — is still Basic's to talk over.)
-    if (free && ctx.adjust && !(fp && fp.state === "open")) { openPlans({ kind: "goal" }); return; }
-    if (pumpy.thread || pumpy.messages.length || pumpy.busy) { pumpyBlank(); renderPumpy(); }
-    pumpy.goal = ctx.goal || {};
+    if (isFree() && ctx.adjust && !own) { openPlans({ kind: "goal" }); return; }
+    if (!own && (pumpy.thread || pumpy.messages.length || pumpy.busy)) { pumpyBlank(); renderPumpy(); }
+    // Arrived first: arriving is where a chat gone quiet is swapped for a new
+    // one (freshenPumpy), which must not happen to the thread opened next.
     setView("pumpy");
+    if (own && threadId() !== own) {
+      // A turn still in the air belongs to another chat: retired, as New chat does.
+      if (pumpy.busy) pumpyBlank();
+      openThread((pumpy.threads || []).filter(function (t) { return t.id === own; })[0] || { id: own })
+        .then(function (ok) { if (ok && threadId() === own) goalTurn(ctx); });
+      return;
+    }
+    goalTurn(ctx);
+  }
+
+  // The goal door's turn, in whichever chat openGoalChat left on screen.
+  function goalTurn(ctx) {
+    var free = isFree(), fp = freeProgram(), box = $("pumpyinput"), text = ctx.message || "";
+    pumpy.goal = ctx.goal || {};
     if (!text) return;
     // A chip's goal can be previewed; a door with words and no goal cannot.
     if (free && fp && fp.state === "used") {
@@ -16525,7 +16640,9 @@ export const APP = String.raw`
     card.appendChild(el("div", "ptitle", P[0]));
     card.appendChild(el("div", "pmeta", P.slice(1).join(" · ")));
     card.appendChild(el("p", "pnote", "A preview, not a plan: nothing goes on your calendar."));
-    out.appendChild(plusOffer("You’ve used your free plan", "With Plus, Pumpy builds this around your week and adjusts it as you go."));
+    out.appendChild(freeBuilt(freeProgram())
+      ? plusOffer("You’ve used your free plan", "With Plus, Pumpy builds this around your week and adjusts it as you go.")
+      : plusOffer("Your free goal chat is used up", "With Plus, Pumpy builds plans for any goal."));
     return out;
   }
 
@@ -16569,8 +16686,10 @@ export const APP = String.raw`
       box.appendChild((f.type === "number" ? askNum : askChoice)(f, vals, ready));
       // Where a pre-filled number came from, when the field says so: a max is the
       // logs', a body weight the one typed in Settings; any other is just the answer.
+      // A max read from the logs is an Epley estimate, and the spec asks that it
+      // be called one: plus or minus a tenth, said once, where the number is.
       var said = f.id + " " + f.label, from = f.type === "number" && vals[f.id] !== null &&
-        (/body|weigh/i.test(said) ? "From Settings" : /max|best|1rm/i.test(said) ? "From your history" : "");
+        (/body|weigh/i.test(said) ? "From Settings" : /max|best|1rm/i.test(said) ? "From your history · ±10%" : "");
       if (from) box.appendChild(el("small", "askfrom", from));
     });
     go = card.appendChild(el("button", "btn", ask.submit || "Build my plan"));
@@ -16642,7 +16761,10 @@ export const APP = String.raw`
       inp = pick.appendChild(el("input"));
       inp.type = "date";
       inp.min = opts[0];
-      inp.max = ymd(addDays(now, 60));
+      // The server's window, not a guess: expandProgram (goals.ts) refuses a
+      // start more than 28 days after today, and a refused start is quietly moved
+      // by the model or ends the turn without a plan.
+      inp.max = ymd(addDays(now, 28));
       inp.setAttribute("aria-label", f.label);
       // iOS's calendar does not grey out what min and max forbid, so a day before
       // today (a start the server refuses) is held to the window here.
@@ -16790,8 +16912,20 @@ export const APP = String.raw`
       no.onclick = function () { confirmPumpy(m, false, no, yes); };
       yes.onclick = function () { confirmPumpy(m, true, no, yes); };
     } else {
-      card.appendChild(st === "done" ? icon(el("div", "done"), "check", "On your calendar")
+      var fin = card.appendChild(st === "done" ? icon(el("div", "done"), "check", "On your calendar")
         : el("div", "declined", st === "undone" ? "Undone" : "Skipped"));
+      // Undo for as long as the server keeps it (fifteen minutes), not only
+      // while the toast stands: an Undo is how Basic gets its one free plan back.
+      var left = st === "done" ? undoUntil(m) - Date.now() : 0;
+      if (left > 0) {
+        var ub = fin.appendChild(el("button", "linkbtn pundo", "Undo"));
+        ub.setAttribute("aria-label", "Undo this plan");
+        ub.onclick = function () {
+          ub.disabled = true;
+          undoProgram(m).then(function (s) { if (s === "offline") ub.disabled = false; else if (s !== "ok") undoGone(ub); });
+        };
+        setTimeout(function () { undoGone(ub); }, Math.min(left, 2e9));
+      }
     }
     // Decisions §1: the trial is offered right under the free plan, on day 0.
     if (st === "done" && p.free && isFree()) {
@@ -16799,6 +16933,35 @@ export const APP = String.raw`
         "With Plus, Pumpy adjusts it week to week and builds anything else you want."));
     }
     return out;
+  }
+
+  // A program lands with its head in view. Its verdict and the honest note (and a
+  // fat-loss plan's medical line and sources) come before its weeks, and
+  // following the answer to its foot left them above the fold beside Build my
+  // plan (QA F9). From where the reader was, gliding as the library's section
+  // jumps do, and under reduced motion there at once; a card that fits whole
+  // is shown whole, the glide stopping at the foot. An ask card still folding
+  // above it (askFold, when the answer was quick) moves it up as it goes, so
+  // the glide waits for the fold.
+  function programTop(m, from) {
+    var pg = $("pumpyview"), fold = $("pumpylog").querySelector(".askcard.sent");
+    var run = fold && fold.getAnimations ? fold.getAnimations() : [];
+    pg.scrollTop = from;
+    if (run.length) run[0].finished.then(go, go); else go();
+    function go() {
+      var e = pumpy.nodes && pumpy.nodes[m.id], card = e && e.node.isConnected && e.node.querySelector(".proposal"), top;
+      if (!card) return;
+      top = Math.max(0, pg.scrollTop + card.getBoundingClientRect().top - $("pumpybar").getBoundingClientRect().bottom - 10);
+      if (lessMotion() || !pg.scrollTo) pg.scrollTop = top;
+      else pg.scrollTo({ top: top, behavior: "smooth" });
+    }
+  }
+
+  // The card's Undo, when its window has closed: it fades where it stands.
+  function undoGone(b) {
+    if (!b.isConnected || b.classList.contains("gone")) return;
+    b.classList.add("gone");
+    setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 260);
   }
 
   // A program on the calendar: its new workouts join the list, Basic's free plan
@@ -16812,7 +16975,9 @@ export const APP = String.raw`
       if (!state.workouts.some(function (x) { return x.id === w.id; })) state.workouts.unshift(w);
     });
     if (made.length) render();
-    if (m.meta.proposal.free) setFree("used", m.thread_id || (pumpy.thread && pumpy.thread.id));
+    if (m.meta.proposal.free) setFree("used", m.thread_id || (pumpy.thread && pumpy.thread.id), true);
+    // The server's window for Undo, kept with the card so its Undo lasts as long.
+    if (r.undo) m.meta.undo = r.undo;
     remindOnTrain = true;
     goalsReload();
     offerUndo("Plan on your calendar", function () {}, function () { undoProgram(m); });
@@ -16820,12 +16985,24 @@ export const APP = String.raw`
 
   function goalsReload() { loadGoals(); planRev++; loadPlan(true); }
 
+  // When a confirmed program stops being undoable: what the server said at the
+  // confirm (undo.until), or, for a card read back with its thread, fifteen
+  // minutes after the confirm it recorded (result.at). 0 when neither is known.
+  function undoUntil(m) {
+    var x = m.meta || {}, t = x.undo && Date.parse(x.undo.until);
+    if (!t && x.result && x.result.at) t = Date.parse(x.result.at) + 15 * 60000;
+    return t || 0;
+  }
+
+  // Answers the server's status ("ok", or why not) or "offline", so the card's
+  // Undo knows whether to go or to stay for another try.
   function undoProgram(m) {
-    var epoch = accountEpoch, uid = state.user && state.user.id, made = pumpyUI(m.id).made || [];
-    api("pumpy/undo", { method: "POST", body: JSON.stringify({ message_id: m.id }) }).then(function (r) {
-      if (!accountNow(epoch, uid)) return;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    var made = pumpyUI(m.id).made || (m.meta.result && m.meta.result.workout_ids) || [];
+    return api("pumpy/undo", { method: "POST", body: JSON.stringify({ message_id: m.id }) }).then(function (r) {
+      if (!accountNow(epoch, uid)) return "gone";
       // Past the server's fifteen minutes this is a 409 that says so.
-      if (r.status !== "ok") { toast(r.message || "That plan can’t be undone now. End the goal from Train instead."); return; }
+      if (r.status !== "ok") { toast(r.message || "That plan can’t be undone now. End the goal from Train instead."); return r.status || "error"; }
       m.meta.status = "undone";
       if (pumpy.messages.indexOf(m) >= 0) (r.messages || []).forEach(function (x) { pumpy.messages.push(x); });
       state.workouts = state.workouts.filter(function (w) { return made.indexOf(w.id) < 0; });
@@ -16834,7 +17011,8 @@ export const APP = String.raw`
       goalsReload();
       render();
       renderPumpy();
-    }).catch(function () { toast("Could not reach Spotter — check your connection."); });
+      return "ok";
+    }).catch(function () { toast("Could not reach Spotter — check your connection."); return "offline"; });
   }
 
   function renderProposal(m, p) {
@@ -17124,7 +17302,7 @@ export const APP = String.raw`
       pumpy.live = null;
       // renderPumpy() ends at the bottom, which is right for a reader who was
       // following along and rude to one who had scrolled up to re-read.
-      var keep = pumpy.stick ? -1 : $("pumpyview").scrollTop;
+      var keep = pumpy.stick ? -1 : $("pumpyview").scrollTop, from = $("pumpyview").scrollTop;
       // Every answer carries the meter, the refusal at the cap most of all.
       absorbMeter(r && r.pumpy);
       pumpy.messages = pumpy.messages.filter(function (m) { return String(m.id).indexOf("local-") !== 0; });
@@ -17133,7 +17311,7 @@ export const APP = String.raw`
         // Basic's free plan already built (or its turns spent): what Plus would
         // build instead, beside the offer, rather than a refusal.
         var fr = r.kind === "goal" && r.free_program;
-        if (fr) setFree(fr.state, fr.thread_id);
+        if (fr) setFree(fr.state, fr.thread_id, fr.built);
         if (fr && fr.state === "used" && pumpy.goal && pumpy.goal.type) { goalPreview(text, pumpy.goal); return; }
         // The ceiling and the outage both come back as something Pumpy says.
         pumpy.messages.push({ id: "local-err-" + Date.now(), role: "user", content: text });
@@ -17162,6 +17340,7 @@ export const APP = String.raw`
       }
       renderPumpy();
       if (keep >= 0) $("pumpyview").scrollTop = keep;
+      else if (last && last.meta && last.meta.proposal && last.meta.proposal.kind === "program") programTop(last, from);
     }).then(function () {
       // Still busy means the body ended with no final line — a dead isolate or a
       // dropped connection. Same recovery as a throw, one handler below.
@@ -17225,6 +17404,10 @@ export const APP = String.raw`
         }
         if (prog && accept) programIn(m, r);
         else if (r.plan) state.plan = null;
+        // Days Pumpy put on the calendar are a first plan too: the reminder offer
+        // waits for the next arrival on Train, where those days are, as a
+        // program's does (programIn). firstPlanMoment asks only once, ever.
+        if (accept && m.meta.proposal.kind === "plan_days") remindOnTrain = true;
         renderPumpy();
       }).catch(function () {
         toast("Could not reach Spotter — check your connection.");
@@ -17414,7 +17597,7 @@ export const APP = String.raw`
   // feature is a list of the plans that have it; an older server without the
   // list gets today's truth, which is Plus has it and Basic does not.
   function planRows(c, mine) {
-    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = state.workouts.length;
+    var f = c.free, p = c.plus, m = mine && billing.limits && billing.limits.month, held = shelfHeld();
     function has(k, plan) { var l = c.features && c.features[k]; return l ? l.indexOf(plan) >= 0 : plan !== "free"; }
     function month(n) { n = capNum(n); return n === null ? "No limit" : n ? n.toLocaleString() + " a month" : "—"; }
     function shelfN(n) { n = capNum(n); return n === null ? "No limit" : n.toLocaleString(); }
@@ -17532,8 +17715,15 @@ export const APP = String.raw`
         ? "That is this month’s coaching used up — my credits come back on the 1st. " + pumpyRoom(up)
         : "Pumpy is part of Spotter Plus.";
     }
-    // A goal door once Basic's one free plan is built (B.2, decisions §1).
-    if (c.kind === "goal") return "Your free plan is yours to keep. With " + up + ", Pumpy adjusts it week to week and builds the next one.";
+    // A goal door once Basic's one free plan is spent (B.2, decisions §1): kept
+    // when it was built, and only the chat's turns gone when it never was. A
+    // refusal carries the server's word on it; a door opened here asks this
+    // session's.
+    if (c.kind === "goal") {
+      return freeBuilt(c.free_program || freeProgram())
+        ? "Your free plan is yours to keep. With " + up + ", Pumpy adjusts it week to week and builds the next one."
+        : "Your free goal chat is used up. With " + up + ", Pumpy builds plans for any goal.";
+    }
     var w = CAP_WORDS[c.kind];
     if (!w || cap === null) return "";
     var month = c.scope === "month";
@@ -18479,7 +18669,16 @@ export const APP = String.raw`
     if (!isFree() || !billing.caps) return null;
     var cap = capNum(billing.caps.free.library);
     if (cap === null || cap <= 0) return null;
-    return { used: state.workouts.length + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
+    return { used: shelfHeld() + (extra || 0), cap: cap, warn: Math.ceil(cap * 0.8) };
+  }
+
+  // What Basic's shelf holds, counted the way the server counts it for the cap
+  // (libraryCount, the guard_workout_library trigger): a kept Spotter Starter
+  // and a program's own workouts are not saves. Every number a Basic account
+  // reads against its cap comes from here — the meter, its four-fifths warning,
+  // the save receipts, the Plus page's row — so none of them runs early.
+  function shelfHeld() {
+    return state.workouts.filter(function (w) { return w.kind !== "starter" && w.kind !== "program"; }).length;
   }
 
   // Every app that warns well warns before the wall, once: the save receipt says
@@ -18723,7 +18922,14 @@ export const APP = String.raw`
     if (state.view !== v || guide.visit !== v || overlayShowing()) return;
     if (v === "train" && state.plan && state.plan.length) { guideLearn("train"); return; }
     if (v === "train" && trainLean) guideOffer("train", trainLean, cardBox);
-    if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length) {
+    // Not in a goal chat, and not under an ask card still waiting on its
+    // answers: at 375 x 812 the tip covered the card's Build my plan (QA F5), and
+    // attaching workouts is not what either moment is about. One already up
+    // folds away (not learnt: it can come back in an ordinary chat).
+    var last = pumpy.messages[pumpy.messages.length - 1];
+    var asking = !!pumpy.goal || !!(last && last.meta && last.meta.ask && !last.meta.ask.answered);
+    if (v === "pumpy" && asking && guide.active && guide.active.id === "refs") guideClear("dismiss");
+    else if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length && !asking) {
       var c = $("pumpycomposer"); guideOffer("refs", c, c.firstChild);
     }
   }
@@ -18872,6 +19078,7 @@ export const APP = String.raw`
     if (!n.classList.contains("open")) return;
     if (id === "aiconsentsheet") dismissAiConsent();
     if (id === "asksheet") doorsHome();
+    if (id === "introsheet") introPumpy();
     if (introLater) setTimeout(introAsk, 400);
     // The steppers go back to the superset panel they were borrowed from.
     if (id === "setsheet") ssDock();
@@ -22106,11 +22313,25 @@ export const APP = String.raw`
   $("otp").addEventListener("input", function () {
     var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
     if (v !== this.value) this.value = v;
+    // "That code is wrong" was about the last code, not the one being typed.
+    otpError("");
     if (v.length === 6) otpGo();
   });
   $("otp").addEventListener("keydown", function (e) { if (e.key === "Enter") otpGo(); });
   $("mailresend").onclick = mailResend;
   $("mailback").onclick = mailBack;
+  // Android's Back (native/bridge.js asks here before it leaves the app). The
+  // card's faces are not history entries, so Back takes the step their own
+  // controls take: the code face to the email face (Use a different email), the
+  // email face to the three doors (its arrow). The doors themselves, and any
+  // signed-in page, are left to the shell. iOS has no such button.
+  window.addEventListener("spotter:back", function (e) {
+    if (!$("landing").classList.contains("open")) return;
+    if (!$("mailsent").classList.contains("hide")) $("mailback").click();
+    else if (authMode === "email") $("authback").click();
+    else return;
+    e.preventDefault();
+  });
   $("oagoogle").onclick = function () { if (!codeBad()) googleSignIn(); };
   $("oaapple").onclick = function () { if (!codeBad()) appleSignIn(); };
   // Focused inside the tap: the only focus iOS answers with a keyboard.
@@ -22141,9 +22362,14 @@ export const APP = String.raw`
   });
   $("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doAuth(); });
   // A different address or password is a different question: the offer to make
-  // an account was about the pair that failed.
+  // an account was about the pair that failed, and whatever the box says is
+  // about what was typed when it said it (QA F8: "Type your email address."
+  // stayed under a good address; the offer's sentence outlived its button).
   ["email", "pw"].forEach(function (id) {
-    $(id).addEventListener("input", function () { if (pwNew) { pwNew = false; paintMail(); } });
+    $(id).addEventListener("input", function () {
+      if (pwNew) { pwNew = false; paintMail(); }
+      authError("");
+    });
   });
 
   $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); addMode(null); openSheet("addsheet"); };
@@ -22349,7 +22575,9 @@ export const APP = String.raw`
         lines.push("• " + ex.name + (doseText(ex) ? " — " + doseText(ex) : ""));
       });
     });
-    lines.push(current.url);
+    // A starter's url is spotter://starter/gym, which opens nothing for whoever
+    // it is sent to: the list is the whole of it.
+    if (current.kind !== "starter") lines.push(current.url);
     var text = lines.join("\n");
     if (navigator.share) navigator.share({ title: current.title || "Workout", text: text }).catch(function () { });
     else if (navigator.clipboard) { navigator.clipboard.writeText(text); toast("Copied."); }
