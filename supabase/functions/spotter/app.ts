@@ -22209,6 +22209,8 @@ export const APP = String.raw`
   $("otp").addEventListener("input", function () {
     var v = this.value.replace(/[^0-9]/g, "").slice(0, 6);
     if (v !== this.value) this.value = v;
+    // "That code is wrong" was about the last code, not the one being typed.
+    otpError("");
     if (v.length === 6) otpGo();
   });
   $("otp").addEventListener("keydown", function (e) { if (e.key === "Enter") otpGo(); });
@@ -22256,9 +22258,14 @@ export const APP = String.raw`
   });
   $("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doAuth(); });
   // A different address or password is a different question: the offer to make
-  // an account was about the pair that failed.
+  // an account was about the pair that failed, and whatever the box says is
+  // about what was typed when it said it (QA F8: "Type your email address."
+  // stayed under a good address; the offer's sentence outlived its button).
   ["email", "pw"].forEach(function (id) {
-    $(id).addEventListener("input", function () { if (pwNew) { pwNew = false; paintMail(); } });
+    $(id).addEventListener("input", function () {
+      if (pwNew) { pwNew = false; paintMail(); }
+      authError("");
+    });
   });
 
   $("addbtn").onclick = function () { $("addurl").value = ""; resetUpload(); addMode(null); openSheet("addsheet"); };
