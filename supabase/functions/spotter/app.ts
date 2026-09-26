@@ -16067,9 +16067,12 @@ export const APP = String.raw`
   // same free cover, so the swap happens BEHIND it and the close starts after.
   // Tapping used to empty the log in the same frame: the hello card stood 208ms and
   // the page went 1858 to 576 to 1170px, scrollTop 1282 to 0 to 594, mid-slide.
+  //
+  // Answers whether that thread is the one on screen now, for a caller with
+  // something to do in it next (openGoalChat).
   function openThread(t, row) {
     if (pumpyReset) renderPumpy();
-    if (threadId() === t.id) { closeSheet("pumpysheet"); return; }   // already reading it
+    if (threadId() === t.id) { closeSheet("pumpysheet"); return Promise.resolve(true); }   // already reading it
     var seq = (pumpy.openSeq = (pumpy.openSeq || 0) + 1);
     var refsRev = pumpy.refsRev;
     var log = $("pumpylog"), swapped = false, closed = false;
@@ -16087,9 +16090,9 @@ export const APP = String.raw`
       $("pumpysend").disabled = true;
       closeSheet("pumpysheet");
     }, OPEN_WAIT);
-    sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
+    return sb.from("pumpy_messages").select("*").eq("thread_id", t.id).order("id", { ascending: true }).limit(80)
       .then(function (m) {
-        if (seq !== pumpy.openSeq) return;   // switched again while loading
+        if (seq !== pumpy.openSeq) return false;   // switched again while loading
         if (m.error) throw m.error;
         clearTimeout(timer);
         swapped = true;
@@ -16105,14 +16108,16 @@ export const APP = String.raw`
         log.classList.remove("waiting");
         renderPumpy();          // one fragment, one swap, one scrollTop
         if (!closed) closeSheet("pumpysheet");
+        return true;
       })
       .catch(function () {
-        if (seq !== pumpy.openSeq) return;
+        if (seq !== pumpy.openSeq) return false;
         clearTimeout(timer);
         log.classList.remove("waiting");
         $("pumpysend").disabled = !!pumpy.busy;
         closeSheet("pumpysheet");
         toast("That chat did not open — try again in a moment.");
+        return false;
       });
   }
 
@@ -16472,15 +16477,34 @@ export const APP = String.raw`
   // the server claims it, or carries the turn on in the thread already claimed,
   // or refuses a spent one with the 403 sendPumpy turns into the preview. Known
   // to be spent here, the preview comes without a request at all.
+  // The exception to "a new chat": Basic's free thread while it is still open.
+  // The server carries every goal turn on in that one, so a blank chat would be
+  // a conversation the model can read and the person cannot. The door opens it
+  // instead, as Chats opens a thread, and the turn goes on there.
   function openGoalChat(ctx) {
     ctx = ctx || {};
-    var free = isFree(), fp = freeProgram(), box = $("pumpyinput"), text = ctx.message || "";
+    var fp = freeProgram(), own = isFree() && fp && fp.state === "open" && fp.thread_id;
     // Decisions §1: once the free plan is built, adjusting it is Plus. (A free
     // plan still open — undone, say — is still Basic's to talk over.)
-    if (free && ctx.adjust && !(fp && fp.state === "open")) { openPlans({ kind: "goal" }); return; }
-    if (pumpy.thread || pumpy.messages.length || pumpy.busy) { pumpyBlank(); renderPumpy(); }
-    pumpy.goal = ctx.goal || {};
+    if (isFree() && ctx.adjust && !own) { openPlans({ kind: "goal" }); return; }
+    if (!own && (pumpy.thread || pumpy.messages.length || pumpy.busy)) { pumpyBlank(); renderPumpy(); }
+    // Arrived first: arriving is where a chat gone quiet is swapped for a new
+    // one (freshenPumpy), which must not happen to the thread opened next.
     setView("pumpy");
+    if (own && threadId() !== own) {
+      // A turn still in the air belongs to another chat: retired, as New chat does.
+      if (pumpy.busy) pumpyBlank();
+      openThread((pumpy.threads || []).filter(function (t) { return t.id === own; })[0] || { id: own })
+        .then(function (ok) { if (ok && threadId() === own) goalTurn(ctx); });
+      return;
+    }
+    goalTurn(ctx);
+  }
+
+  // The goal door's turn, in whichever chat openGoalChat left on screen.
+  function goalTurn(ctx) {
+    var free = isFree(), fp = freeProgram(), box = $("pumpyinput"), text = ctx.message || "";
+    pumpy.goal = ctx.goal || {};
     if (!text) return;
     // A chip's goal can be previewed; a door with words and no goal cannot.
     if (free && fp && fp.state === "used") {
