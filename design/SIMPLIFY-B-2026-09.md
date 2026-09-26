@@ -14,11 +14,14 @@ day, a paused session) unless marked "from the code path".
 
 | Task | Before (main, build 9) | After (build 10) | What changed |
 |---|---|---|---|
-| Share a video, then log the first set (iOS) | 9 — Share · More · Spotter · Done · open the app · card · Start workout · Set 1 · Save set (code path) | QA | The ready notification's Start Now (or the ready sheet on the next open) goes straight to Workout Mode; the big button logs set 1 |
-| Open the app and start today's workout | 1 on Library (it opened there) · 2 on Train (tab + Start) (measured) | QA | The app opens on Train; Up next's Start workout |
-| Log one set | 2 — the set pill, then Save set (measured) | QA | "Log set 1 · 8 × 90 lb" is one tap; the set sheet is still one tap away on the pill |
-| Plan a saved workout for Thursday | 6 — card · Schedule · › month · the day · ✓ · Add to plan (5 inside the month) (measured) | QA | The card's pinned Plan opens the fortnight sheet: tap Thursday, "Plan 1 day" |
-| Finish, then see the week | 3 — Save workout · ✕ · Train (code path) | QA | Finish on the last set; the recap closes onto Train, where the week is |
+| Share a video, then log the first set (iOS) | 9 — Share · More · Spotter · Done · open the app · card · Start workout · Set 1 · Save set (code path) | **5** — Share · Save to Spotter · open Spotter (the banner or the Home Screen) · Start now · Log set 1 (the last two measured; the first three from the code path, since a real share spends AI) | The ready sheet greets the open (or the push's Start Now) and goes straight to Workout Mode; the big button logs set 1 |
+| Open the app and start today's workout | 1 on Library (it opened there) · 2 on Train (tab + Start) (measured) | **1** (measured) | The app opens on Train; Up next's Start workout |
+| Log one set | 2 — the set pill, then Save set (measured) | **1** (measured) | "Log set 1 · 8 × 90 lb" is one tap; the set sheet is still one tap away on the pill |
+| Plan a saved workout for Thursday | 6 — card · Schedule · › month · the day · ✓ · Add to plan (5 inside the month) (measured) | **3** from Train — Thursday · + Plan a workout · the workout (one swipe first when Thursday is next week); **1** from the recap or the ready sheet (the Thu chip); 5 via Workouts → card → Plan (measured) | Days are picked where they are shown, and the picker searches |
+| Finish, then see the week | 3 — Save workout · ✕ · Train (code path) | **1** with every planned set in (the big button reads Finish workout; the recap shows "3 of 4 this week"); 2 with sets left (the pill, then Finish workout) (measured) | Finish is the big button after the last set, and the recap carries the week |
+
+Targets from the brief: share → first set ≈ 5 ✓ · open → start ≈ 1 ✓ · log a set = 1 ✓ · plan Thursday = 3 ✓ (from
+Train) · finish → week = 1 ✓ (when every planned set is in; with sets left the leave sheet asks first, by design).
 
 ## What changed, screen by screen
 
@@ -149,20 +152,23 @@ extension says "Save to Spotter" and its receipts say Workouts.
 ## Relocation table
 | Feature | Before (build 9) | After (build 10) | Verified |
 |---|---|---|---|
-| Resume / End a paused session | Library Resume card; the card's button | The paused bar on every tab (Resume, two-tap Finish); Up next S1; the card's Resume | QA |
-| Today's planned workout | Library Today card; Train Today card | Up next on Train (S2) | QA |
-| Day details, sessions on a day, add to a day | The day sheet (no Start, no Move) | The selected-day card under the strip (Start now, Move, Remove, Do it today, + Plan a workout) | QA |
-| Month grid, legend, Copy week, Build with Pumpy, What counts | Calendar segment (Pumpy ×2 there, ×3 elsewhere) | Pull the strip down; its ⋯ (Pumpy once there, once on the rest day); the ring → What counts | QA |
-| Progress, Records, awards | Train segments | Progress · Records segments ("est. max") | QA |
-| Search, filters, collections, sort, favorites, pull to refresh, Plus meter | Library | Workouts | QA |
-| Watch this part, demo, edit, rest, swap, reorder, remove exercise | Three controls per row, an Options fold, the rest sheet | The exercise sheet (+ swipe to remove); rest in Edit exercise | QA |
-| Rename, collections, share, read again, remove, Ask Pumpy | Options sheet + a chip | The ⋯ Workout sheet | QA |
-| Watch original and caption | A folded row | The cover; the caption under the list | QA |
-| Plus and Basic read offers | Above Start | "Improve this read", the recap, the save limit | QA |
-| Set logging | Pill + sheet (2 taps) | The big button (1 tap); the sheet one tap away | QA |
-| Swap, demo, clip, add exercise mid-workout | Options fold, bottom Add exercise | ⋯ Exercise | QA |
-| Finish | The big button at the bottom | A pill at the top right; the big button after the last set | QA |
-| Section edit, add exercise and section, muscles, notes and category | Scattered | Below the list | QA |
+| Resume / End a paused session | Library Resume card; the card's button | The paused bar on every tab (Resume; Finish, the session's own); Up next S1; the card's Resume | PASS — 16e, all three tabs |
+| Today's planned workout | Library Today card; Train Today card | Up next on Train (S2) | PASS — 16e |
+| Day details, sessions on a day, add to a day | The day sheet (no Start, no Move) | The selected-day card under the strip (Start now, Move, Remove, Do it today, + Plan a workout) | PASS — 16e, past and future days |
+| Month grid, legend, Copy week, Build with Pumpy, What counts | Calendar segment (Pumpy ×2 there, ×3 elsewhere) | Pull the strip down; its ⋯ (Pumpy once there, once on the rest day); the ring → What counts | PASS — 16e |
+| Progress, Records, awards | Train segments | Progress · Records segments ("est. max") | PASS — 16e |
+| Search, filters, collections, sort, favorites, pull to refresh, Plus meter | Library | Workouts | PASS — 16e + lab (pending/failed/empty) |
+| Watch this part, demo, edit, rest, swap, reorder, remove exercise | Three controls per row, an Options fold, the rest sheet | The exercise sheet (+ swipe to remove); rest in Edit exercise | PASS — 16e |
+| Rename, collections, share, read again, remove, Ask Pumpy | Options sheet + a chip | The ⋯ Workout sheet | PASS — 16e (Read it again not tapped: AI) |
+| Watch original and caption | A folded row | The cover; the caption under the list | PASS — 16e |
+| Plus and Basic read offers | Above Start | "Improve this read", the recap, the save limit | PASS — 16e (offers shown, not bought) |
+| Set logging | Pill + sheet (2 taps) | The big button (1 tap); the sheet one tap away | PASS — 16e; Lock Screen agrees on the 17 Pro |
+| Swap, demo, clip, add exercise mid-workout | Options fold, bottom Add exercise | ⋯ Exercise | PASS — 16e |
+| Finish | The big button at the bottom | A pill at the top right; the big button after the last set | PASS — 16e |
+| Section edit, add exercise and section, muscles, notes and category | Scattered | Below the list | PASS — 16e |
+
+Checked by an agent that wrote none of the code (`briefs/simplify-b/qa/QA.md`, ~130 screenshots on the iPhone 16e
+and 17 Pro), on 16d0f0f and again on 88dd978 after the fixes.
 
 ## Page size
 The page ships inside the app, so this is parse and memory, not download. Measured on `web-dist/index.html` (comments
@@ -183,7 +189,8 @@ stripped, whitespace kept) at each merge point:
 | Review fixes, agent: `nextSet`, the "is paused" sheet, plan rows, `showCard`, Move on missed rows | 871,220 | 228,842 | +1,143 |
 | QA fixes: refresh keeps the logs, one clock | 871,288 | 228,879 | +68 |
 | QA fixes: the held toast and its tap shield, Train's ⋯ rows, month title, See all, toast width, past days | 872,599 | 229,298 | +1,311 |
-| **Total** | **872,599** | **229,298** | **+43,032 (+5.2 %); gzip +12,609 (+5.8 %)** |
+| QA re-check: the shield a second long, tappable toasts only | 872,635 | 229,307 | +36 |
+| **Total** | **872,635** | **229,307** | **+43,068 (+5.2 %); gzip +12,618 (+5.8 %)** |
 
 Over the +12 KB target. What is left is the behaviour the spec asks for (the pull-down, seven Up next states, the
 ready moment's four doors, the fortnight sheet); each agent deleted what its area retired, and the candidates left to
@@ -233,11 +240,26 @@ gaps, verdict "not TestFlight yet". Fixed on `sb-fix` (senior) and `sb-fix2` (on
   or the new switch); five near-duplicate helpers the review listed; the card dock's fixed bottom padding.
 
 ## Checks
-TODO (final): `npm run verify:local`, `npm run parity:check`, `npm run gtm:check` (54 groups, incl. the 36-check
-simplify-b harness and the 119-check pager harness), `tools/apns-harness.ts` 64/64, the QA pass, the review.
+On the final branch: `npm run verify:local` 24/24 (every ubuntu CI step), `npm run gtm:check` 54/54 (incl. the
+36-check simplify-b harness, train 11, speed 27, superset 18, the APNs harness 64/64), `npm run parity:check` green
+(the macOS CI job), `deno check` on index.ts, `npm audit` clean, the native-bundle report against main (index.html
+changes; ships only in a new store build). Independent review and QA as above.
+
+QA on the iPhone 16e and 17 Pro (after the fixes): no blockers. Live Activity: a set from the app's button and one
+from the Lock Screen match on both surfaces (superset included); pause freezes the Island, resume restarts it,
+Finish ends it with "Workout saved".
 
 ## Not verified on a device
-TODO (final).
+- Anything that spends AI: a real share from TikTok/Safari through "Save to Spotter", Read it again, the read offers,
+  Explain, Swap reasons, sending to Pumpy. The `card_ready` push was delivered on the simulator by the sb-ready agent
+  (simctl push with the server's own payload), not yet from APNs to a physical phone.
+- VoiceOver on a device (labels, actions and focus were checked in the lab's accessibility tree); feel at 120 Hz.
+- The keyboard: after a keyboard is dismissed by tapping content, the simulator sometimes skipped drawing until the
+  next touch (seen once by sb-library; the QA simulator had a hardware keyboard). Worth a look on a phone.
+- "Saving…" plan rows and the offline recap (too quick to catch / no offline switch on the simulator; both lab-checked).
+- Android.
+- Known polish: in Workout Mode the one-line toast still covers the top half of "Exercise N of M" for its five seconds
+  on phones with a notch or Dynamic Island.
 
 ## Decisions made in the cycle (small, reversible)
 - Up next counts a planned row as done when a session today trained that workout; a different workout trained
