@@ -1841,7 +1841,7 @@ export const STYLE = String.raw`<style>
   .gpill.low { background: #FFF0D6; color: var(--warn); }
   @media (prefers-color-scheme: dark) { .gpill.ok { background: #173026; } .gpill.low { background: #2E2107; } }
   .gin { animation: viewin var(--t-3) var(--e-out); }
-  .gout { opacity: 0; transition: opacity var(--t-2) var(--e-in); }
+  .gout { opacity: 0; pointer-events: none; transition: opacity var(--t-2) var(--e-in); }
   .gline, .gpill, .trx { font-variant-numeric: tabular-nums; }
   /* A program day's numbers under its workout, on Up next and a day's rows. */
   .trx { display: flex; align-items: center; gap: 6px; margin-top: -4px; font-size: 13px; font-weight: 650; color: var(--ember-ink); }
