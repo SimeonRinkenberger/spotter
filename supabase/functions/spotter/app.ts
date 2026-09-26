@@ -337,7 +337,11 @@ export const APP = String.raw`
     return p;
   }
   function accountNow(epoch, uid) { return epoch === accountEpoch && state.user && state.user.id === uid; }
-  function invalidateLogs() { logsRev++; state.logs = null; state.logsLite = false; }
+  // The logs on screen are out of date: the next loadLogs reads them again. They
+  // stay up meanwhile as lite rows — the counts, the strip's dots, Up next and the
+  // Workouts statuses read those — rather than a hole every status blinks out of;
+  // what needs every figure (fullLogs) waits for the read.
+  function invalidateLogs() { logsRev++; state.logsLite = !!state.logs; }
 
   function deadline(work, ms) {
     var controller = new AbortController(), timer;
@@ -12916,8 +12920,10 @@ export const APP = String.raw`
     // session's own Finish pill — at once when every planned set is in, else the
     // leave sheet asks first, over the session it would end.
     if (u.s < 2) {
+      // Whole seconds counted down, as the paused bar counts them, so the two
+      // never disagree by one on the same screen.
       return tcard("act", u.running ? "In progress" : "Paused", w, setsWord(u.sets) + " · " +
-        clock(Math.max(0, Math.round(((u.pausedAt ? new Date(u.pausedAt) : new Date()) - new Date(u.startedAt)) / 1000))),
+        clock(Math.max(0, Math.floor(((u.pausedAt ? new Date(u.pausedAt) : new Date()) - new Date(u.startedAt)) / 1000))),
         [["btn", "Resume", woForward], ["btn ghost tmove", "Finish workout", function () { woForward(); woFinish(); }]]);
     }
     if (u.s < 3) {
@@ -20558,9 +20564,11 @@ export const APP = String.raw`
 
   var ptrStart = 0, ptrPulling = false;
 
+  // Everything Workouts shows: the cards, and the plan and the logs its statuses
+  // and its Ready to try count are read from. The count of new cards is load()'s.
   function refreshActive() {
     invalidateLogs();
-    return load();
+    return Promise.all([load(), loadLogs(), loadPlan(true)]).then(function (r) { return r[0]; });
   }
 
   pagesEl.addEventListener("touchstart", function (e) {
@@ -20728,8 +20736,7 @@ export const APP = String.raw`
   $("refreshbtn").onclick = function () {
     var b = $("refreshbtn");
     b.classList.add("spin");
-    invalidateLogs();
-    load().then(function () { b.classList.remove("spin"); });
+    refreshActive().then(function () { b.classList.remove("spin"); });
   };
   $("settingsbtn").onclick = openSettings;
   wirePwEye($("pw").parentNode);
