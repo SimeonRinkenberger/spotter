@@ -12276,9 +12276,14 @@ export const APP = String.raw`
     return readOnce("plan:" + from + ":" + to + ":" + rev, function () {
       return sb.from("plan").select("*").eq("user_id", uid).gte("day", from).lte("day", to)
         .then(function (r0) {
-        if (!accountNow(epoch, uid) || rev !== planRev) return;
+        if (!accountNow(epoch, uid)) return;
+        // Overtaken by a local edit (planRev) or by a move to another range, the
+        // answer is dropped: what is on screen is newer, and whatever moved it
+        // asks again. Not when nothing is on screen yet, though: that drop left
+        // Up next on its skeleton for good, with nobody left to ask. The first
+        // answer is asked for again, as load() and loadLogs() do.
         var nowRange = fetchRange();
-        if (from !== ymd(nowRange.from) || to !== ymd(nowRange.to)) return;
+        if (rev !== planRev || from !== ymd(nowRange.from) || to !== ymd(nowRange.to)) return state.plan ? undefined : loadPlan(silent);
         if (r0.error) throw new Error("Plan unavailable");
         // A row whose Remove is still offering Undo stays off everything that
         // reads the plan — widgets, the cache, card statuses — not just Train.
