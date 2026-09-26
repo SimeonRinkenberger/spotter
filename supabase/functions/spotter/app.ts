@@ -16134,7 +16134,12 @@ export const APP = String.raw`
       inp.min = opts[0];
       inp.max = ymd(addDays(now, 60));
       inp.setAttribute("aria-label", f.label);
-      inp.onchange = function () { if (inp.value) { put(inp.value); ready(); } };
+      // iOS's calendar does not grey out what min and max forbid, so a day before
+      // today (a start the server refuses) is held to the window here.
+      inp.onchange = function () {
+        var v = inp.value;
+        if (v) { put(v < inp.min ? inp.min : v > inp.max ? inp.max : v); ready(); }
+      };
     }
     // The first answer to an empty segmented control puts the thumb down where
     // it lands rather than sliding it in from the first seat: placed while
@@ -16197,6 +16202,19 @@ export const APP = String.raw`
     wireNum(val, num, inp, set);
     return row;
   }
+
+  // Typing into the ask card: where the frame follows the keyboard (Android, a
+  // browser), the field can land behind Pumpy's own composer, which rides the
+  // keys; once they have settled it is brought up above it. The iOS shell's
+  // keyboard section already does this for any field (kbPlain).
+  $("pumpylog").addEventListener("focusin", function (e) {
+    var f = e.target;
+    if (kbOver() || !f.closest(".askcard")) return;
+    setTimeout(function () {
+      var d = f.getBoundingClientRect().bottom + 12 - $("pumpycomposer").getBoundingClientRect().top;
+      if (d > 0 && document.activeElement === f) $("pumpyview").scrollTop += d;
+    }, 450);
+  });
 
   // "Mon, Sep 28": a day the way the plan proposal already writes one.
   function dayMon(k) { return dayDate(k).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }); }
