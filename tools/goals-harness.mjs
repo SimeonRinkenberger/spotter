@@ -60,7 +60,7 @@ function check(name, body) {
 // ---------- the app's seams, in a sandbox ----------
 const LIFT = ['ymd', 'addDays', 'mondayOf', 'dayDate', 'clamp', 'isSession', 'isPending', 'isFailed', 'goalLift', 'parseLiftText',
   'unitTo', 'plateOf', 'toPlate', 'e1rm', 'liftMax', 'topLift', 'goalStarters', 'gsLift', 'gsFat', 'gsCat', 'gsKeep',
-  'rxWeekStart', 'rxBasis', 'prescriptionFor', 'rxText', 'goalStatusOf', 'lastWeighIn', 'goalLine', 'starterFor', 'starterCard'];
+  'rxWeekStart', 'rxBasis', 'prescriptionFor', 'rxText', 'goalStatusOf', 'lastWeighIn', 'goalLine', 'shortDate', 'starterFor', 'starterCard'];
 const ctx = vm.createContext({ Date, JSON, Math, String, Number, Object, Array, console, isFinite, parseFloat, RegExp });
 vm.runInContext(decl('LB_PER_KG') + decl('GOAL_LIFTS') + decl('MAX_WINDOW') + decl('GOAL_CATS') + LIFT.map(fn).join(''), ctx);
 const app = (js) => { const v = vm.runInContext(js, ctx); return v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v; };
@@ -231,6 +231,12 @@ check('lift: after the last day, reached or done', () => {
   const past = Object.assign({}, GOAL, { start_day: '2026-07-01', end_day: '2026-08-25' });
   assert.equal(status(past, { logs: [log(-3, [bench(260, 5)])] }).status, 'reached');
   assert.equal(status(past, { logs: [log(-3, [bench(240, 5)])] }).status, 'done');
+});
+check('before its first day a program is "upcoming", never behind (b2-goal found it)', () => {
+  const soon = Object.assign({}, GOAL, { start_day: '2026-09-28', end_day: '2026-11-22' });
+  const s = status(soon, { logs: [log(-3, [bench(100, 5)])] });   // an estimate far under the baseline
+  assert.equal(s.status, 'upcoming'); assert.equal(s.started, false); assert.equal(s.week, 1);
+  assert.equal(s.text, 'Bench 305 · starts Sep 28 · 8 weeks');
 });
 check('fat: the newest weigh-in against the line; no weigh-in after week one is "no data"', () => {
   const f = { id: 'f', kind: 'fat', title: 'Lose 10 lb', target: 190, unit: 'lb', baseline: 200, start_day: '2026-09-11', end_day: '2026-11-19', weeks: 10 };

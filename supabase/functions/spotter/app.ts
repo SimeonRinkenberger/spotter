@@ -14594,7 +14594,8 @@ export const APP = String.raw`
   // against the plan's pace for the rest. Inside a plate (or one per cent) of
   // the line is "on track"; past its last day it is "reached" or "done". A fat
   // goal with no weigh-in after its first week says so ("no data") rather than
-  // guessing. d = { logs, body (settings.body), now }.
+  // guessing, and before its first day it is "upcoming". d = { logs, body
+  // (settings.body), now }.
   function goalStatusOf(g, d) {
     d = d || {};
     var now = d.now || new Date(), today = dayDate(ymd(now)), start = dayDate(g.start_day), end = dayDate(g.end_day);
@@ -14630,6 +14631,8 @@ export const APP = String.raw`
       out.status = out.over ? "done" : out.latest > out.expected ? "ahead"
         : out.expected && out.latest < out.expected * 0.75 ? "behind" : "on track";
     }
+    // Before its first day a program is on no line yet: neither ahead nor behind.
+    if (!out.started) out.status = "upcoming";
     out.text = goalLine(g, out);
     return out;
   }
@@ -14647,6 +14650,7 @@ export const APP = String.raw`
   // "Bench 305 · est. 287 → 295 · week 2 of 8 · on track": the goal card's one line.
   function goalLine(g, st) {
     var tail = "week " + st.week + " of " + st.weeks + " · " + st.status;
+    if (st.status === "upcoming") return g.title + " · starts " + shortDate(dayDate(g.start_day)) + " · " + st.weeks + " weeks";
     if (g.kind === "lift") return g.title + " · est. " + (st.latest || g.baseline) + " → " + g.target + " · " + tail;
     if (g.kind === "fat") {
       return g.title + " · " + (st.latest !== null ? st.latest + " → " + g.target + " " + g.unit : "weigh in to track it") + " · " + tail;

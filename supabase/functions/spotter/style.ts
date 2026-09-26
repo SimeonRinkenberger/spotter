@@ -3315,7 +3315,7 @@ export const STYLE = String.raw`<style>
   .disclosure[open] > summary::after, .guide-topic[open] > summary::after { transform: rotate(45deg); }
   .disclosure.details-closing > summary::after, .guide-topic.details-closing > summary::after { transform: rotate(-45deg); }
   @media (prefers-reduced-motion: reduce) {
-    .disclosure > summary::after, .guide-topic > summary::after, .history-card > summary::before { transition: none; }
+    .disclosure > summary::after, .guide-topic > summary::after { transition: none; }
   }
   .reader-offer { background: var(--ember-soft); border: 1px solid var(--line); border-radius: 18px; padding: 16px; margin: 16px 0; }
   .reader-offer p { color: var(--ink-2); font-size: 14px; line-height: 1.5; margin: 8px 0 12px; }
