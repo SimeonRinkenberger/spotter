@@ -60,7 +60,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { aiActor, createGuardedFetch, GuardError, tokenCost, tokenPrice } from "./ai-guard.ts";
 import { deterministicCombine } from "./pumpy-combine.ts";
 import {
-  adultAnswer, type Ask, askAsText, blockedSentence, capsOf, cleanAnswers, cleanCoachText, expandProgram, freeProgramState,
+  adultAnswer, freeProgramBuilt, type Ask, askAsText, blockedSentence, capsOf, cleanAnswers, cleanCoachText, expandProgram, freeProgramState,
   liftMaxAt, unitTo,
   GOAL_FREE_TURNS, liftHistory, type LogRow, mentionsMinor, PROGRAM_MAX_TEMPLATES, safetyCheck, type TemplateRef,
   type Program, type Unit, validateAsk,
@@ -11058,6 +11058,11 @@ async function handleReprocess(id: string, userId: string, req: Request, cors: C
   const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=*`);
   if (!rows.length) return json({ status: "error", message: "Not found." }, 404, cors);
   const old = rows[0];
+  // A workout that shipped with Spotter (a kept starter) or that Pumpy wrote has no
+  // video: re-reading it would spend an extract against the cap on nothing (review 9).
+  if (old.platform === "spotter" || old.platform === "pumpy") {
+    return json({ status: "error", message: "This workout has no video to read." }, 400, cors);
+  }
   if (aiActor.getStore()) aiActor.getStore()!.workKey = old.shortcode;
 
   // Reprocess re-runs the whole extraction ladder — the same scrape and the same
@@ -13493,6 +13498,24 @@ export async function validateProposal(userId: string, p: any, v?: ProposalCtx):
 // way create_workout is, with its id chosen now so the stored proposal is the thing
 // the confirm writes. Then the pure half (goals.ts expandProgram) dates it, loads
 // it and holds it to the honesty rules.
+// A new program workout's cues pass the chat's filter too: a supplement or a calorie
+// number in an exercise's note would reach the card and Workout Mode (review 4).
+function cleanBlockNotes(blocks: any): any {
+  if (!Array.isArray(blocks)) return blocks;
+  return blocks.map((b: any) => {
+    const nb = { ...b };
+    for (const k of ["notes", "note", "summary"]) if (typeof nb[k] === "string" && blockedSentence(nb[k])) delete nb[k];
+    if (Array.isArray(nb.exercises)) {
+      nb.exercises = nb.exercises.map((e: any) => {
+        const ne = { ...e };
+        for (const k of ["notes", "note", "cue", "tip"]) if (typeof ne[k] === "string" && blockedSentence(ne[k])) delete ne[k];
+        return ne;
+      });
+    }
+    return nb;
+  });
+}
+
 async function validateProgram(userId: string, raw: any, v: ProposalCtx): Promise<PumpyProposal | { error: string }> {
   const list: any[] = Array.isArray(raw?.templates) ? raw.templates : [];
   if (!list.length) return { error: "a program needs templates" };
@@ -13517,7 +13540,8 @@ async function validateProgram(userId: string, raw: any, v: ProposalCtx): Promis
       templates.set(ref, { ref, workout_id: crypto.randomUUID(), new: true, title: made.title, exercises: exCount(made.blocks),
         canon: canonOf(made.blocks), category: made.category, duration_minutes: made.duration_minutes,
         create: { title: made.title, category: made.category, difficulty: made.difficulty, duration_minutes: made.duration_minutes,
-          equipment: made.equipment, muscle_groups: made.muscle_groups, blocks: made.blocks, summary: made.summary } });
+          equipment: made.equipment, muscle_groups: made.muscle_groups, blocks: cleanBlockNotes(made.blocks),
+          summary: made.summary ? cleanCoachText(String(made.summary)).text || null : null } });
     }
   }
   const lift = String(raw?.goal?.exercise ?? "");
@@ -14168,6 +14192,8 @@ async function pumpyRecordUsage(
 
 const PUMPY_PLUS_ONLY = "Pumpy coaching is included with Spotter Plus: combine saved workouts, build a plan, get exercise alternatives and personalized recommendations.";
 const PUMPY_FREE_USED = "Your free plan is built. Spotter Plus keeps Pumpy adjusting it week to week, and builds anything else you ask for.";
+// Eight turns and no plan confirmed: nothing was built, so nothing is said to be (review 13).
+const PUMPY_FREE_SPENT = "Your free goal chat has used its turns. With Spotter Plus, Pumpy builds a plan for any goal and adjusts it week to week.";
 
 /** The person's date where they are ("YYYY-MM-DD"); UTC when the zone is unknown or bad. */
 function localToday(tz: unknown): string {
@@ -14205,22 +14231,23 @@ async function freeGoalGate(userId: string, meter: PumpyMeter, body: any, caps: 
   } else if (isUuid(tid) ? tid !== free : !goalDoor) {
     return { refuse: plusOnly };
   }
-  const state = await freeStateFor(userId, free);
+  const { state, built } = await freeStateFor(userId, free);
   if (state === "used") {
-    return { refuse: { status: "limit", kind: "goal", plan: meter.plan, upgrade: true, message: PUMPY_FREE_USED,
-      free_program: { state, thread_id: free } } };
+    return { refuse: { status: "limit", kind: "goal", plan: meter.plan, upgrade: true, message: built ? PUMPY_FREE_USED : PUMPY_FREE_SPENT,
+      free_program: { state, thread_id: free, built } } };
   }
   return { thread: free };
 }
 
-/** "available", "open" or "used", from the goals that conversation made and the turns it has had. */
-async function freeStateFor(userId: string, free: string | null): Promise<"available" | "open" | "used"> {
-  if (!free) return "available";
+/** "available", "open" or "used", from the goals that conversation made and the turns it has had,
+ * and whether it built a program that still stands (so "used" can say which it means). */
+async function freeStateFor(userId: string, free: string | null): Promise<{ state: "available" | "open" | "used"; built: boolean }> {
+  if (!free) return { state: "available", built: false };
   const [goals, turns] = await settledAll<any>([
     dbSelect("goals", `user_id=eq.${userId}&thread_id=eq.${free}&select=status`),
     dbCount("saves_log", `user_id=eq.${userId}&kind=eq.goal_turn&shortcode=eq.${free}`),
   ]);
-  return freeProgramState(free, goals as { status: string }[], Number(turns) || 0);
+  return { state: freeProgramState(free, goals as { status: string }[], Number(turns) || 0), built: freeProgramBuilt(goals as { status: string }[]) };
 }
 
 /** An ask card's answers, kept only for the questions it asked; the card is then marked answered. */
@@ -14241,6 +14268,17 @@ async function pumpyAnswers(userId: string, threadId: string, body: any): Promis
     console.error("pumpy answers could not be read", e);
     return {};
   }
+}
+
+/** What a whole conversation has said that a program must respect: an age under 18, the support line. */
+async function pumpyThreadFlags(userId: string, threadId: string): Promise<{ minor: boolean; safetyStop: boolean }> {
+  try {
+    const [minor, ed] = await Promise.all([
+      pumpyMinorKnown(userId, threadId),
+      dbSelect("pumpy_messages", `thread_id=eq.${threadId}&user_id=eq.${userId}&meta->>safety=eq.ed&select=id&limit=1`),
+    ]);
+    return { minor, safetyStop: ed.length > 0 };
+  } catch { return { minor: false, safetyStop: false }; }
 }
 
 /** Has this conversation heard that the person is under 18? */
@@ -14334,7 +14372,7 @@ async function handleStarterKeep(req: Request, userId: string, cors: Cors): Prom
   const shortcode = "starter-" + s.key;
   const mine = () => dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${shortcode}&select=*`);
   const had = await mine();
-  if (had.length) return json({ status: "ok", workout: had[0], created: false }, 200, cors);
+  if (had.length) return json({ status: "ok", workout: await starterLogsTo(userId, had[0], s.title), created: false }, 200, cors);
   try {
     const row = await dbInsert("workouts", {
       user_id: userId, url: "spotter://starter/" + s.key, shortcode, platform: "spotter", kind: "starter",
@@ -14342,14 +14380,29 @@ async function handleStarterKeep(req: Request, userId: string, cors: Cors): Prom
       difficulty: "beginner", duration_minutes: s.minutes, blocks: s.blocks, tags: ["starter"], has_full_workout: true,
       extracted_by: "spotter:starter", ingest_status: "ready",
     });
-    return json({ status: "ok", workout: row, created: true }, 200, cors);
+    return json({ status: "ok", workout: await starterLogsTo(userId, row, s.title), created: true }, 200, cors);
   } catch (e) {
     // Two taps at once: the unique (user_id, shortcode) let one through.
     const again = await mine();
-    if (again.length) return json({ status: "ok", workout: again[0], created: false }, 200, cors);
+    if (again.length) return json({ status: "ok", workout: await starterLogsTo(userId, again[0], s.title), created: false }, 200, cors);
     console.error("starter keep failed", userId, s.key, e);
     return json({ status: "error", message: "Could not keep that workout. Try again in a moment." }, 503, cors);
   }
+}
+
+// A starter done before it was kept was logged with no card (it had no id yet), so
+// Ready to try, the card's status and "last time" would all read the kept copy as never
+// done. Keeping it gives this account's card-less sessions of it that card: matched by
+// the starter's title, which only a starter's own log carries with no workout_id. Best
+// effort — the keep stands if this fails, and a later keep tries again.
+async function starterLogsTo(userId: string, w: { id: string }, title: string): Promise<typeof w> {
+  try {
+    await dbPatchMany("workout_logs",
+      `user_id=eq.${userId}&workout_id=is.null&workout_title=eq.${encodeURIComponent(title)}`, { workout_id: w.id });
+  } catch (e) {
+    console.error("starter logs link failed", userId, w.id, e);
+  }
+  return w;
 }
 
 async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promise<Response> {
@@ -14557,11 +14610,12 @@ export async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<R
   const unit: Unit = settings.unit === "kg" ? "kg" : "lb";
   // The last few visible turns, compactly. Tool results from earlier turns are
   // not replayed — they can be thousands of tokens — only what each side said.
-  const [snapshot, hist, goalSnap] = await settledAll<any>([
+  const [snapshot, hist, goalSnap, flags] = await settledAll<any>([
     pumpySnapshotSafe(userId),
     dbSelect("pumpy_messages",
       `thread_id=eq.${thread.id}&user_id=eq.${userId}&role=in.(user,assistant)&id=lt.${userMsg.id}&select=role,content,meta&order=id.desc&limit=${Math.max(1, Math.min(20, cfg.historyTurns))}`),
     goals ? pumpyGoalSnapshotSafe(userId, settings, unit) : Promise.resolve(""),
+    goals ? pumpyThreadFlags(userId, thread.id) : Promise.resolve({ minor: false, safetyStop: false }),
   ]);
   const transcript = pumpyHistoryContext((hist as any[]).reverse());
   transcript.push(pumpyCurrentTurn(message, refs));
@@ -14571,8 +14625,10 @@ export async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<R
   const vctx: ProposalCtx = {
     caps, free: a.free ?? null, unit, today: localToday(settings.tz),
     answers: said.filter((m: any) => m.role === "user" && m.meta?.answers).map((m: any) => m.meta.answers),
-    minor: said.some((m: any) => m.meta?.minor),
-    safetyStop: said.some((m: any) => m.meta?.safety === "ed"),
+    // The whole conversation, not the last ten messages: an "I'm 15" or the support
+    // line five exchanges back still stands (review 17).
+    minor: said.some((m: any) => m.meta?.minor) || !!(flags as any)?.minor,
+    safetyStop: said.some((m: any) => m.meta?.safety === "ed") || !!(flags as any)?.safetyStop,
     bodyWeight: Number(settings.body?.weight) > 0 ? unitTo(Number(settings.body.weight), settings.body.unit === "kg" ? "kg" : "lb", unit) : null,
   };
 
@@ -16091,7 +16147,7 @@ Deno.serve(async (req: Request) => {
         pumpy: pumpyBlock(meter),
         // Basic's one free goal program (B.2): whether it is still there to take.
         free_program: plusPlan(uc.plan) ? null : {
-          state: await freeStateFor(userId, meter.profile?.free_goal_thread ?? null),
+          ...(await freeStateFor(userId, meter.profile?.free_goal_thread ?? null)),
           thread_id: meter.profile?.free_goal_thread ?? null,
         },
       }, 200, cors);
