@@ -18784,7 +18784,14 @@ export const APP = String.raw`
     if (state.view !== v || guide.visit !== v || overlayShowing()) return;
     if (v === "train" && state.plan && state.plan.length) { guideLearn("train"); return; }
     if (v === "train" && trainLean) guideOffer("train", trainLean, cardBox);
-    if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length) {
+    // Not in a goal chat, and not under an ask card still waiting on its
+    // answers: at 375 x 812 the tip covered the card's Build my plan (QA F5), and
+    // attaching workouts is not what either moment is about. One already up
+    // folds away (not learnt: it can come back in an ordinary chat).
+    var last = pumpy.messages[pumpy.messages.length - 1];
+    var asking = !!pumpy.goal || !!(last && last.meta && last.meta.ask && !last.meta.ask.answered);
+    if (v === "pumpy" && asking && guide.active && guide.active.id === "refs") guideClear("dismiss");
+    else if (v === "pumpy" && pumpy.loaded && pumpy.messages.length && !pumpy.refs.length && !asking) {
       var c = $("pumpycomposer"); guideOffer("refs", c, c.firstChild);
     }
   }

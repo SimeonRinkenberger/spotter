@@ -266,7 +266,11 @@ export const STYLE = String.raw`<style>
      agreement has to look like one). */
   .legal { margin: 12px 0 0; font-size: 13px; line-height: 18px; text-align: center; }
   .legal a { color: var(--ink); font-weight: 600; padding: 13px 0; margin: -13px 0; }
-  .legal .codeask { display: inline; padding: 13px 0; margin: -13px 0; font-size: 13px; }
+  /* The links on the next line reach 13px up into this one, and later in the
+     paint order they won the tap on most of "Have a creator code?" (QA F4). On
+     top of them, and reaching up but not down, the button owns its own line and
+     the links keep theirs, and the room under them. */
+  .legal .codeask { display: inline; position: relative; z-index: 1; padding: 13px 0 0; margin: -13px 0 0; font-size: 13px; }
   #authcodefield { margin: 12px 0 0; }
   .tryfirst { display: flex; align-items: center; justify-content: center; gap: 3px; width: 100%;
     min-height: 44px; margin-top: 8px; border: none; background: none; color: var(--ember-ink);
