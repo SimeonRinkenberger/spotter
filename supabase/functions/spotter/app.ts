@@ -12263,7 +12263,8 @@ export const APP = String.raw`
       trainSeg, state.logs && state.logs.length, state.workouts.length]);
   }
 
-  function loadPlan(silent) {
+  // retry: the second try after a failed read, as loadLogs has.
+  function loadPlan(silent, retry) {
     if (!state.user) return Promise.resolve();
     if (!state.weekStart) state.weekStart = mondayOf(new Date());
     if (!monthStart) monthStart = monthOfWeek(state.weekStart);
@@ -12273,7 +12274,7 @@ export const APP = String.raw`
     // for the ticks, which meant the strip, the grid and the ring could each hold
     // a different opinion about the same Tuesday. state.logs is the one answer
     // now, and isSession is the one rule — the ring's rule.
-    return readOnce("plan:" + from + ":" + to + ":" + rev, function () {
+    return readOnce("plan:" + from + ":" + to + ":" + rev + ":" + !!retry, function () {
       return sb.from("plan").select("*").eq("user_id", uid).gte("day", from).lte("day", to)
         .then(function (r0) {
         if (!accountNow(epoch, uid)) return;
@@ -12295,7 +12296,11 @@ export const APP = String.raw`
         if (silent && shape === planSig) return;
         planSig = shape; renderTrain();
       }).catch(function () {
-        if (accountNow(epoch, uid)) toast("Could not refresh your plan. Try opening Train again.");
+        if (!accountNow(epoch, uid)) return;
+        if (!retry) return new Promise(function (resolve) {
+          setTimeout(function () { resolve(accountNow(epoch, uid) ? loadPlan(silent, true) : undefined); }, 900);
+        });
+        toast("Could not refresh your plan. Try opening Train again.");
       });
     });
   }
@@ -13586,7 +13591,17 @@ export const APP = String.raw`
   // Both reads, one page. Either may land first and either may repaint; the quiet
   // planSig check is what stops a tab swipe re-rendering an unchanged page and
   // throwing away where it was scrolled to.
+  // Train's two reads, and a net under them: if Up next is still loading eight
+  // seconds on, whatever is missing is asked for again and Train is drawn — and
+  // drawn anyway if another path brought it in without a render (the logs that
+  // arrived by the library's render, in Phase 0's first run).
   function prepareTrain() {
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    setTimeout(function () {
+      if (!uid || !accountNow(epoch, uid) || upNext().s !== 0 || !trainLean) return;
+      Promise.all([state.plan ? null : (planRev++, loadPlan(true)), state.logs ? null : loadLogs(),
+        state.libReady ? null : load(true)]).then(function () { if (accountNow(epoch, uid)) renderTrain(); });
+    }, 8000);
     return Promise.all([loadPlan(true), loadLogs().then(function () { renderTrain(); })]);
   }
 
@@ -14159,11 +14174,12 @@ export const APP = String.raw`
 
   // ---------- logs, progress, history ----------
 
-  function loadLogs() {
+  // retry: the second try after a failed read (below).
+  function loadLogs(retry) {
     if (state.logs && !state.logsLite) return Promise.resolve(state.logs);
     if (!state.user) return Promise.resolve([]);
     var uid = state.user.id, epoch = accountEpoch, rev = logsRev;
-    return readOnce("logs:" + rev, function () {
+    return readOnce("logs:" + rev + ":" + !!retry, function () {
       return sb.from("workout_logs").select("*").eq("user_id", uid)
         .order("started_at", { ascending: false }).limit(400).then(function (r) {
           if (!accountNow(epoch, uid)) return [];
@@ -14176,7 +14192,15 @@ export const APP = String.raw`
           libStatusesChanged();
           return state.logs;
         }).catch(function () {
-          if (accountNow(epoch, uid)) toast("Could not load your history. Open Train to try again.");
+          if (!accountNow(epoch, uid)) return [];
+          // One more try before saying so, as the library's read does. A token minted a
+          // moment ago can be refused once — PostgREST's 401 PGRST303 on a new account's
+          // first read, in the logs of Phase 0's first-run bug — and this is the answer
+          // Train is waiting on: with no second try, Up next sat on its skeleton for good.
+          if (!retry) return new Promise(function (resolve) {
+            setTimeout(function () { resolve(accountNow(epoch, uid) ? loadLogs(true) : []); }, 900);
+          });
+          toast("Could not load your history. Open Train to try again.");
           return [];
         });
     });

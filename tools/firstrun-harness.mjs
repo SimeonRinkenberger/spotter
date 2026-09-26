@@ -344,6 +344,8 @@ async function walk(sc) {
   // A plan read overtaken before it lands: the first answer is held at the fake
   // until the page has moved planRev on (what a local plan edit does), then let go.
   const release = sc.overtakePlan ? fake.hold('/rest/v1/plan') : null;
+  // Phase 0's cause, from the project's logs: the new account's first history read refused once.
+  if (sc.refuseLogs) fake.refuseOnce('/rest/v1/workout_logs');
   await page.go(fake.pageOrigin + '/?mode=' + sc.mode);
   play('launch');
   if (sc.releaseAfter) setTimeout(() => page.eval('window.__frRelease && __frRelease("SecureSession.remove")').catch(() => {}), sc.releaseAfter);
@@ -465,7 +467,10 @@ for (const mode of ['web', 'native']) {
     { name: mode + '-control-returning', mode, stored: { who: C, expired: false }, expect: 'train' },
     { name: mode + '-control-returning-expired', mode, stored: { who: C, expired: true }, expect: 'train' },
     // loadPlan used to drop an answer overtaken by planRev and never ask again.
-    { name: mode + '-plan-overtaken', mode, stored: { who: C, expired: false }, expect: 'train', overtakePlan: true });
+    { name: mode + '-plan-overtaken', mode, stored: { who: C, expired: false }, expect: 'train', overtakePlan: true },
+    // Phase 0's device run, as the edge logs tell it: the deleted account's session, then a sign-up whose first
+    // workout_logs read is refused once (401 PGRST303). loadLogs gave up and Up next kept its skeleton.
+    { name: mode + '-deleted-first-logs-refused', mode, stored: { who: A, expired: true, caches: true }, refuseLogs: true });
 }
 // The brief's leading theory, forced: the deleted account's Keychain removal
 // does not answer for 12 s (past secure-session.js's 10 s guard), and every

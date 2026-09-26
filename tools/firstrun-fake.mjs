@@ -106,6 +106,11 @@ export async function startFake(opt = {}) {
     for (const [rt, s] of sessions) if (s.uid === id) sessions.delete(rt);
     for (const t of Object.keys(rows)) rows[t] = rows[t].filter((r) => r.user_id !== id && !(t === 'profiles' && r.id === id));
   }
+  // A table whose next signed-in read is refused once, as PostgREST refused a new
+  // account's first workout_logs read in Phase 0 (401 PGRST303 at 03:02:32 UTC on 26
+  // Sept, in the project's edge logs, a second after the sign-up minted the token).
+  const refused = new Set();
+  function refuseOnce(path) { refused.add(path); }
   // A path prefix whose answers wait until the returned function is called.
   function hold(prefix) {
     let open; holds[prefix] = new Promise((r) => (open = r));
@@ -188,6 +193,11 @@ export async function startFake(opt = {}) {
     const c = claims(bearer(req));
     if (c.bad === 'PGRST303') return send(res, 401, { code: 'PGRST303', details: null, hint: null, message: 'JWT expired' });
     if (c.bad) return send(res, 401, { code: 'PGRST301', details: null, hint: null, message: 'No suitable key or wrong key type' });
+    if (req.method === 'GET' && c.role === 'authenticated' && refused.has(url.pathname)) {
+      refused.delete(url.pathname);
+      say('   → 401 PGRST303 (refused once) ' + url.pathname);
+      return send(res, 401, { code: 'PGRST303', details: null, hint: null, message: 'JWT issued at future' });
+    }
     const mine = (r) => c.role === 'authenticated' && (t === 'profiles' ? r.id === c.uid : r.user_id === c.uid);
     const eqs = [...url.searchParams].filter(([k, v]) => /^eq\./.test(v)).map(([k, v]) => [k, v.slice(3)]);
     const match = (r) => mine(r) && eqs.every(([k, v]) => String(r[k]) === v);
@@ -279,7 +289,7 @@ export async function startFake(opt = {}) {
   await new Promise((r) => server.listen(opt.port || 0, '127.0.0.1', r));
   const port = server.address().port;
   return {
-    port, log, say, users, sessions, rows, table, addUser, deleteUser, session, hold, names, delays, faults,
+    port, log, say, users, sessions, rows, table, addUser, deleteUser, session, hold, refuseOnce, names, delays, faults,
     pageOrigin: 'http://127.0.0.1:' + port, sbOrigin: 'http://' + REF + '.localhost:' + port,
     close: () => new Promise((r) => { server.closeAllConnections && server.closeAllConnections(); server.close(() => r()); })
   };

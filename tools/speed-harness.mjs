@@ -466,6 +466,8 @@ for (const [label, mutate] of [['removed', (c) => { delete c.store[SESSION]; }],
 // B.2: boot reads the goals beside the profile, and ends by asking the intent screen.
 function loadGoals() { if (typeof nets !== "undefined") nets.push("goals"); return Promise.resolve([]); } function introCheck() {}
       function isSession(l) { return !!(l && l.completed_at); }
+      // prepareTrain's eight-second net (B.2): nothing is loading here, so it stands down.
+      var trainLean = null; function upNext() { return { s: 6 }; }
     ` + DECL + '\n' + REAL, ctx);
     return ctx;
   }
