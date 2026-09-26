@@ -103,21 +103,45 @@ export const STYLE = String.raw`<style>
   .btn { display: flex; align-items: center; justify-content: center; gap: 7px; }
   .daydone { display: inline-flex; align-items: center; gap: 4px; }
 
-  /* ---------- landing (signed out) ---------- */
+  /* ---------- landing (signed out) ----------
+     One screen on a 6.1" phone (briefs/simplify-b2/RESEARCH-DESIGN.md §0): brand,
+     the headline in two lines, the loop, the doors. A column the height of the
+     frame, so the doors sit at its foot, under the thumb, on every phone; the
+     height left over is shared either side of the loop, which then sits in the
+     middle of the band between the headline and the buttons. */
   #landing { display: none; min-height: 100vh; min-height: var(--vvh, 100dvh); }
   #landing.open { display: block; }
-  .land { max-width: 460px; margin: 0 auto; padding: calc(38px + env(safe-area-inset-top)) 24px 60px; }
-  .brandrow { display: flex; align-items: center; gap: 11px; margin-bottom: 40px; }
-  .brandrow img { width: 40px; height: 40px; border-radius: 11px; box-shadow: var(--sh-sm); }
-  .brandrow span { font-family: var(--display); font-size: 21px; font-weight: 700; letter-spacing: -.012em; }
-  .hero { font-family: var(--display); font-size: 38px; line-height: 1.08; font-weight: 800;
-    letter-spacing: -.02em; margin: 0 0 16px; }
-  .hero em { font-style: normal; color: var(--ember); }
-  .sub { font-size: 15.5px; line-height: 1.6; color: var(--ink-2); margin: 0 0 34px; }
-  .authcard { background: var(--card); border: 1px solid var(--line); border-radius: 20px;
-    padding: 22px 20px; box-shadow: var(--sh-md); }
-  .authcard h2 { font-family: var(--display); font-size: 19px; margin: 0 0 16px; font-weight: 700;
-    letter-spacing: -.012em; }
+  .land { max-width: 460px; min-height: inherit; margin: 0 auto; display: flex; flex-direction: column;
+    padding: calc(14px + env(safe-area-inset-top)) 16px calc(6px + var(--sab)); }
+  .brandrow { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .brandrow img { width: 30px; height: 30px; border-radius: 8px; box-shadow: var(--sh-sm); }
+  .brandrow span { font-family: var(--display); font-size: 19px; font-weight: 700; letter-spacing: -.012em; }
+  .hero { font-family: var(--display); font-size: 30px; line-height: 1.12; font-weight: 800;
+    letter-spacing: -.02em; margin: 0 0 22px; }
+  .hero em { display: block; font-style: normal; color: var(--ember); }
+  .authcard, .doors { flex: 1 0 auto; display: flex; flex-direction: column; }
+  /* Three crops of the app, 3:4, a 16px gutter with a quiet chevron in it. */
+  .loop { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: auto 0; }
+  .loop figure { position: relative; margin: 0; }
+  .loop img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 14px;
+    border: 1px solid var(--line); background: var(--card); }
+  .loop figcaption { margin-top: 8px; font-size: 13px; line-height: 18px; font-weight: 600; text-align: center;
+    white-space: nowrap; letter-spacing: -.01em; }
+  .loop figure + figure::before { content: ""; position: absolute; left: -11px; top: calc(50% - 16px);
+    width: 5px; height: 5px; border: solid var(--muted); border-width: 1.6px 1.6px 0 0; transform: rotate(45deg); }
+  /* A short phone (the SE's 647pt) squares the frames and sets the headline a
+     size down, and the screen still fits. */
+  @media (max-height: 740px) {
+    .hero { font-size: 26px; margin-bottom: 16px; }
+    .brandrow { margin-bottom: 12px; }
+    .loop img { aspect-ratio: 1; }
+  }
+  .facehead { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; }
+  .facehead h2 { font-family: var(--display); font-size: 21px; font-weight: 700; margin: 0; letter-spacing: -.012em; }
+  /* A face arrives from the side it is on: forward from the right, back from
+     the left (app.ts, setAuthMode). */
+  .facein { animation: facein var(--t-3) var(--e-out); }
+  @keyframes facein { from { opacity: 0; transform: translateX(var(--fx, 24px)); } }
   .field { margin-bottom: 12px; }
   /* ---------- the small labels ----------
      Eighteen rules used to set their label in caps with a tenth of an em between
@@ -160,9 +184,10 @@ export const STYLE = String.raw`<style>
   .btn:active { transform: scale(.978); }
   .btn[disabled] { opacity: .55; }
   .btn.ghost { background: var(--sand); color: var(--ink); box-shadow: none; }
-  .authswap { text-align: center; margin-top: 14px; font-size: 13.5px; color: var(--ink-2); }
+  /* The email face's two quiet ways on: a thumb high each, one either side. */
+  .authswap { display: flex; justify-content: space-between; margin-top: 6px; }
   .authswap button { background: none; border: none; color: var(--ember-ink); font-weight: 650;
-    font-size: 13.5px; padding: 4px; }
+    font-size: 13.5px; min-height: 44px; padding: 0 2px; }
   .autherr { font-size: 13px; color: var(--ember-ink); margin-top: 12px; line-height: 1.5;
     background: var(--ember-soft); padding: 10px 12px; border-radius: 11px; display: none; }
   .autherr.show { display: block; }
@@ -208,43 +233,64 @@ export const STYLE = String.raw`<style>
   .mailmark .ic { width: 21px; height: 21px; }
   @media (prefers-reduced-motion: reduce) { .mailsent { animation: none; } }
 
-  /* ---------- provider sign-in (Google / Apple) ----------
-     Both marks sit on the same neutral button so the row reads as one control
-     type. --card is the only surface token that satisfies both brand rules at
-     once: white in light (Google light theme, Apple "white with outline") and
-     near-black in dark (Google dark theme, Apple black). On a --card authcard
-     that leaves the 1px stroke and --sh-sm doing the separating, which is how
-     Google's own light button looks on a white sheet.
-     Sizes come from Apple's HIG: minimum width 140px, minimum height 30pt, and
-     a margin of at least 1/10 of the button height around the content. 48px
-     matches the height of the ember Create-account button above, because Apple
-     asks that its button be no smaller than the other sign-in buttons. */
-  .oauth { margin-top: 18px; }
-  .oauthdiv { display: flex; align-items: center; gap: 12px; margin: 0 0 12px;
-    color: var(--muted); font-size: 11px; font-weight: 600; }
-  .oauthdiv::before, .oauthdiv::after { content: ""; flex: 1 1 0; height: 1px; background: var(--line); }
-  .oauthbtns { display: flex; flex-direction: column; gap: 10px; }
-  .oabtn { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 140px;
-    min-height: 48px; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 14px;
-    background: var(--card); color: var(--ink); box-shadow: var(--sh-sm);
-    font-size: 15.5px; font-weight: 650; letter-spacing: -.01em;
-    transition: transform var(--t-1) var(--e-out), border-color var(--t-2), opacity var(--t-2); }
+  /* ---------- the three doors ----------
+     One size for all three, 48pt, so they read as one set: Apple's rule for a
+     custom Sign in with Apple button (title 43 % of the height, logo and title one
+     colour, the black style on light and the white on dark) and Google's (its
+     light theme on light, its dark theme on dark with the G on white). Email is
+     the neutral outline beside them, never the accent. */
+  .doorbtns { padding-top: 16px; }
+  .doorbtns, .oauth, .oauthbtns { display: flex; flex-direction: column; gap: 12px; }
+  .oabtn { position: relative; display: flex; align-items: center; justify-content: center; width: 100%;
+    height: 48px; padding: 0 48px; border: 1px solid #747775; border-radius: 14px; background: #fff;
+    color: #1f1f1f; font-size: 20px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap;
+    transition: transform var(--t-1) var(--e-out), opacity var(--t-2); }
   .oabtn:active { transform: scale(.978); }
   .oabtn:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
   .oabtn[disabled] { opacity: .55; }
-  .oamark { flex: 0 0 auto; width: 20px; height: 20px; display: flex;
-    align-items: center; justify-content: center; }
+  .oabtn.apple { background: #000; border-color: #000; color: #fff; }
+  .oamark { position: absolute; left: 15px; top: 50%; width: 22px; height: 22px; margin-top: -11px;
+    display: flex; align-items: center; justify-content: center; border-radius: 50%; }
   .oamark svg { display: block; }
-  /* Mark on the leading edge, title optically centred in the whole button: the
-     padding matches the mark plus its gap so the label sits on the mid-line. */
-  .oalabel { flex: 1 1 auto; min-width: 0; text-align: center; padding-right: 30px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  @media (prefers-reduced-motion: reduce) {
-    .oabtn { transition: none; }
-    .oabtn:active { transform: none; }
+  .oamark .ic { width: 20px; height: 20px; }
+  @media (prefers-color-scheme: dark) {
+    .oabtn { background: #131314; border-color: #8e918f; color: #e3e3e3; }
+    .oabtn.apple { background: #fff; border-color: #fff; color: #000; }
+    #oagoogle .oamark { background: #fff; }
   }
-  .landfoot { text-align: center; margin-top: 30px; font-size: 12px; color: var(--muted); }
-  .landfoot a { color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .oabtn, .oabtn:active { transition: none; transform: none; } }
+  /* The legal line: 13pt at AA on both schemes, the links bold ink rather than
+     grey, each with a thumb's height to land in (Berman v. Freedom, 2022: an
+     agreement has to look like one). */
+  .legal { margin: 12px 0 0; font-size: 13px; line-height: 18px; text-align: center; }
+  .legal a { color: var(--ink); font-weight: 600; padding: 13px 0; margin: -13px 0; }
+  .legal .codeask { display: inline; padding: 13px 0; margin: -13px 0; font-size: 13px; }
+  #authcodefield { margin: 12px 0 0; }
+  .tryfirst { display: flex; align-items: center; justify-content: center; gap: 3px; width: 100%;
+    min-height: 44px; margin-top: 8px; border: none; background: none; color: var(--ember-ink);
+    font-size: 15px; font-weight: 650; }
+  .tryfirst .ic { width: 16px; height: 16px; }
+
+  /* ---------- the first minute (B.2) ----------
+     The intent screen's answers are chips a thumb high, four in two rows and
+     three in one; lit is the app's one accent. A starter row is a picker row
+     with Keep at its end; Train's first card lists its two other doors the way
+     the ⋯ sheets list theirs. */
+  .ichips { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 22px; }
+  .ichips .chip { flex: 1 1 auto; justify-content: center; min-height: 46px; padding: 0 10px; font-size: 15px; border-radius: 14px; }
+  .ichips.three .chip { flex: 1 1 0; }
+  .sheetbody .introskip { position: absolute; top: 6px; right: 12px; min-height: 44px; padding: 0 8px; font-size: 15px; }
+  #introliftf { margin: -8px 0 22px; }
+  .strow { display: flex; align-items: center; }
+  .strow .pickrow { flex: 1; min-width: 0; }
+  .strow .chip { margin-right: 12px; }
+  #askbody .pickrow { min-height: 64px; }
+  .firstdoors { margin: 12px 0 0; text-align: left; }
+  .firstdoors .pickrow { padding: 10px 14px; }
+  .firstdoors .pickrow .pt b { white-space: normal; }
+  #askart .pumpyart { width: 96px; height: 96px; border-radius: 24px; margin-bottom: 14px; }
+  #askbody { margin-bottom: 12px; }
+  #askbody .doorbtns { padding: 0; }
 
   /* ---------- app shell, and the frame everything full-screen is drawn in ----------
      #app owns the viewport instead of the document: the three pages scroll inside
@@ -3031,9 +3077,6 @@ export const STYLE = String.raw`<style>
      has; --paper on it measures 5.6:1 light and 8.4:1 dark, so the word survives
      both schemes without a second colour being invented for it. */
   .btn.del { background: var(--ember-ink); color: var(--paper); box-shadow: none; }
-  /* The same box that carries an auth error, carrying good news instead: a reset
-     link on its way, or an account that is gone. */
-  .autherr.ok { color: var(--good); }
 
   /* ---------- the keyboard ring ----------
      Three controls in the whole app showed one. :focus-visible, so a thumb never
@@ -3084,7 +3127,7 @@ export const STYLE = String.raw`<style>
      loops stop, informative ones stay. */
   @keyframes fadeonly { from { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
-    .viewin, .carditem.in, .msgin, .bodyfig, .reststrip, .sumdone,
+    .viewin, .facein, .carditem.in, .msgin, .bodyfig, .reststrip, .sumdone,
     .sumfigs .setpill, .sumprs .setpill, .sharewrap, .scbtns.in, .scvid,
     .proposal .done, .proposal .declined {
       animation-name: fadeonly; animation-duration: var(--t-2); animation-delay: 0ms; }
