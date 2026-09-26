@@ -476,7 +476,8 @@ SCENARIOS.push({ name: 'native-deleted-keychain-stalls', mode: 'native', stored:
 // --fuzz N: N walks of the deleted-account launch under random conditions — the
 // network's and the Keychain's speed, how long the person takes, a refresh that
 // fails for a while before the server's answer gets through, and the app being
-// sent away and brought back at random moments. Seeded, so a failure replays.
+// sent away and brought back at random moments. A seed gives back the same
+// conditions, not the same interleaving: each answer's time is drawn as it comes.
 const FUZZ = Number(val('fuzz', 0));
 if (FUZZ) {
   let seed = Number(val('seed', Date.now() % 100000));
