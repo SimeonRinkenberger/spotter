@@ -77,6 +77,10 @@ everything else is as rendered. Before-screens from the iPhone 16e on build 10 a
   "Try a workout first"; a guest's session stays on the phone and the first sign-in saves it as an ordinary log. The
   first plan offers training-day reminders on a button that does not say Allow, before the system's own ask.
   "Workouts per week" everywhere.
+- **Passkeys wait** (the spec). **Deleting an account still revokes Sign in with Apple:** the native sheet hands
+  Apple's one-time code to `registerAppleGrant` (app.ts), which the server keeps (`rememberAppleGrant`, apple-auth.ts);
+  account deletion calls `forgetAppleGrant` before the auth row goes (index.ts, `handleAccountDelete`). The web sign-in
+  paths removed this cycle never carried a grant.
 - **Pumpy's goal front** (b2-pumpy-ui): the goal chips and quiet links from `goalStarters()`; the ask card (segmented
   control, chips, the set sheet's stepper, date chips + the phone's picker; "Are you 18 or older?" never pre-selected);
   the program card; confirm → Train at once, Undo on the toast; Basic's free plan, the Plus offer under it, and the
