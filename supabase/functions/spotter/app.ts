@@ -15954,19 +15954,19 @@ export const APP = String.raw`
   // state), "Adjust with Pumpy" (the goal sheet, the weekly check-in).
   // ctx = { message, goal (a chip's hint), adjust (a goal row), send }. Always a
   // new chat, marked a goal chat so its first turn says goal: true. A chip sends
-  // at once; an adjustment puts its facts in the composer instead, so the person
-  // can say what should change before it goes; send overrides either. With no
-  // message it is simply Pumpy's empty chat, on the chips.
+  // at once; an adjustment's facts (its caller writes them) wait in the composer,
+  // focused, so the person says what should change and a model turn is their
+  // tap; send overrides either. With no message it is Pumpy's chat on the chips.
   // Basic's first goal turn needs no word from the client about its free plan:
   // the server claims it, or carries the turn on in the thread already claimed,
   // or refuses a spent one with the 403 sendPumpy turns into the preview. Known
   // to be spent here, the preview comes without a request at all.
   function openGoalChat(ctx) {
     ctx = ctx || {};
-    var free = isFree(), fp = freeProgram(), box = $("pumpyinput");
-    var text = ctx.message || (ctx.adjust ? adjustText(ctx.adjust) : "");
-    // Decisions §1: once the free plan is built, adjusting it is Plus.
-    if (free && ctx.adjust) { openPlans({ kind: "goal" }); return; }
+    var free = isFree(), fp = freeProgram(), box = $("pumpyinput"), text = ctx.message || "";
+    // Decisions §1: once the free plan is built, adjusting it is Plus. (A free
+    // plan still open — undone, say — is still Basic's to talk over.)
+    if (free && ctx.adjust && !(fp && fp.state === "open")) { openPlans({ kind: "goal" }); return; }
     if (pumpy.thread || pumpy.messages.length || pumpy.busy) { pumpyBlank(); renderPumpy(); }
     pumpy.goal = ctx.goal || {};
     setView("pumpy");
@@ -15980,19 +15980,11 @@ export const APP = String.raw`
       box.value = text;
       box.style.height = "auto";
       box.style.height = Math.min(box.scrollHeight, 138) + "px";
+      // Inside the tap that asked, this is the one call iOS answers with a keyboard.
+      box.focus({ preventScroll: true });
       return;
     }
     sendPumpy(text);
-  }
-
-  // "Adjust my Bench 305 plan: week 2 of 8, est. max 291 (+4), on track." The
-  // goal card's own facts, so the coach starts where the person was looking.
-  function adjustText(g) {
-    var st = goalStatusOf(g, { logs: state.logs, body: ((state.profile || {}).settings || {}).body, now: new Date() });
-    var bits = ["week " + st.week + " of " + st.weeks], d = st.latest !== null && g.baseline ? Math.round(st.latest - g.baseline) : null;
-    if (g.kind === "lift" && d !== null) bits.push("est. max " + st.latest + " (" + (d < 0 ? "" : "+") + d + ")");
-    if (g.kind === "fat" && st.latest !== null) bits.push("latest weigh-in " + st.latest + " " + g.unit);
-    return "Adjust my " + g.title + " plan: " + bits.concat([st.status]).join(", ") + ".";
   }
 
   // Basic with the free plan spent: no request, no AI. What Pumpy would build,
