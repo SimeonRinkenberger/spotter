@@ -1168,6 +1168,14 @@ export const APP = String.raw`
     saveSettings();
   }
 
+  // Pumpy's empty chat is drawn from the answers (goalStarters), and warmPages
+  // drew it at boot, while the question was still open: without this, "Lose
+  // fat" and "Home" would open Pumpy on "Get my bench to a new best". Continue,
+  // Skip and a drag away all close the sheet, so closeSheet calls this.
+  function introPumpy() {
+    if (pumpy.loaded && !pumpy.thread && !pumpy.messages.length && !pumpy.busy) renderPumpy();
+  }
+
   // ---------- a workout before an account ----------
   //
   // "Try a workout first" runs a Spotter Starter with nobody signed in (Apple:
@@ -18813,6 +18821,7 @@ export const APP = String.raw`
     if (!n.classList.contains("open")) return;
     if (id === "aiconsentsheet") dismissAiConsent();
     if (id === "asksheet") doorsHome();
+    if (id === "introsheet") introPumpy();
     if (introLater) setTimeout(introAsk, 400);
     // The steppers go back to the superset panel they were borrowed from.
     if (id === "setsheet") ssDock();
