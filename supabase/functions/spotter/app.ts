@@ -1643,6 +1643,8 @@ export const APP = String.raw`
         // to be wrong here is to show a paywall to somebody who has just paid.
         if (billing.said) state.profile.plan = billing.said;
         renderLibCount();
+        // A fat-loss goal reads its weigh-ins off this row (B.2).
+        goalCard.sync();
       }
     });
     // Parked links are handed over only to the account the native side has been
@@ -7472,7 +7474,8 @@ export const APP = String.raw`
     });
   }
 
-  function startWorkout(w, resume) {
+  // row: the plan row it was started from, when a door knows it (rxStart).
+  function startWorkout(w, resume, row) {
     // Start on a card whose session is waiting is Resume: nobody starting the
     // workout they paused an hour ago wants a second copy of it. Every Start
     // door comes through here — the card's dock, the day card, Up next, the
@@ -7488,6 +7491,9 @@ export const APP = String.raw`
     guideClear(); guideStill();
     // The session owns its exercise list, including additions recovered from a draft.
     w = Object.assign({}, w, { blocks: JSON.parse(JSON.stringify((resume && resume.blocks) || w.blocks || [])) });
+    // A program day (B.2): the goal lift takes that day's numbers, on this copy
+    // only. A resumed session's blocks already carry the ones it began with.
+    if (!resume) rxApply(w.blocks, row || rxToday(w.id));
     var screens = flatten(w);
     wo = {
       workout: w, screens: screens, i: (resume && resume.i) || 0,
@@ -8424,12 +8430,15 @@ export const APP = String.raw`
   // off when it is not known: "Goal 2 × 6-8 · last time 8 × 90 lb". A goal met
   // says so in the same voice. Unfinished is where every set starts, not an
   // error, so nothing here is ever red.
+  // A program day's lift says whose numbers these are, first: "W5 Heavy · Goal
+  // 5 × 3 @ 250 lb · last time …" (rxApply put them on the exercise).
   function goalText(s, e) {
-    var h = histReady && hist[exKey(e)], ask = doseText(s.ex), bits = [];
+    var h = histReady && hist[exKey(e)], ask = doseText(s.ex), bits = [], rx = s.ex.rx;
     if (e.sets.filter(Boolean).length >= targetOf(s)) return "Goal reached · extras welcome";
+    if (rx && (rx.week || rx.label)) bits.push([rx.week && "W" + rx.week, rx.label].filter(Boolean).join(" "));
     // In a circuit the lap outranks the dose: the reps do not change between rounds.
     if (isCircuit(s.block)) bits.push("Round " + roundOf(s.bi) + " of " + roundsOf(s.block) + (ask ? " · " + ask : ""));
-    else if (ask) bits.push("Goal " + ask);
+    else if (ask) bits.push("Goal " + ask + (rx && rx.weight ? " @ " + wtText(rx.weight, rx.unit) + " " + state.unit : ""));
     if (h && h.date) bits.push("last time " + (h.reps ? h.reps + (h.weight ? " × " + wtText(h.weight, h.unit) + " " +
       state.unit + (h.pair ? " each" : "") : " reps") : timeText(h.secs || 0)));
     return bits.join(" · ");
@@ -8495,6 +8504,8 @@ export const APP = String.raw`
       main.appendChild(el("h2", "wname", s.ex.name));
       main.appendChild(el("div", "wgoal", goalText(s, entry))).id = "wgoal";
       if (s.ex.recommendation) main.appendChild(el("div", "wnote", s.ex.recommendation.note));
+      // The program's word for the day, when it has one ("Work up to a new max").
+      if (s.ex.rx && s.ex.rx.note) main.appendChild(el("div", "wnote", s.ex.rx.note));
 
       if (isTimed(s.ex)) {
         timedBody(main, s, entry);
@@ -8739,17 +8750,21 @@ export const APP = String.raw`
       var m = String(s.ex.reps).match(/\d+/);
       if (m) targetReps = parseInt(m[0], 10);
     }
-    var h = hist[exKey(entry)], prev = null, k;
+    var h = hist[exKey(entry)], prev = null, k, rx = s && s.ex && s.ex.rx;
     // The weight just lifted outranks last session's: set 2 opens on set 1's
     // load, the way Strong and Hevy carry it down the table. Found in the
     // superset panels, where the steppers never close and a load dialled for
     // set 1 went back to zero for set 2 — the sheet had always done the same.
     for (k = idx - 1; k >= 0 && !prev; k--) if (entry.sets[k] && entry.sets[k].weight) prev = entry.sets[k];
+    // A program day's load (B.2) comes next, ahead of last time: it is this
+    // week's number, and a set already lifted heavier or lighter still carries
+    // down, as above. The reps are already the day's (rxApply set ex.reps). So
+    // the big button, the set sheet and the Lock Screen's dose all say 250 × 3.
     return {
       idx: idx,
       reps: existing ? existing.reps : targetReps,
       weight: existing ? toUnit(existing.weight, existing.unit)
-        : prev ? toUnit(prev.weight, prev.unit) : (h ? toUnit(h.weight, h.unit) : 0)
+        : prev ? toUnit(prev.weight, prev.unit) : rx && rx.weight ? toUnit(rx.weight, rx.unit) : (h ? toUnit(h.weight, h.unit) : 0)
     };
   }
 
@@ -10626,8 +10641,9 @@ export const APP = String.raw`
     sumBests(prs);
 
     // What next (sumNext), then the one thing that sells, and only under it — a
-    // live session's, since a past one's next step is long gone.
-    if (!past) [sumNext(w), sumOffer(w)].forEach(function (n) { if (n) main.appendChild(n); });
+    // live session's, since a past one's next step is long gone. A session that
+    // closes a program week says so first (sumCheck, B.2).
+    if (!past) [sumCheck(payload), sumNext(w), sumOffer(w)].forEach(function (n) { if (n) main.appendChild(n); });
 
     // The card, and every way off this phone with it.
     main.appendChild(shareRow(payload, logged, past));
@@ -12359,7 +12375,7 @@ export const APP = String.raw`
       '</div></div><div class="cdow" aria-hidden="true"><span>M</span><span>T</span><span>W</span><span>T</span>' +
       '<span>F</span><span>S</span><span>S</span></div><div class="crows" id="tcalrows"><div class="cblock"></div></div></div>' +
       '<div class="tbelow"><button class="thandle" aria-controls="tcalrows" data-noswipe></button><div></div>' +
-      '<div class="tshelf hide"></div><div class="trainseg"><div class="seg" role="tablist" ' +
+      '<div class="tgoal"></div><div class="tshelf hide"></div><div class="trainseg"><div class="seg" role="tablist" ' +
       'aria-label="What to show for this week"><span class="segpill"></span></div></div><div class="trainbody"></div></div>';
     var q = function (s) { return v.querySelector(s); };
     trainLean = q(".tbelow");
@@ -12979,8 +12995,11 @@ export const APP = String.raw`
         [["btn", "Resume", woForward], ["btn ghost tmove", "Finish workout", function () { woForward(); woFinish(); }]]);
     }
     if (u.s < 3) {
+      // A program day starts on its own row, so Workout Mode takes that row's
+      // numbers (rxStart), and says them here first: "W5 · Heavy · 5×3 @ 250 lb".
       card = tcard("act", "Planned today", w, wMeta(w, u.more && "+" + u.more + " more today"),
-        [["btn", "Start workout", startWorkout, w]]);
+        [["btn", "Start workout", rxStart, u]]);
+      if (u.rx) card.insertBefore(rxLine(u.rx), card.lastChild);
       if (u.done.length) {
         card.insertBefore(el("div", "tdose", "Also done today: " +
           u.done.map(function (l) { return l.workout_title || "Workout"; }).join(", ")), card.lastChild);
@@ -13020,12 +13039,326 @@ export const APP = String.raw`
   }
 
 
-  // ---------- train · the goal card (seam, B.2; built by b2-goal) ----------
+  // ---------- train · the goal card (B.2) ----------
   //
-  // Under Up next, the active goal on one line (goalStatusOf's), which opens the
-  // goal sheet: details, Adjust with Pumpy, End goal with Undo. sync() is cheap
-  // and idempotent; goalsChanged and anything that moves the logs call it.
-  var goalCard = { sync: function () {} };
+  // Under Up next, while a goal is active: what it is and where it stands. The
+  // shape is Runna's plan header and Apple Fitness's trends (RESEARCH-DESIGN §4):
+  // line one the goal and a status pill that pairs an icon with a word, never
+  // colour alone (HIG, WCAG 1.4.1); line two the numbers and the week, "week 2
+  // of 8" and never "2/8"; line three a bullet bar, filled to where you are with a
+  // tick where the plan expects you this week — one comparison a glance can read,
+  // where a sparkline that small cannot be. Behind is amber and never red: in
+  // TrainingPeaks red means a missed session, and a slow week is information,
+  // not an error. A fat-loss goal never celebrates a scale moving faster than its
+  // plan, so its two off-plan states wear the neutral grey. The whole card is one
+  // button with one label that says all of it, and opens the goal sheet, which
+  // is drawn from the same three lines (GCARD, gPaint).
+  //
+  // sync() is cheap and idempotent — goalsChanged, every Train render and the
+  // profile's arrival (a weigh-in lives there) all call it — and redraws only
+  // what changed, in place: the bar slides, the pill crossfades. Arriving, the
+  // slot grows under a card that rises in; leaving, the card fades while the slot
+  // closes, so the shelf under it glides rather than jumps (sizeMotion). Reduced
+  // motion keeps the fades and nothing else.
+  var GCARD = '<span class="gtop"><b></b><span></span></span><span class="gline"> </span><span class="gbar"><i></i><s></s></span>';
+
+  var goalCard = { sync: function () {
+    var box = trainLean && trainLean.querySelector(".tgoal"), g = activeGoal(), v = g && goalView(g), c = box && box.firstChild, s;
+    s = v ? JSON.stringify([g.title, v.line, v.pill, v.f, v.t]) : "";
+    if (!box || s === (box._sig || "")) return;
+    box._sig = s;
+    s = box.offsetHeight;
+    if (!v) {
+      if (c) {
+        c.classList.add("gout");
+        v = function () { if (c.parentNode) box.removeChild(c); };
+        if (lessMotion()) setTimeout(v, 220); else sizeMotion(box, s, 0, v);
+      }
+      return;
+    }
+    // A card still leaving is replaced, not revived: a new goal is a new card.
+    if (!c || c.classList.contains("gout")) {
+      box.innerHTML = '<button class="daycard gcard gin">' + GCARD + "</button>";
+      c = box.firstChild;
+      c.onclick = openGoalSheet;
+      c.querySelector(".gline").appendChild(ic("chev"));
+      // Measured with the bar still empty, so it fills as the card rises.
+      sizeMotion(box, s, box.offsetHeight);
+    }
+    gPaint(c, g, v);
+    c.setAttribute("aria-label", g.title + ". " + v.line + ". " + v.pill[2]);
+  } };
+
+  // The three lines, into the card or the sheet: the title, the pill (its class,
+  // its mark, its word, crossfading when the word changes), the numbers, the bar.
+  function gPaint(c, g, v) {
+    var n = c.querySelector(".gtop span"), was = n.textContent, bar = c.querySelector(".gbar").children;
+    c.querySelector("b").textContent = g.title;
+    n.className = "gpill " + v.pill[0];
+    n.innerHTML = "";
+    icon(n, v.pill[1], v.pill[2]);
+    if (was && was !== v.pill[2]) { void n.offsetWidth; n.classList.add("planswap"); }
+    c.querySelector(".gline").firstChild.nodeValue = v.line;
+    bar[0].style.transform = "scaleX(" + v.f + ")";
+    bar[1].style.left = v.t * 100 + "%";
+  }
+
+  // Where a goal stands, in the words and fractions every surface prints.
+  // goalStatusOf decides; this only says it. A lift reads its estimated max (the
+  // baseline until a set says otherwise), a fat-loss goal its last weigh-in,
+  // anything else its sessions against the plan's pace. f is how far the bar
+  // fills and t where the plan's tick stands, both along the line from the start
+  // to the target. A load says how far off the line it is ("Ahead · +6 lb"); a
+  // count of sessions reads better as the word alone. logs: the recap hands in
+  // the session it has not saved yet.
+  function goalView(g, logs) {
+    var s = state.profile && state.profile.settings, st = goalStatusOf(g, { logs: logs || state.logs, body: s && s.body });
+    var k = g.kind, fat = k === "fat", w = fat || k === "lift", b = +g.baseline || 0, t = +g.target || 0, u = w ? " " + g.unit : "";
+    var at = k === "lift" ? st.latest || b : st.latest, n = ((g.program && g.program.days_per_week) || t || 3) * st.weeks;
+    var d = k === "lift" ? " · " + (at > st.expected ? "+" : "") + Math.abs(at - st.expected) + u : "";
+    var nums = w ? (at === null ? "Weigh in to track it" : (fat ? "" : "est. ") + at + " → " + t + u) : at + " of ~" + st.expected + " sessions";
+    function f(x) { return x === null ? 0 : clamp(w ? (x - b) / (t - b || 1) : x / n, 0, 1); }
+    // Before its first day a program is on no line yet, so it is neither ahead
+    // nor behind: the pill says when it starts and the line how long it runs.
+    return { st: st, nums: nums, line: nums + " · " + (st.started ? "week " + st.week + " of " + st.weeks : st.weeks + " weeks"),
+      f: f(at), t: f(st.expected), pill: !st.started ? ["", "calendar", "Starts " + pdWord(g.start_day)]
+        : fat && st.status === "ahead" ? ["", "arrow-up-right", "Ahead of plan"]
+        : fat && st.status === "behind" ? ["", "hourglass", "Slower than plan"]
+        : { "on track": ["ok", "check", "On track"], ahead: ["ok", "arrow-up-right", "Ahead" + d], behind: ["low", "hourglass", "Behind" + d],
+          reached: ["ok", "flag", "Reached"], done: ["", "flag", "Done"], "no data": ["", "plus", "Weigh in"] }[st.status] };
+  }
+
+  // "W5 · Heavy · 5×3 @ 250 lb" under a planned workout, with the trend mark
+  // Hevy Trainer puts on the exercises it progressed: Up next and a day's rows.
+  function rxLine(p) {
+    return icon(el("div", "trx"), "trend", [p.text, p.note].filter(Boolean).join(" · "));
+  }
+
+  // A plan row's prescription as this account reads it, through the one rule.
+  function rxOf(row) { return prescriptionFor(row, { goals: state.goals, logs: state.logs, unit: state.unit }); }
+
+  // ---------- the goal sheet ----------
+  //
+  // The card, opened: where it started and where it ends, and by when; the line
+  // it is on; the honest part of the plan (the dream a too-fast goal was clamped
+  // from, and the note that said why); this program week's days with their
+  // numbers, each a way to that day on the calendar; and for fat loss the daily
+  // target, a weigh-in, the sources and the not-medical-advice line. Adjust with
+  // Pumpy and End goal are the sheet's own buttons (markup.ts). Refilled in
+  // place after a weigh-in, so it stays where it is.
+  function openGoalSheet() { gsFill(); openSheet("goalsheet"); }
+
+  function gsFill() {
+    var g = activeGoal(), b = $("gsbody"), v, p, x, ws, to, rows;
+    if (!g) return;
+    v = goalView(g); p = g.program || {}; x = goalLift(g.exercise);
+    b.innerHTML = GCARD;
+    gPaint(b, g, v);
+    b.querySelector("b").id = "gstitle";
+    b.insertBefore(el("p", "lede", capWord((x ? x.name + " · " : "") + (g.baseline && g.target ? "from " + g.baseline + " to " +
+      g.target + " " + g.unit + " by " : "until ") + shortDate(dayDate(g.end_day)))), b.children[1]);
+    if (g.dream && g.dream !== g.target) b.appendChild(el("p", "lede", g.dream + " is the goal; this block aims for " + g.target + "."));
+    if (p.verdict_note) b.appendChild(el("p", "setnote", p.verdict_note));
+    // The program week the card's "week 2 of 8" names: seven days from the day
+    // the program started on, whatever weekday that was.
+    ws = rxWeekStart(g, v.st.week); to = ymd(addDays(ws, 6)); ws = ymd(ws);
+    rows = (state.plan || []).filter(function (r) {
+      return r.prescription && r.prescription.goal_id === g.id && r.day >= ws && r.day <= to && planWorkout(r.workout_id);
+    }).sort(function (a, c) { return a.day < c.day ? -1 : 1; });
+    x = (p.weeks || [])[v.st.week - 1];
+    if (rows.length) b.appendChild(el("p", "readylabel", "This week" + (x && x.label ? " · " + x.label : "")));
+    rows.forEach(function (r) {
+      var y = rxOf(r);
+      b.appendChild(histRow(capWord(pdWord(r.day)) + " · " + (planWorkout(r.workout_id).title || "Workout"),
+        [y.text, y.note, sessionFor(daySessions(state.logs, r.day), r.workout_id) && "done ✓"].filter(Boolean).join(" · "), gsDay, r.day));
+    });
+    if (g.kind === "fat") {
+      x = p.daily || {};
+      if (x.steps || x.cardio_minutes) {
+        b.appendChild(el("p", "lede", "Every day: " + (x.steps ? x.steps.toLocaleString() + " steps" : x.cardio_minutes + " min of cardio")));
+      }
+      b.appendChild(tbtn("btn ghost", "Log today’s weight", openWeighIn));
+      (p.sources || []).forEach(function (s) {
+        var a = b.appendChild(icon(el("a", "linkbtn gsrc"), "arrow-up-right", s.title));
+        a.href = s.url; a.target = "_blank"; a.rel = "noopener";
+      });
+      b.appendChild(el("p", "setnote", "Not medical advice. If you have a health condition, check with your doctor first."));
+    }
+  }
+
+  // A day of this week, on the calendar: the sheet goes and Train shows that day.
+  function gsDay(k) { closeSheet("goalsheet"); pickDay(k); }
+
+  wireSheet("goalsheet");
+
+  // Opened first, then the sheet closes behind it, as Train's ⋯ rows hand over:
+  // a Basic account's Plus page (openGoalChat decides) keeps the history entry.
+  $("gsadjust").onclick = function () {
+    var g = activeGoal();
+    if (g) openGoalChat({ adjust: g, message: "Let’s adjust my plan: " + goalView(g).st.text + "." });
+    closeSheet("goalsheet");
+  };
+  $("gsend").onclick = endGoal;
+
+  // End goal, on the delayed commit this file uses for everything it takes away
+  // (clearWeek's): the goal leaves the card and its days from today leave the
+  // calendar on the tap, and the writes go when the toast offering Undo does, so
+  // one Undo restores both and nothing can half-fail. A day already trained
+  // today stays: that session happened. The rows are read again at the commit
+  // rather than taken from the screen, because a program runs past the weeks the
+  // strip has read. The goal first: if it will not end, nothing else goes.
+  function endGoal() {
+    var g = activeGoal(), day = ymd(new Date()), at = new Date().toISOString(), hid = [];
+    if (!g) return;
+    function gone(r) {
+      return r.prescription && r.prescription.goal_id === g.id && r.day >= day &&
+        !(r.day === day && sessionFor(daySessions(state.logs, day), r.workout_id));
+    }
+    function back(on) {
+      if (on) g.status = "active";
+      hid.forEach(function (id) { delete planGone[id]; });
+      loadPlan(true);
+      goalsChanged();
+    }
+    closeSheet("goalsheet");
+    g.status = "ended";
+    (state.plan || []).forEach(function (r) { if (gone(r)) { planGone[r.id] = 1; hid.push(r.id); } });
+    planHide();
+    repaintPlan();
+    goalsChanged();
+    offerUndo("Ended " + g.title, function () {
+      sb.from("goals").update({ status: "ended", ended_at: at }).eq("id", g.id).then(function (r) {
+        if (r.error) { toast("That goal did not end. Try again in a moment."); return back(1); }
+        return sb.from("plan").select("id,day,workout_id,prescription").eq("user_id", state.user.id).gte("day", day).then(function (x) {
+          var ids = (x.data || []).filter(gone).map(function (q) { return q.id; });
+          return ids.length && sb.from("plan").delete().in("id", ids);
+        }).then(function () { back(); loadGoals(); });
+      });
+    }, function () { back(1); });
+  }
+
+  // ---------- a program day, carried ----------
+  //
+  // Where a day's prescription goes when the day does. Move and Do it today keep
+  // the workout, so its numbers go with it. Swap puts another workout on the day:
+  // the numbers go too when that workout has the lift they are for, or when they
+  // are for no lift at all (a fat-loss day's steps) — but a leg day wearing
+  // "5×3 @ 250" would be a bench number on a card with no bench, so there the
+  // day becomes the person's own and drops them. (SHARED §3 keeps a swapped day's
+  // prescription and the brief drops it on a different workout: this is both,
+  // by what the numbers are for.) Copy week never comes here: a copy is the
+  // person's own plan, not the program's (doCopy writes day and workout only).
+  function rxKeep(old, w) {
+    var p = old && old.prescription;
+    return p && (old.workout_id === w.id || !p.exercise || (w.blocks || []).some(function (b) {
+      return (b.exercises || []).some(function (ex) { return ex.canonical_id === p.exercise; });
+    })) ? p : null;
+  }
+
+  // Start on a planned row (Up next, a day's Start now): the session takes that
+  // row's numbers, whichever day it is on.
+  function rxStart(it) { startWorkout(it.w, null, it.row); }
+
+  // Any other door to a workout (the card, a link, the ready sheet) on a day the
+  // program has it: today's row for it that carries a prescription.
+  function rxToday(id) {
+    var k = ymd(new Date());
+    return (state.plan || []).filter(function (p) { return p.day === k && p.workout_id === id && p.prescription; })[0];
+  }
+
+  // The day's numbers onto the session's own copy of the card (startWorkout's):
+  // the goal lift takes the sets and reps, and carries the rest as ex.rx — the
+  // load, the week and its label — which setPrefill and goalText read, and so the
+  // big button, the set sheet and the Lock Screen's dose. The draft saves the
+  // blocks, so a paused session keeps them. The lift's first appearance outside
+  // a warm-up takes them: a warm-up at 5×3 @ 250 would be no warm-up. Every other
+  // movement progresses as it always has.
+  function rxApply(blocks, row) {
+    var p = row && rxOf(row), hit = null;
+    if (!p || !p.exercise) return;
+    blocks.forEach(function (b) {
+      (b.exercises || []).forEach(function (ex) {
+        if (ex.canonical_id === p.exercise && (!hit || hit.w && b.type !== "warmup")) hit = { ex: ex, w: b.type === "warmup" };
+      });
+    });
+    if (!hit) return;
+    hit = hit.ex;
+    if (p.sets) hit.sets = p.sets;
+    if (p.reps) hit.reps = p.reps;
+    hit.rx = p;
+  }
+
+  // ---------- the weekly check-in ----------
+  //
+  // The recap of the session that closes a program week: the week, done, and
+  // what it did to the number the goal is about — "week 2 of 8 done · est. max
+  // 291 (+4)", the change on the estimate that week's loads were set from.
+  // Runna and Hevy Trainer close a week with a line like this, and neither
+  // pushes one; nor does this. The session is today's program row for this
+  // workout, and the week is closed when no later day of the goal falls in the
+  // same program week. Adjust with Pumpy opens the chat with those facts once
+  // Workout Mode has gone: drawn under the recap it would be a door nobody could
+  // see, and a sheet opened before the overlay's history entry is spent would be
+  // closed by it.
+  function sumCheck(l) {
+    var g = activeGoal(), day = ymd(new Date()), p, end, v, was, line;
+    function mine(r) { return r.prescription && r.prescription.goal_id === g.id; }
+    p = g && (state.plan || []).filter(function (r) { return r.day === day && r.workout_id === l.workout_id && mine(r); })[0];
+    p = p && p.prescription;
+    if (!p || !p.week) return null;
+    end = ymd(addDays(rxWeekStart(g, p.week), 6));
+    if ((state.plan || []).some(function (r) { return r.day > day && r.day <= end && mine(r); })) return null;
+    // This session is not in the logs yet (its insert is still in the air), so it is handed in.
+    v = goalView(g, [l].concat(state.logs || []));
+    line = v.nums;
+    if (g.kind === "lift" && v.st.latest) {
+      was = liftMax(state.logs, g.exercise, rxWeekStart(g, p.week), g.unit);
+      was = was ? Math.round(was.est) : +g.baseline;
+      line = "est. max " + v.st.latest + " " + g.unit + " (" + (v.st.latest < was ? "−" : "+") + Math.abs(v.st.latest - was) + ")";
+    }
+    return tcard("good sumnext", "week " + p.week + " of " + g.weeks + " done", { title: g.title }, line, [["btn ghost", "Adjust with Pumpy",
+      function (m) { leaveWorkout(); setTimeout(function () { openGoalChat({ adjust: g, message: m }); }, 300); },
+      "I finished week " + p.week + " of " + g.weeks + " of my " + g.title + " plan: " + line + ". What should change next week?"]]);
+  }
+
+  // ---------- body weight ----------
+  //
+  // One optional number in the person's unit, typed by the person: Settings ›
+  // Body weight and a fat-loss goal's Log today's weight are one weigh-in.
+  // settings.body = { weight, unit, at, log: [{ d, v, u }] } — the latest and the
+  // last 52, newest last, one a day — so a goal draws its line from it and the
+  // snapshot the server gives Pumpy has it. Nothing reads Health yet. Clearing
+  // the field takes all of it off: it is theirs to remove. The account sheet is
+  // the one Settings already types a name into, and it opens over this one.
+  function bodyNow() {
+    var b = state.profile && state.profile.settings && state.profile.settings.body;
+    return b && b.weight ? unitTo(b.weight, b.unit, state.unit) : "";
+  }
+
+  function paintBody() { var w = bodyNow(); $("setbody").textContent = w ? w + " " + state.unit : "Not set"; }
+
+  function openWeighIn() {
+    var u = state.unit;
+    if (!state.profile) return;
+    accSheet({ title: "Body weight", lede: "Optional. Pumpy plans with it, and a weight-loss goal draws its line from it. Clear it to remove it.",
+      fields: [{ name: "wt", label: "Today, in " + u, value: bodyNow() }], go: "Save",
+      run: function (done) {
+        var s = state.profile.settings || (state.profile.settings = {}), t = accVal("wt").trim(), day = ymd(new Date()),
+          v = Math.round(parseFloat(t.replace(",", ".")) * 10) / 10;
+        if (t && !(v >= (u === "kg" ? 20 : 44) && v <= (u === "kg" ? 450 : 990))) return done("That does not look like a body weight.");
+        s.body = t ? { weight: v, unit: u, at: day, log: ((s.body && s.body.log) || []).filter(function (x) { return x.d !== day; })
+          .concat([{ d: day, v: v, u: u }]).slice(-52) } : undefined;
+        // The column is written whole, from state.profile.settings: body rides along.
+        saveSettings();
+        paintBody();
+        goalCard.sync();
+        if ($("goalsheet").classList.contains("open")) gsFill();
+        toast(t ? "Weigh-in saved." : "Body weight removed.");
+        done(null);
+      } });
+    $("acc_wt").inputMode = "decimal";
+  }
+  $("setbodyrow").onclick = openWeighIn;
 
   // S6: nothing on the shelf to do yet. The lesson is the add sheet's own share
   // row, the one used every day after this, as the empty library shows it.
@@ -13060,10 +13393,13 @@ export const APP = String.raw`
       if (cardArt(w)) { var img = head.appendChild(el("img")); img.alt = ""; img.src = cardArt(w); }
       t.appendChild(el("b", null, w.title || "Workout"));
       t.appendChild(el("span", null, [wait ? "Saving…" : miss ? "Missed" : "Planned", fmtDur(w.duration_minutes)].filter(Boolean).join(" · ")));
+      // A program day says what it asks of the lift (dayState worked it out).
+      if (it.rx) t.appendChild(rxLine(it.rx));
       head.appendChild(t);
-      [miss ? ["btn ghost", "Do it today", doToday, it] : ["btn ghost", "Start now", startWorkout, w],
+      // Start now on a day ahead is that day's session done early, on that day's numbers.
+      [miss ? ["btn ghost", "Do it today", doToday, it] : ["btn ghost", "Start now", rxStart, it],
         ["linkbtn", "Move", openPlanSheet, { w: w, row: it.row, from: "day" }], ["linkbtn", "Remove", planRemove, it.row]]
-        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])).disabled = wait && a[2] !== startWorkout; });
+        .forEach(function (a) { row.appendChild(tbtn(a[0], a[1], a[2], a[3])).disabled = wait && a[2] !== rxStart; });
     });
     if (d.empty) card.appendChild(el("div", "tdose", d.when === "past" ? "Nothing logged or planned." : "Nothing planned yet."));
     // A day already gone takes no plan: it would only be a missed day at once.
@@ -13161,6 +13497,9 @@ export const APP = String.raw`
       else { calOpen = true; drawCal(); }
     }
     drawDay();
+    // The goal's numbers move with the logs, the unit and the plan, and every one
+    // of those ends in this render.
+    goalCard.sync();
     paintSeg();
     planSlide = 0;
     // Whatever a swipe left on the rows, taken back without animating the way
@@ -13200,10 +13539,14 @@ export const APP = String.raw`
   // optimistic and can have them here. day may be a list: the Plan sheet puts one
   // workout on several days in one request. The ids come back so an Undo can take
   // exactly those rows off again.
-  function planAdd(day, workoutId) {
+  // rx: a program day's prescription, which goes where the day goes (rxKeep says
+  // when). Written only when there is one, so every other row is the row it was.
+  function planAdd(day, workoutId, rx) {
     planRev++;
     return sb.from("plan").insert([].concat(day).map(function (k) {
-      return { user_id: state.user.id, day: k, workout_id: workoutId };
+      var r = { user_id: state.user.id, day: k, workout_id: workoutId };
+      if (rx) r.prescription = rx;
+      return r;
     })).select("id").then(function (r) { planRev++; return r; });
   }
 
@@ -13428,6 +13771,9 @@ export const APP = String.raw`
           // A second copy of the same week must be worth nothing, not double.
           if (have[sig]) continue;
           have[sig] = true;
+          // Day and workout, and never a program day's prescription (B.2): a copied
+          // week is the person's own plan, not the program's, and its numbers would
+          // otherwise claim a week of the program that is not there.
           rows.push({ user_id: state.user.id, day: to, workout_id: srcRows[j].workout_id });
         }
       }
@@ -13655,6 +14001,8 @@ export const APP = String.raw`
   // would vanish under any plan read that landed meanwhile — arriving on Train is one.
   function planWrite(w, days, old, msg) {
     var epoch = accountEpoch, uid = state.user.id, tag = "tmp-" + Date.now() + "-", ids = [], off = false, undone = false;
+    // A program day moved or swapped keeps its numbers where they still mean something (rxKeep).
+    var rx = rxKeep(old, w);
     function show(plan) { state.plan = plan; repaintPlan(); render(); }
     // The screen as it was: this write's rows gone, the moved one back (once).
     function unshow() {
@@ -13662,11 +14010,11 @@ export const APP = String.raw`
       show(old && !plan.filter(function (p) { return p.id === old.id; }).length ? plan.concat([old]) : plan);
     }
     show((state.plan || []).filter(function (p) { return !old || p.id !== old.id; }).concat(days.map(function (k, i) {
-      return { id: tag + i, day: k, workout_id: w.id, user_id: uid };
+      return { id: tag + i, day: k, workout_id: w.id, user_id: uid, prescription: rx };
     })));
     // What was written is noted before anything else, Undo or not, so an Undo that
     // lands while a request is out still knows what to take back.
-    var put = planAdd(days, w.id).then(function (r) {
+    var put = planAdd(days, w.id, rx).then(function (r) {
       if (!accountNow(epoch, uid)) return;
       if (r.error) {
         if (!undone) { unshow(); toast("Could not plan that. Try again in a moment."); }
@@ -13690,7 +14038,8 @@ export const APP = String.raw`
         if (!accountNow(epoch, uid)) return;
         var back = [];
         if (ids.length) back.push(sb.from("plan").delete().in("id", ids));
-        if (off) back.push(planAdd(old.day, old.workout_id));
+        // Put back as it was, numbers and all.
+        if (off) back.push(planAdd(old.day, old.workout_id, old.prescription));
         Promise.all(back).then(function () { loadPlan(true); });
       });
     });
@@ -13857,7 +14206,9 @@ export const APP = String.raw`
   // trained instead of the plan leaves the plan standing, and says so (done).
   //
   // d: { now, draft (pausedDraft), running (wo while live), workouts, logs, plan,
-  //      libReady, planReady }
+  //      libReady, planReady, goals, unit }
+  // S2 carries the planned row's prescription (B.2), worked out by the one rule
+  // every reader goes through (prescriptionFor), or null for a row without one.
   function upNextOf(d) {
     var key = ymd(d.now), ws = d.workouts || [], byId = {}, i;
     for (i = 0; i < ws.length; i++) byId[ws[i].id] = ws[i];
@@ -13874,7 +14225,8 @@ export const APP = String.raw`
     var done = daySessions(d.logs, key), left = [];
     dayRows(d.plan, key, byId).forEach(function (r) { if (!sessionFor(done, r.workout_id)) left.push(r); });
     if (left.length) {
-      return { s: 2, kind: "planned", w: byId[left[0].workout_id], row: left[0], more: left.length - 1, done: done };
+      return { s: 2, kind: "planned", w: byId[left[0].workout_id], row: left[0], more: left.length - 1, done: done,
+        rx: prescriptionFor(left[0], { goals: d.goals, logs: d.logs, unit: d.unit }) };
     }
     var next = nextPlanned(d.plan, key, byId);
     if (done.length) {
@@ -13895,7 +14247,7 @@ export const APP = String.raw`
   function upNext() {
     return upNextOf({ now: new Date(), draft: pausedDraft(), running: wo && !wo.finished ? wo : null,
       workouts: state.workouts, logs: state.logs, plan: state.plan,
-      libReady: !!state.libReady, planReady: !!state.plan });
+      libReady: !!state.libReady, planReady: !!state.plan, goals: state.goals, unit: state.unit });
   }
 
   // Any day but today, as the card under the strip shows it: what happened on
@@ -13918,8 +14270,12 @@ export const APP = String.raw`
       empty: !done.length && !planned.length && !missed.length };
   }
 
+  // With each program row's numbers worked out (B.2): drawDay's signature is this
+  // object, so a goal or a log landing that moves a load redraws the card.
   function dayState(key) {
-    return dayOf(key, { now: new Date(), workouts: state.workouts, logs: state.logs, plan: state.plan });
+    var d = dayOf(key, { now: new Date(), workouts: state.workouts, logs: state.logs, plan: state.plan });
+    d.missed.concat(d.planned).forEach(function (it) { it.rx = rxOf(it.row); });
+    return d;
   }
 
   function setsIn(entries) {
@@ -19154,6 +19510,7 @@ export const APP = String.raw`
     $("setname").textContent = displayName() || "Not set";
     $("unittoggle").textContent = state.unit;
     paintGoal();
+    paintBody();
     $("haptictoggle").textContent = state.haptics ? "On" : "Off";
     $("sethapticrow").classList.toggle("hide", !native && !navigator.vibrate);
     paintSounds();

@@ -14,7 +14,9 @@ export const STYLE = String.raw`<style>
        ink ON it does — near-white was 3.48:1, and this is the ink dark mode
        already uses, so the schemes agree instead of inverting. */
     --ember: #E8551F; --ember-ink: #BE3F0E; --ember-soft: #FDEDE6; --on-ember: #17100C;
-    --good: #178055; --warn: #AE7400;
+    /* --warn is the goal pill's Behind: amber, never red (B.2), and #AE7400 was
+       3.96 on white — this is 6.3, and 5.6 on its own pill. */
+    --good: #178055; --warn: #8A5300;
     /* The tab bar's selection capsule: a tint read as glass, not a second
        accent. 7% is where it stops costing the lit label its AA — a tenth put
        ember-ink on 4.41 against it, under the 4.5 that 10px type needs; this
@@ -1807,6 +1809,52 @@ export const STYLE = String.raw`<style>
   .tskel > * { animation: skel 1.1s var(--e-soft) infinite alternate; }
   @keyframes skel { to { opacity: .55; } }
 
+  /* ---------- train / the goal card (B.2) ----------
+     Under Up next (app.ts, goalCard): the goal and its pill, the numbers and the
+     week, and a bullet bar filled to where you are and ticked where the plan
+     expects you. The day card's frame, one button; the goal sheet draws the same
+     three lines at its own scale. Only the fill's transform and the card's
+     opacity animate; the slot's height is sizeMotion's, as the day card's is
+     (flow-root, so the card's margin is inside what it measures). */
+  .tgoal { display: flow-root; }
+  /* Above the shelf (its badges are z 2) and under the sticky segments (5), so
+     while the slot grows or closes the shelf slides from under the card rather
+     than printing across it. */
+  .gcard { position: relative; z-index: 3; display: block; width: 100%; margin-bottom: 16px; text-align: left;
+    color: var(--ink); font: inherit; }
+  .gtop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .gtop b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 700 17px/1.3 var(--display); letter-spacing: -.012em; }
+  .gline { display: flex; align-items: center; gap: 6px; margin: 2px 0 12px; font-size: 13.5px; color: var(--ink-2); }
+  .gline .ic { margin-left: auto; color: var(--muted); }
+  .gbar { position: relative; display: block; height: 6px; border-radius: 3px; background: var(--sand); }
+  .gbar i { position: absolute; inset: 0; border-radius: 3px; background: var(--ember); transform: scaleX(0);
+    transform-origin: 0 0; transition: transform var(--t-4) var(--e-out); }
+  .gbar s { position: absolute; top: -3px; width: 2px; height: 12px; margin-left: -1px; border-radius: 1px;
+    background: var(--ink); }
+  /* An icon, a word and a number, never colour alone. --good on #EFF8F3 is 4.56
+     (the Workouts pill's pair), --warn on #FFF0D6 5.6, --ink-2 on sand 5.2. */
+  .gpill { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 9px;
+    border-radius: 999px; background: var(--sand); color: var(--ink-2); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+  .gpill .ic { stroke-width: 2.6; }
+  .gpill.ok { background: #EFF8F3; color: var(--good); }
+  .gpill.low { background: #FFF0D6; color: var(--warn); }
+  @media (prefers-color-scheme: dark) { .gpill.ok { background: #173026; } .gpill.low { background: #2E2107; } }
+  .gin { animation: viewin var(--t-3) var(--e-out); }
+  .gout { opacity: 0; pointer-events: none; transition: opacity var(--t-2) var(--e-in); }
+  .gline, .gpill, .trx { font-variant-numeric: tabular-nums; }
+  /* A program day's numbers under its workout, on Up next and a day's rows. */
+  .trx { display: flex; align-items: center; gap: 6px; margin-top: -4px; font-size: 13px; font-weight: 650; color: var(--ember-ink); }
+  .pickrow .trx { margin-top: 3px; font-size: 12px; }
+  #gsbody .gtop { margin-bottom: 6px; }
+  #gsbody .gtop b { font-size: 20px; }
+  #gsbody .gbar { margin-bottom: 18px; }
+  .gsrc { display: flex; align-items: center; gap: 5px; min-height: 40px; }
+  @media (prefers-reduced-motion: reduce) {
+    .gbar i { transition: none; }
+    .gin { animation-name: fadeonly; }
+  }
+
   /* ---------- train / ready to try ----------
      The saves never trained yet, newest first: a sideways scroller with the
      page's gutter inside it, so the row runs out to the screen's edge; at either
@@ -3230,19 +3278,11 @@ export const STYLE = String.raw`<style>
      gives its delete - rather than the muted grey that reads as unavailable. */
   /* "Choose the first exercise" is a sentence, and half a row at 375px wraps
      it: Cancel takes only its own width there, the way a secondary action does. */
-  #sectionsheet .btnrow .ghost { flex: 0 0 auto; width: auto; padding: 14px 20px; }
+  #sectionsheet .btnrow .ghost, #goalsheet .btnrow .ghost { flex: 0 0 auto; width: auto; padding: 14px 20px; }
   /* The section sheet's Remove is its last word and its one red one: this one. */
   #recapopts .danger, #sectionremove { color: var(--ember-ink); font-size: 15px; font-weight: 650; }
   #explainask { min-height: 44px; }
   .disclosure summary:focus-visible { outline: 2px solid var(--ember-ink); outline-offset: 2px; }
-  .history-card > summary { position: relative; cursor: pointer; list-style: none; min-height: 44px; padding-right: 20px; }
-  .history-card > summary::-webkit-details-marker { display: none; }
-  .history-card > summary::after { content: "Session details"; display: block; font-size: 11px; font-weight: 600; color: var(--ember-ink); margin-top: 8px; }
-  .history-card > summary::before { content: ""; position: absolute; right: 2px; top: 8px; width: 6px; height: 6px;
-    border-right: 1.5px solid var(--ink-2); border-bottom: 1.5px solid var(--ink-2);
-    transform: rotate(-45deg); transition: transform var(--t-3) var(--e-soft); }
-  .history-card[open] > summary::before { transform: rotate(45deg); }
-  .history-card.details-closing > summary::before { transform: rotate(-45deg); }
   .progress-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
     padding: 18px 0; margin-bottom: 16px; border-bottom: 1px solid var(--line); text-align: center; }
   .progress-totals b { display: block; font-family: var(--display); font-size: clamp(20px, 5vw, 28px); overflow-wrap: anywhere; }
