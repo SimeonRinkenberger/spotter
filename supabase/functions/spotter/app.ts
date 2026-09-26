@@ -16831,8 +16831,20 @@ export const APP = String.raw`
       no.onclick = function () { confirmPumpy(m, false, no, yes); };
       yes.onclick = function () { confirmPumpy(m, true, no, yes); };
     } else {
-      card.appendChild(st === "done" ? icon(el("div", "done"), "check", "On your calendar")
+      var fin = card.appendChild(st === "done" ? icon(el("div", "done"), "check", "On your calendar")
         : el("div", "declined", st === "undone" ? "Undone" : "Skipped"));
+      // Undo for as long as the server keeps it (fifteen minutes), not only
+      // while the toast stands: an Undo is how Basic gets its one free plan back.
+      var left = st === "done" ? undoUntil(m) - Date.now() : 0;
+      if (left > 0) {
+        var ub = fin.appendChild(el("button", "linkbtn pundo", "Undo"));
+        ub.setAttribute("aria-label", "Undo this plan");
+        ub.onclick = function () {
+          ub.disabled = true;
+          undoProgram(m).then(function (s) { if (s === "offline") ub.disabled = false; else if (s !== "ok") undoGone(ub); });
+        };
+        setTimeout(function () { undoGone(ub); }, Math.min(left, 2e9));
+      }
     }
     // Decisions §1: the trial is offered right under the free plan, on day 0.
     if (st === "done" && p.free && isFree()) {
@@ -16840,6 +16852,13 @@ export const APP = String.raw`
         "With Plus, Pumpy adjusts it week to week and builds anything else you want."));
     }
     return out;
+  }
+
+  // The card's Undo, when its window has closed: it fades where it stands.
+  function undoGone(b) {
+    if (!b.isConnected || b.classList.contains("gone")) return;
+    b.classList.add("gone");
+    setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 260);
   }
 
   // A program on the calendar: its new workouts join the list, Basic's free plan
@@ -16854,6 +16873,8 @@ export const APP = String.raw`
     });
     if (made.length) render();
     if (m.meta.proposal.free) setFree("used", m.thread_id || (pumpy.thread && pumpy.thread.id), true);
+    // The server's window for Undo, kept with the card so its Undo lasts as long.
+    if (r.undo) m.meta.undo = r.undo;
     remindOnTrain = true;
     goalsReload();
     offerUndo("Plan on your calendar", function () {}, function () { undoProgram(m); });
@@ -16861,12 +16882,24 @@ export const APP = String.raw`
 
   function goalsReload() { loadGoals(); planRev++; loadPlan(true); }
 
+  // When a confirmed program stops being undoable: what the server said at the
+  // confirm (undo.until), or, for a card read back with its thread, fifteen
+  // minutes after the confirm it recorded (result.at). 0 when neither is known.
+  function undoUntil(m) {
+    var x = m.meta || {}, t = x.undo && Date.parse(x.undo.until);
+    if (!t && x.result && x.result.at) t = Date.parse(x.result.at) + 15 * 60000;
+    return t || 0;
+  }
+
+  // Answers the server's status ("ok", or why not) or "offline", so the card's
+  // Undo knows whether to go or to stay for another try.
   function undoProgram(m) {
-    var epoch = accountEpoch, uid = state.user && state.user.id, made = pumpyUI(m.id).made || [];
-    api("pumpy/undo", { method: "POST", body: JSON.stringify({ message_id: m.id }) }).then(function (r) {
-      if (!accountNow(epoch, uid)) return;
+    var epoch = accountEpoch, uid = state.user && state.user.id;
+    var made = pumpyUI(m.id).made || (m.meta.result && m.meta.result.workout_ids) || [];
+    return api("pumpy/undo", { method: "POST", body: JSON.stringify({ message_id: m.id }) }).then(function (r) {
+      if (!accountNow(epoch, uid)) return "gone";
       // Past the server's fifteen minutes this is a 409 that says so.
-      if (r.status !== "ok") { toast(r.message || "That plan can’t be undone now. End the goal from Train instead."); return; }
+      if (r.status !== "ok") { toast(r.message || "That plan can’t be undone now. End the goal from Train instead."); return r.status || "error"; }
       m.meta.status = "undone";
       if (pumpy.messages.indexOf(m) >= 0) (r.messages || []).forEach(function (x) { pumpy.messages.push(x); });
       state.workouts = state.workouts.filter(function (w) { return made.indexOf(w.id) < 0; });
@@ -16875,7 +16908,8 @@ export const APP = String.raw`
       goalsReload();
       render();
       renderPumpy();
-    }).catch(function () { toast("Could not reach Spotter — check your connection."); });
+      return "ok";
+    }).catch(function () { toast("Could not reach Spotter — check your connection."); return "offline"; });
   }
 
   function renderProposal(m, p) {

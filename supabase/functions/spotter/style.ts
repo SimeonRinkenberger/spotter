@@ -2914,6 +2914,11 @@ export const STYLE = String.raw`<style>
     display: flex; align-items: center; gap: 5px;
     animation: donein var(--t-3) var(--e-out); }
   .proposal .done .ic { width: 15px; height: 15px; }
+  /* A program's Undo, at the line's end for the server's fifteen minutes; it
+     fades when they are up (opacity only, so reduced motion keeps it). Its
+     padding hangs outside the line, so the card is the same height without it. */
+  .proposal .done .pundo { margin: -6px 0 -6px auto; transition: opacity var(--t-2) var(--e-soft); }
+  .proposal .done .pundo.gone { opacity: 0; pointer-events: none; }
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
