@@ -1895,6 +1895,7 @@ export const STYLE = String.raw`<style>
   #gsbody .gtop { margin-bottom: 6px; }
   #gsbody .gtop b { font-size: 20px; }
   #gsbody .gbar { margin-bottom: 18px; }
+  #gsbody .nobr { white-space: nowrap; }
   .gsrc { display: flex; align-items: center; gap: 5px; min-height: 40px; }
   @media (prefers-reduced-motion: reduce) {
     .gbar i { transition: none; }

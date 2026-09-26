@@ -13229,14 +13229,21 @@ export const APP = String.raw`
   function openGoalSheet() { gsFill(); openSheet("goalsheet"); }
 
   function gsFill() {
-    var g = activeGoal(), b = $("gsbody"), v, p, x, ws, to, rows;
+    var g = activeGoal(), b = $("gsbody"), v, p, x, ws, to, rows, le;
     if (!g) return;
     v = goalView(g); p = g.program || {}; x = goalLift(g.exercise);
     b.innerHTML = GCARD;
     gPaint(b, g, v);
     b.querySelector("b").id = "gstitle";
-    b.insertBefore(el("p", "lede", capWord((x ? x.name + " · " : "") + (g.baseline && g.target ? "from " + g.baseline + " to " +
+    le = b.insertBefore(el("p", "lede", capWord((x ? x.name + " · " : "") + (g.baseline && g.target ? "from " + g.baseline + " to " +
       g.target + " " + g.unit + " by " : "until ") + shortDate(dayDate(g.end_day)))), b.children[1]);
+    // A max read from the sets is an Epley estimate, and the spec asks that it
+    // be called one; a number the person typed, with no sets behind it, is not.
+    // One unbroken phrase, so a narrow phone never leaves "est." at a line's end.
+    if (g.kind === "lift" && v.st.latest !== null) {
+      le.appendChild(document.createTextNode(" · "));
+      le.appendChild(el("span", "nobr", "est. from your sets, ±10%"));
+    }
     if (g.dream && g.dream !== g.target) b.appendChild(el("p", "lede", g.dream + " is the goal; this block aims for " + g.target + "."));
     if (p.verdict_note) b.appendChild(el("p", "setnote", p.verdict_note));
     // The program week the card's "week 2 of 8" names: seven days from the day
@@ -16521,8 +16528,10 @@ export const APP = String.raw`
       box.appendChild((f.type === "number" ? askNum : askChoice)(f, vals, ready));
       // Where a pre-filled number came from, when the field says so: a max is the
       // logs', a body weight the one typed in Settings; any other is just the answer.
+      // A max read from the logs is an Epley estimate, and the spec asks that it
+      // be called one: plus or minus a tenth, said once, where the number is.
       var said = f.id + " " + f.label, from = f.type === "number" && vals[f.id] !== null &&
-        (/body|weigh/i.test(said) ? "From Settings" : /max|best|1rm/i.test(said) ? "From your history" : "");
+        (/body|weigh/i.test(said) ? "From Settings" : /max|best|1rm/i.test(said) ? "From your history · ±10%" : "");
       if (from) box.appendChild(el("small", "askfrom", from));
     });
     go = card.appendChild(el("button", "btn", ask.submit || "Build my plan"));
@@ -16594,7 +16603,10 @@ export const APP = String.raw`
       inp = pick.appendChild(el("input"));
       inp.type = "date";
       inp.min = opts[0];
-      inp.max = ymd(addDays(now, 60));
+      // The server's window, not a guess: expandProgram (goals.ts) refuses a
+      // start more than 28 days after today, and a refused start is quietly moved
+      // by the model or ends the turn without a plan.
+      inp.max = ymd(addDays(now, 28));
       inp.setAttribute("aria-label", f.label);
       // iOS's calendar does not grey out what min and max forbid, so a day before
       // today (a start the server refuses) is held to the window here.
