@@ -13280,8 +13280,10 @@ export const APP = String.raw`
       g.target + " " + g.unit + " by " : "until ") + shortDate(dayDate(g.end_day)))), b.children[1]);
     // A max read from the sets is an Epley estimate, and the spec asks that it
     // be called one; a number the person typed, with no sets behind it, is not.
-    // One unbroken phrase, so a narrow phone never leaves "est." at a line's end.
-    if (g.kind === "lift" && v.st.latest !== null) {
+    // Asked of liftMax itself, the one rule, rather than of the status (which
+    // reads the baseline where no set says more). One unbroken phrase, so a
+    // narrow phone never leaves "est." at a line's end.
+    if (g.kind === "lift" && liftMax(state.logs, g.exercise, addDays(dayDate(ymd(new Date())), 1), g.unit)) {
       le.appendChild(document.createTextNode(" · "));
       le.appendChild(el("span", "nobr", "est. from your sets, ±10%"));
     }
