@@ -108,9 +108,12 @@ function mondayOfTs(t: number): string {
 /**
  * What get_lift_history answers: the estimated max now, the best sets, and the
  * best estimate per week over twelve weeks, with the formula named so the coach
- * can say what the number is. `novice` — fewer than six sessions with this lift
- * in the window — is how the verdict below knows someone is still in the fast
- * early months.
+ * can say what the number is. `novice` is how the verdict below knows someone is
+ * still in the fast early months — and it takes evidence: four or more sessions
+ * with the lift and a best estimate that rose at least 5 % across three or more
+ * weeks. Few or no logged sets mean new to Spotter, not new to lifting, and read
+ * at intermediate rates (the review's bug 7: the spec's own 287 → 305 example read
+ * "realistic" for anyone with no bench history).
  */
 export function liftHistory(logs: LogRow[], exercise: string, now: number, unit: Unit) {
   const from = now - 84 * DAY;
@@ -138,15 +141,18 @@ export function liftHistory(logs: LogRow[], exercise: string, now: number, unit:
   }
   const m = liftMaxAt(logs, exercise, now + 1, unit);
   sets.sort((a, b) => b.est - a.est);
+  const byWeek = [...weeks.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  const first = byWeek[0]?.[1].best ?? 0, last = byWeek[byWeek.length - 1]?.[1].best ?? 0;
+  const novice = sessions >= 4 && byWeek.length >= 3 && first > 0 && last >= first * 1.05;
   return {
     exercise, unit,
     formula: "Epley: weight × (1 + reps ÷ 30), from sets of 10 reps or fewer in the last 8 weeks, heavy sets of 5 or fewer preferred. An estimate, ±10%.",
     est_max: m ? Math.round(m.est) : null,
     est_from: m ? { weight: m.weight, reps: m.reps, date: m.at.slice(0, 10) } : null,
     sessions_12w: sessions,
-    novice: sessions < 6,
+    novice,
     best_sets: sets.slice(0, 3).map((s) => ({ weight: s.weight, reps: s.reps, date: s.date, est: Math.round(s.est) })),
-    weekly: [...weeks.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))
+    weekly: byWeek
       .map(([week_start, v]) => ({ week_start, est: Math.round(v.best), top_set: v.set })),
   };
 }
@@ -253,12 +259,37 @@ export function edLine(tz: string | null | undefined): string {
 // Signs of disordered eating: a very-low-calorie day in the person's own words, or
 // the behaviours the helplines list. Deliberately about what they say they are
 // DOING, so "burn 500 calories" or "not eating enough protein" stay ordinary.
-const ED_CAL = /\b(?:eat|eating|eats|ate|have|having|consume|consuming|intake|diet(?:ing)?|limit(?:ing)?|cap(?:ping)?|keep(?:ing)?|stay(?:ing)?|stick(?:ing)?|only|under|below|less than)\b[^.!?\n]{0,30}?\b([1-9]\d{2}|1[01]\d{2})\s*(?:k?cals?|calories)\b/i;
-const ED_CAL_DAY = /\b([1-9]\d{2}|1[01]\d{2})\s*(?:k?cals?|calories)\s*(?:a|per|each)\s*day\b/i;
+// A number is read whole, however it is grouped ("1,500", "1.500", "1 500"), and
+// never from its middle: reading "500" out of "1,500" sent an ordinary intake to
+// the helpline line and missed "1,000" (the review's bug 2). Every mention counts,
+// so "2,000 on weekdays but 800 a day at weekends" is still heard. A snack or a
+// meal is not a day.
+const CAL_NUM = String.raw`(?<![\d,.])(\d{1,2}[,.\s]\d{3}|\d{3,4})(?![\d,])\s*(?:k?cals?|calories?)\b`;
+const NOT_A_DAY = String.raw`(?!\s*(?:snacks?|bars?|packs?|servings?|portions?|meals?|breakfast|lunch|dinner|shakes?|drinks?)\b)`;
+const ED_CAL = new RegExp(String.raw`\b(?:eat|eating|eats|ate|have|having|consume|consuming|intake|diet(?:ing)?|limit(?:ing)?|cap(?:ping)?|keep(?:ing)?|stay(?:ing)?|stick(?:ing)?|only|under|below|less than)\b[^.!?\n]{0,30}?` + CAL_NUM + NOT_A_DAY, "gi");
+const ED_CAL_DAY = new RegExp(CAL_NUM + String.raw`\s*(?:a|per|each)\s*day\b`, "gi");
+function lowDay(m: string): boolean {
+  for (const re of [ED_CAL, ED_CAL_DAY]) {
+    for (const hit of m.matchAll(re)) {
+      const n = Number(hit[1].replace(/[,.\s]/g, ""));
+      if (n > 0 && n < 1200) return true;
+    }
+  }
+  return false;
+}
 const ED_ACT = /\b(?:starv(?:e|ed|ing|ation)|purg(?:e|ed|ing)|make myself (?:sick|throw up|vomit)|throw(?:ing)? up (?:after|my food|my meals|what i eat)|laxatives?|diuretics? to lose|stop(?:ped)? eating|not eating (?:at all|anything|for \d+)|eat(?:ing)? nothing|barely eat(?:ing)?|skip(?:ping)? (?:all )?(?:my )?meals|pro-?ana|thinspo|binge and purge|(?:water )?fast(?:ing)? for \d+ days)\b/i;
-const MINOR = /\b(?:i'?m|i am|im)\s+(1[0-7]|[5-9])\b(?!\s*(?:lbs?|pounds?|kgs?|kilos?|%|percent|mins?|minutes|reps?|sets?|weeks?|days?|months?|x\b|×|'|ft|feet|inch|cm))|\b(1[0-7]|[5-9])\s*(?:years?\s*old|yrs?\s*old|yo|y\/o)\b|\b(?:i'?m|i am)\s+(?:a\s+)?(?:teen(?:ager)?|minor|in (?:middle|high) school)\b/i;
+// "I'm 15" is an age; "I'm 5 foot 4", "I'm 14 stone" and "I'm 16 st" are not (the
+// review's bug 3) — nor any number with a unit, a clock, a count or a fraction after it.
+const NOT_AN_AGE = String.raw`(?!\s*(?:lbs?|pounds?|kgs?|kilos?|kilograms?|stone|st\b|%|percent|mins?\b|minutes|hours?|hrs?\b|reps?|sets?|weeks?|days?|months?|x\b|×|'|"|ft\b|feet|foot|inch(?:es)?|in\b|cm\b|km\b|miles?|k\b|and a half|[\/.,:]\d))`;
+const AGE_SAID = String.raw`\b(1[0-7]|[5-9])\s*(?:years?\s*old|yrs?\s*old|yo|y\/o)\b|\b(?:i'?m|i am)\s+(?:a\s+)?(?:teen(?:ager)?|minor|in (?:middle|high) school)\b`;
+const MINOR = new RegExp(String.raw`\b(?:i'?m|i am|im)\s+(1[0-7]|[5-9])\b` + NOT_AN_AGE + "|" + AGE_SAID, "i");
+// What a conversation remembers is narrower: an age said outright, or a bare "I'm
+// 13"–"I'm 17". A bare single digit is a height or a count far more often than an age.
+const MINOR_KEPT = new RegExp(String.raw`\b(?:i'?m|i am|im)\s+(1[0-7])\b` + NOT_AN_AGE + "|" + AGE_SAID, "i");
 const LOSS = /\b(?:lose|losing|lost|drop|dropping|cut|cutting|shed|shedding|burn off)\b[^.!?\n]{0,25}\b(?:weight|fat|lbs?|pounds?|kgs?|kilos?|stone|belly)\b|\bweight[- ]?loss\b|\b(?:get|be|become) (?:thin|skinny|slimmer)\b|\bslim down\b/i;
-const MEDS = /\b(?:glp-?1s?|semaglutide|ozempic|wegovy|rybelsus|mounjaro|zepbound|tirzepatide|saxenda|liraglutide|phentermine|qsymia|contrave|orlistat|metformin|fat[- ]?burners?|diet pills?|appetite suppressants?|steroids?|sarms?|clenbuterol|testosterone|trt|hgh|peptides?|bpc-?157|ephedrine|dnp|supplements?|creatine|pre-?workouts?|protein powder|bcaas?|ashwagandha|l-carnitine|garcinia|keto pills?)\b/i;
+// "Pre-workout" is a supplement only on its own: a pre-workout warm-up, mobility
+// routine or meal is training (the review's bug 5).
+const MEDS = /\b(?:glp-?1s?|semaglutide|ozempic|wegovy|rybelsus|mounjaro|zepbound|tirzepatide|saxenda|liraglutide|phentermine|qsymia|contrave|orlistat|metformin|fat[- ]?burners?|diet pills?|appetite suppressants?|steroids?|sarms?|clenbuterol|testosterone|trt|hgh|peptides?|bpc-?157|ephedrine|dnp|supplements?|creatine|pre-?workouts?(?![\s-]*(?:warm|mobility|routine|stretch|activation|dynamic|drills?|meals?|snacks?|food|nutrition|prep|circuit|sets?|walk|jog|cardio|primer|flow))|protein powder|bcaas?|ashwagandha|l-carnitine|garcinia|keto pills?)\b/i;
 const ASKING = /\?|\b(?:should i|can i|could i|is it (?:safe|ok|okay|worth)|would you|do you recommend|recommend|how much|what dose|dosage|dose of|worth taking|take|taking|start|try|use|using)\b/i;
 
 export type SafetyHit = { kind: "ed" | "minor_fat" | "med"; reply: string };
@@ -271,14 +302,13 @@ export type SafetyHit = { kind: "ed" | "minor_fat" | "med"; reply: string };
  */
 export function safetyCheck(message: string, ctx: { tz?: string | null; minorKnown?: boolean }): SafetyHit | null {
   const m = String(message ?? "");
-  const cal = m.match(ED_CAL) ?? m.match(ED_CAL_DAY);
-  if ((cal && Number(cal[1]) < 1200) || ED_ACT.test(m)) return { kind: "ed", reply: edLine(ctx.tz) };
+  if (lowDay(m) || ED_ACT.test(m)) return { kind: "ed", reply: edLine(ctx.tz) };
   if ((MINOR.test(m) || ctx.minorKnown) && LOSS.test(m)) return { kind: "minor_fat", reply: SAFETY_LINES.minor_fat };
   if (MEDS.test(m) && ASKING.test(m)) return { kind: "med", reply: SAFETY_LINES.med };
   return null;
 }
 
-export function mentionsMinor(message: string): boolean { return MINOR.test(String(message ?? "")); }
+export function mentionsMinor(message: string): boolean { return MINOR_KEPT.test(String(message ?? "")); }
 
 // What the coach wrote, with any sentence dropped that prescribes a calorie number or
 // recommends taking a medication or supplement — the prompt forbids both, and this is
@@ -286,13 +316,19 @@ export function mentionsMinor(message: string): boolean { return MINOR.test(Stri
 // creatine") is kept.
 // A calorie figure however it is written: 1500, 1,500, 1 500.
 const KCAL = String.raw`(?:\d{1,2}[, ]\d{3}|\d{3,4})\s*(?:k?cals?|calories)`;
-const CAL_RX = new RegExp(String.raw`\b(?:eat|consume|aim for|target|stay (?:under|below|around|at)|keep (?:it )?(?:under|below|around|at)|stick to|limit (?:yourself )?to|cut (?:down )?to|deficit of)\b[^!?]{0,40}?\b` + KCAL + String.raw`\b|\b` + KCAL + String.raw`\s*(?:a|per|each)\s*day\b`, "i");
+// Only an intake target: "your walk burns about 300 calories a day" is fine (the
+// review's bug 5), "aim for 1,800 calories a day" and "a daily budget of 1,500" are not.
+const CAL_RX = new RegExp(String.raw`\b(?:eat|eating|consume|intake|diet|budget|allowance|aim for|target|stay (?:under|below|around|at)|keep (?:it )?(?:under|below|around|at)|stick to|limit (?:yourself )?to|cut (?:down )?to|deficit of)\b[^!?]{0,40}?\b` + KCAL + String.raw`\b`, "i");
+// "N calories a day" is an intake target unless the sentence is about burning them:
+// "with 1,200 calories a day" goes, "your walk burns about 300 calories a day" stays.
+const CAL_DAY = new RegExp(String.raw`\b` + KCAL + String.raw`\s*(?:a|per|each)\s*day\b`, "i");
+const BURN = /\b(?:burn(?:s|ed|ing)?|expend(?:s|ed|ing)?|torch(?:es|ed|ing)?|use[sd]? up)\b/i;
 const MED_RX = /\b(?:take|try|start|use|add|consider|dose|stack)\b/i;
 const REFUSES = /\b(?:can'?t|cannot|won'?t|not able|don'?t|do not)\b/i;
 
 /** One sentence the coach must not say: a calorie number to eat, or a medication or supplement to take. */
 export function blockedSentence(s: string): boolean {
-  return CAL_RX.test(s) || (MEDS.test(s) && MED_RX.test(s) && !REFUSES.test(s));
+  return CAL_RX.test(s) || (CAL_DAY.test(s) && !BURN.test(s)) || (MEDS.test(s) && MED_RX.test(s) && !REFUSES.test(s));
 }
 
 export function cleanCoachText(say: string): { text: string; dropped: number } {
@@ -314,6 +350,8 @@ function str(v: unknown, max: number): string {
   return String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+const ADULT_Q = /\b18\b|\badult\b|\bolder\b/i;
+
 /** The model's ask, bounded: ≤ 6 fields of three types, pre-fills that fit, and the adult question never pre-answered. */
 export function validateAsk(raw: any): Ask | null {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.fields)) return null;
@@ -323,9 +361,17 @@ export function validateAsk(raw: any): Ask | null {
   // field early on must not cost the good ones after it.
   for (const f of raw.fields.slice(0, 12)) {
     if (fields.length === 6) break;
-    const id = str(f?.id, 24).toLowerCase().replace(/[^a-z0-9_]/g, "");
+    let id = str(f?.id, 24).toLowerCase().replace(/[^a-z0-9_]/g, "");
     const type = f?.type === "choice" || f?.type === "number" || f?.type === "date" ? f.type : null;
     const label = str(f?.label, 48);
+    // The three answers the server reads by id (adultAnswer, validateProgram's max and
+    // weight) are found whatever the model called them — an "over18" that went unread
+    // refused a fat-loss plan the person had said yes to (the review's bug 12).
+    const says = id + " " + label;
+    const as = ADULT_Q.test(label) || id === "adult" ? "adult"
+      : type === "number" && /\b(?:max|1rm|one[- ]rep)\b|_max\b|max_/i.test(says) ? "max"
+      : type === "number" && /\b(?:body ?weight|weigh|current weight|your weight)\b|body_?weight|^weight/i.test(says) ? "weight" : null;
+    if (as && !seen.has(as)) id = as;
     if (!id || !type || !label || seen.has(id)) continue;
     const out: AskField = { id, label, type };
     if (type === "choice") {
@@ -342,7 +388,7 @@ export function validateAsk(raw: any): Ask | null {
     const unit = str(f?.unit, 8);
     if (unit) out.unit = unit;
     // "Are you 18 or older?" is a question only the person answers.
-    if (id === "adult" || /\b18\b|adult|older/i.test(label)) delete out.value;
+    if (id === "adult") delete out.value;
     seen.add(id);
     fields.push(out);
   }
@@ -392,6 +438,11 @@ export function capsOf(body: any): Set<string> {
 // ---------- Basic's one free program ----------
 
 export type FreeState = "available" | "open" | "used";
+
+/** Whether the free thread made a program that still stands (ended counts; undone does not). */
+export function freeProgramBuilt(goalsFromThread: { status: string }[]): boolean {
+  return goalsFromThread.some((g) => g.status !== "undone");
+}
 
 /** The free thread's state: unclaimed, in progress, or spent (a live program from it, or its turns used). */
 export function freeProgramState(freeThread: string | null, goalsFromThread: { status: string }[], userTurns: number): FreeState {
@@ -479,7 +530,10 @@ export function expandProgram(raw: any, ctx: ExpandCtx): { program: Program } | 
   const weeksN = rawWeeks.length;
   const end = addDaysYmd(start, 7 * weeksN - 1);
   let exercise: string | null = null, baseline: number | null = null, target: number | null = null;
-  let dream: number | null = null, verdict: Verdict = "realistic", note = str(raw?.verdict_note, 280);
+  // The program's own words pass the filter the chat does: a calorie target or a
+  // supplement in a note, a summary or a day's cue reached the card, the goal sheet
+  // and Workout Mode (the review's bug 4).
+  let dream: number | null = null, verdict: Verdict = "realistic", note = cleanCoachText(str(raw?.verdict_note, 280)).text;
   let daily: Program["goal"]["daily"] = null, weighIn: number | null = null;
   const modelVerdict: Verdict = raw?.verdict === "stretch" || raw?.verdict === "too_fast" ? raw.verdict : "realistic";
 
@@ -507,7 +561,12 @@ export function expandProgram(raw: any, ctx: ExpandCtx): { program: Program } | 
         " " + unit + " a month at your level.";
     }
   } else if (type === "fat") {
-    baseline = num(g.baseline) ?? ctx.bodyWeight ?? null;
+    // The weight the person gave (the ask card, or Settings) wins over the model's by
+    // more than 5 %, as the lift's baseline does: a 260 → 240 line plotted against
+    // 150-lb weigh-ins read "ahead" forever, at the wrong cap (the review's bug 8).
+    baseline = num(g.baseline);
+    const known = ctx.bodyWeight ?? null;
+    if (known && (!baseline || Math.abs(baseline - known) > known * 0.05)) baseline = known;
     if (!baseline || baseline < (unit === "kg" ? 35 : 80) || baseline > (unit === "kg" ? 320 : 700)) {
       return { error: "goal.baseline (current body weight) is needed for a weight-loss goal — ask for it" };
     }
@@ -563,7 +622,7 @@ export function expandProgram(raw: any, ctx: ExpandCtx): { program: Program } | 
         }
         rx = {
           exercise: ex, sets: clampInt(r.sets, 1, 10), reps: str(r.reps, 12) || null, pct: okPct, weight, unit,
-          rpe: clampInt(r.rpe, 5, 10), note: str(r.note, 60) || null,
+          rpe: clampInt(r.rpe, 5, 10), note: cleanCoachText(str(r.note, 60)).text || null,
         };
       }
       days.push({ day: dayInWindow(from, dow), dow, ref: t.ref, title: t.title, rx });
@@ -580,13 +639,22 @@ export function expandProgram(raw: any, ctx: ExpandCtx): { program: Program } | 
   for (const w of weeks) for (const d of w.days) used.add(d.ref);
   const templates = [...ctx.templates.values()].filter((t) => used.has(t.ref))
     .map(({ canon: _c, ...t }) => t);
-  const titleOf = title(g.title, 40) || (type === "lift" && exercise ? (ctx.exerciseName(exercise) ?? "Lift") + " " + (dream ?? target) : "My plan");
+  // A dream a fat-loss plan will never draw a line to (more than a fifth of the body)
+  // is not printed as "the goal"; the note still says what was asked.
+  const shownDream = type === "fat" && dream !== null && baseline && dream < baseline * 0.8 ? null : dream;
+  // The title states the goal, never a pace or a deadline: "Lose 20 lb in 2 weeks" kept
+  // its ten pounds a week on the card after the plan was held to two (the review's bug
+  // 4). A fat-loss title is the amount itself; any other is the model's, cleaned.
+  const said = cleanTitle(title(g.title, 40));
+  const titleOf = type === "fat" && baseline && target ? "Lose " + round1(baseline - (shownDream ?? target)) + " " + unit
+    : said && !blockedSentence(said) ? said
+    : type === "lift" && exercise ? (ctx.exerciseName(exercise) ?? "Lift") + " " + (dream ?? target) : "My plan";
   return {
     program: {
       kind: "program", v: 1,
       goal: {
         type, title: titleOf, exercise, exercise_name: exercise ? ctx.exerciseName(exercise) : null,
-        target, dream, unit: type === "lift" || type === "fat" ? unit : null, baseline,
+        target, dream: shownDream, unit: type === "lift" || type === "fat" ? unit : null, baseline,
         start, end, weeks: weeksN, days_per_week: maxDays, daily, weigh_in_dow: weighIn,
       },
       verdict,
@@ -596,12 +664,15 @@ export function expandProgram(raw: any, ctx: ExpandCtx): { program: Program } | 
       templates, weeks, start, end, plate: plateOf(unit), unit,
       replaces: ctx.replaces, free: ctx.free,
       counts: { weeks: weeksN, sessions, new_templates: templates.filter((t) => t.new).length },
-      summary: str(raw?.summary, 160) || weeksN + " weeks, " + maxDays + " days a week.",
+      summary: cleanCoachText(str(raw?.summary, 160)).text || weeksN + " weeks, " + maxDays + " days a week.",
     },
   };
 }
 
 function round1(n: number): number { return Math.round(n * 10) / 10; }
+
+const PACE = /\s*(?:\b(?:in|within|by|over)\s+(?:\d+|a|an|one|two|three|four|five|six|seven|eight|nine|ten|twelve)\s*(?:days?|weeks?|wks?|months?|mos?)\b|\b(?:per|a|each|every)\s+(?:day|week|month)\b|\/\s*(?:wk|week|day|mo)\b|\b(?:fast|quick(?:ly)?|asap)\b)/gi;
+function cleanTitle(t: string): string { return t.replace(PACE, "").replace(/\s{2,}/g, " ").replace(/[\s,:;–—-]+$/, "").trim(); }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export function shortDate(s: string): string {

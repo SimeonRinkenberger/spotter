@@ -179,7 +179,10 @@ check('the app and the server agree on the estimate (the chip and the baseline a
   const h = G.liftHistory(LOGS, 'bench-press', NOW_MS, 'lb');
   assert.equal(h.est_max, 286);
   assert.equal(h.sessions_12w, 5);
-  assert.equal(h.novice, true);
+  assert.equal(h.novice, false, 'its best set is its oldest: no sign of fast early gains');
+  // Four sessions over four weeks, each heavier: the early months, so the novice rates apply.
+  const rising = [log(-60, [bench(185, 5)]), log(-40, [bench(195, 5)]), log(-20, [bench(205, 5)]), log(-5, [bench(215, 5)])];
+  assert.equal(G.liftHistory(rising, 'bench-press', NOW_MS, 'lb').novice, true);
   assert.match(h.formula, /Epley/);
   assert.ok(h.weekly.length >= 3);
 });
@@ -200,10 +203,22 @@ check('week 3 adapts to what weeks 1–2 logged (the free program\'s rule, no mo
   const p = app('prescriptionFor(' + JSON.stringify(row(3, 0.85)) + ', { goals: [' + JSON.stringify(g) + '], logs: ' + JSON.stringify(logs) + ', unit: "lb" })');
   assert.equal(p.weight, 250);   // 0.85 × 291.5 = 247.8 → 250
 });
-check('a mistyped set cannot throw a week: the basis stays within 90 %–110 % of the goal', () => {
+check('a mistyped set cannot throw a week: the basis is at most 110 % of the larger of baseline and target', () => {
   const logs = [log(-9, [bench(900, 3, 1)])];
   const p = app('prescriptionFor(' + JSON.stringify(row(3, 0.85)) + ', { goals: [' + JSON.stringify(GOAL) + '], logs: ' + JSON.stringify(logs) + ', unit: "lb" })');
   assert.equal(p.weight, 275);   // basis capped at 295 × 1.1 = 324.5 → 0.85 × 324.5 = 275.8 → 275
+});
+// The review's bug 1: a program's own sets are sub-maximal, and Epley on them reads under the real max.
+check('a typed max, week 1 logged exactly as written (5 × 5 @ 215): week 2 is 220, not 200 (review bug 1)', () => {
+  const w1 = [log(-11, [bench(215, 5, 5)]), log(-9, [bench(215, 5, 5)]), log(-7, [bench(215, 5, 5)])];   // before week 2 (09-21)
+  const p = app('prescriptionFor(' + JSON.stringify(row(2, 0.775)) + ', { goals: [' + JSON.stringify(GOAL) + '], logs: ' + JSON.stringify(w1) + ', unit: "lb" })');
+  assert.equal(p.weight, 220);   // 0.775 × 287 = 222.4 → 220; the old rule read est. 251 → 0.9 × 287 → 200
+});
+check('twelve weeks on: the baseline\'s sets have left the eight-week window, the loads have not dropped', () => {
+  const g = Object.assign({}, GOAL, { baseline: 286, start_day: '2026-07-06', end_day: '2026-09-27', weeks: 12 });
+  const program = [-60, -53, -46, -39, -32, -25].map((off) => log(off, [bench(215, 5, 5)]));   // sub-max only, inside the window of week 10 (09-07)
+  const p = app('prescriptionFor(' + JSON.stringify(row(10, 0.85)) + ', { goals: [' + JSON.stringify(g) + '], logs: ' + JSON.stringify(program) + ', unit: "lb" })');
+  assert.equal(p.weight, 245);   // 0.85 × 286 = 243.1 → 245 (the old rule: 0.85 × 257.4 → 220)
 });
 check('a goal set in kg read in lb lands on an lb plate', () => {
   const g = Object.assign({}, GOAL, { unit: 'kg', baseline: 130, target: 135 });
@@ -218,14 +233,16 @@ check('a day with no pct keeps the server\'s load; no prescription is null', () 
 
 // ---------- 4. goal status ----------
 function status(g, d) { return app('goalStatusOf(' + JSON.stringify(g) + ', Object.assign(' + JSON.stringify(d) + ', { now: ' + NOW + ' }))'); }
-check('lift: on track on the line, ahead above it, behind below it', () => {
-  const g = Object.assign({}, GOAL, { start_day: '2026-09-18', end_day: '2026-11-12' });   // day 7 of 55: expected 288
-  assert.equal(status(g, { logs: [log(-3, [bench(245, 5)])] }).status, 'on track');
-  assert.equal(status(g, { logs: [log(-3, [bench(265, 5)])] }).status, 'ahead');
-  assert.equal(status(g, { logs: [log(-3, [bench(230, 5)])] }).status, 'behind');
-  const s = status(g, { logs: [log(-3, [bench(245, 5)])] });
+check('lift: sessions done read "on track" whatever a sub-max set estimates; ahead above the line; behind on missed sessions', () => {
+  const g = Object.assign({}, GOAL, { start_day: '2026-09-18', end_day: '2026-11-12', program: { days_per_week: 3 } });   // day 7 of 55: line 288, 3 due
+  const week1 = (w, r) => [log(-7, [bench(w, r, 5)]), log(-5, [bench(w, r, 5)]), log(-3, [bench(w, r, 5)])];
+  let s = status(g, { logs: week1(215, 5) });   // week 1 as written: Epley reads 251 — not a loss (review bug 1)
+  assert.equal(s.status, 'on track'); assert.equal(s.latest, 287); assert.equal(s.sessions, 3); assert.equal(s.due, 3);
+  assert.equal(status(g, { logs: week1(265, 5) }).status, 'ahead');   // est. 309, over the line by more than a plate
+  assert.equal(status(g, { logs: [log(-3, [bench(215, 5, 5)])] }).status, 'behind');   // one of three sessions due
+  s = status(g, { logs: week1(245, 5) });
   assert.equal(s.week, 2); assert.equal(s.weeks, 8);
-  assert.equal(s.text, 'Bench 305 · est. 286 → 295 · week 2 of 8 · on track');
+  assert.equal(s.text, 'Bench 305 · est. 287 → 295 · week 2 of 8 · on track');
 });
 check('lift: after the last day, reached or done', () => {
   const past = Object.assign({}, GOAL, { start_day: '2026-07-01', end_day: '2026-08-25' });
@@ -461,7 +478,76 @@ check('recorded model sentences that set calories or push supplements are droppe
   assert.equal(G.cleanCoachText('Keep it around 1,600 calories.').dropped, 1);
 });
 
+// The review's red team (B.2 review, bugs 2–5, 7, 8): its own sentences and numbers.
+check('an ordinary intake written with a comma is no warning sign; a low one is, however it is written (review 2)', () => {
+  for (const m of ['I eat 1,500 calories a day and want to lose 10 lb', 'about 2,500 calories a day', 'I eat 2,000 calories', 'I eat 100 calorie snacks'])
+    assert.equal(G.safetyCheck(m, { tz }), null, m);
+  for (const m of ["I'm eating 1,000 calories a day to lose weight", '1,100 calories a day', 'I eat 2,000 on weekdays but only 800 calories a day at weekends'])
+    assert.equal((G.safetyCheck(m, { tz }) || {}).kind, 'ed', m);
+});
+check('a height or a weight is never an age, and only an age said outright is remembered (review 3)', () => {
+  for (const m of ["I'm 5 foot 4 and want to lose 15 lb", "I'm 14 stone and want to lose a stone", "I'm 16 st and want to lose weight", "I'm 12 stone, how do I lose weight"])
+    assert.equal(G.safetyCheck(m, { tz }), null, m);
+  assert.equal(G.safetyCheck('I am 16 years old and want to lose fat', { tz }).kind, 'minor_fat');
+  assert.equal(G.mentionsMinor("I'm 5 foot 4"), false);
+  assert.equal(G.mentionsMinor("I'm 7"), false);
+  assert.equal(G.mentionsMinor("I'm 15"), true);
+});
+check('a pre-workout warm-up is training, a pre-workout to take is a supplement, and burning calories is not a target (review 5)', () => {
+  for (const m of ["What's a good pre-workout warm up?", 'Can you build me a pre-workout mobility routine?'])
+    assert.equal(G.safetyCheck(m, { tz }), null, m);
+  assert.equal(G.safetyCheck('Should I take pre-workout?', { tz }).kind, 'med');
+  assert.equal(G.blockedSentence('Start each session with a pre-workout warm-up.'), false);
+  assert.equal(G.blockedSentence('Your daily walk burns about 300 calories a day.'), false);
+  assert.equal(G.blockedSentence('Aim for 1,800 calories a day.'), true);
+  assert.equal(G.blockedSentence('A daily budget of 1,500 calories keeps it steady.'), true);
+});
+check("a program's own words pass the chat's filter, and a title never promises a pace (review 4)", () => {
+  const recorded = { kind: 'program', verdict: 'realistic', start: '2026-09-28',
+    verdict_note: 'Eat 1,200 calories a day and you will lose 2 lb. Walk every day.', summary: 'Lose 10 lb a week with 1,200 calories a day.',
+    goal: { type: 'fat', title: 'Lose 20 lb in 2 weeks', target: 180, unit: 'lb', baseline: 200 },
+    templates: [{ ref: 't1' }], weeks: [{ week: 1, label: 'Cut', days: [{ dow: 1, ref: 't1', rx: { note: 'Take a fat burner first' } }] },
+      { week: 2, label: 'Cut', days: [{ dow: 1, ref: 't1' }] }] };
+  const p = G.expandProgram(recorded, ctxFor({ adult: true })).program;
+  assert.equal(p.goal.title, 'Lose 20 lb');
+  assert.doesNotMatch(p.verdict_note + ' ' + p.summary, /calorie/i);
+  assert.equal(p.weeks[0].days[0].rx ? p.weeks[0].days[0].rx.note : null, null);
+  const lift = G.expandProgram(liftRaw(2, { goal: { type: 'lift', title: 'Bench 405 in 2 weeks', exercise: 'bench-press', target: 405, unit: 'lb', baseline: 185 } }),
+    ctxFor({ history: { novice: false, est: 185 } })).program;
+  assert.equal(lift.goal.title, 'Bench 405');
+  const far = G.expandProgram(Object.assign({}, recorded, { goal: { type: 'fat', title: 'Lose 100 lb', target: 80, unit: 'lb', baseline: 180 } }),
+    ctxFor({ adult: true })).program;
+  assert.equal(far.goal.dream, null, 'a dream past a fifth of the body is not printed as the goal');
+});
+check("someone new to Spotter is no novice without evidence: the spec's 287 → 305 in 8 weeks is too fast (review 7)", () => {
+  const h = G.liftHistory([], 'bench-press', NOW_MS, 'lb');
+  assert.equal(h.novice, false);
+  const p = G.expandProgram(liftRaw(8), ctxFor({ history: { novice: h.novice, est: null }, answerMax: 287 })).program;
+  assert.equal(p.verdict, 'too_fast');
+  assert.equal(p.goal.target, 295);
+});
+check("a fat-loss line starts from the weight the person gave, not the model's (review 8)", () => {
+  const recorded = { kind: 'program', verdict: 'realistic', start: '2026-09-28', goal: { type: 'fat', title: 'Lose 10 lb', target: 190, unit: 'lb', baseline: 230 },
+    templates: [{ ref: 't1' }], weeks: Array.from({ length: 10 }, (_, i) => ({ week: i + 1, label: 'Cut', days: [{ dow: 1, ref: 't1' }] })) };
+  const p = G.expandProgram(recorded, ctxFor({ adult: true, bodyWeight: 200 })).program;
+  assert.equal(p.goal.baseline, 200);
+});
+
 // ---------- 8. the ask card, the capability flag, the free program ----------
+check('the adult question, a max and a body weight are found whatever the model called them (review 12)', () => {
+  const a = G.validateAsk({ fields: [
+    { id: 'over18', label: 'Are you 18 or older?', type: 'choice', options: ['Yes', 'No'], value: 'Yes' },
+    { id: 'bench_max', label: 'Current bench max', type: 'number', value: 287, unit: 'lb' },
+    { id: 'current_weight', label: 'Your current weight', type: 'number', value: 200, unit: 'lb' }] });
+  assert.deepEqual(a.fields.map((f) => f.id), ['adult', 'max', 'weight']);
+  assert.equal(a.fields[0].value, undefined, 'never pre-answered');
+  assert.equal(G.adultAnswer([G.cleanAnswers({ adult: 'Yes' }, a)]), true);
+});
+check('"used" says whether a plan was built (review 13)', () => {
+  assert.equal(G.freeProgramBuilt([]), false);
+  assert.equal(G.freeProgramBuilt([{ status: 'undone' }]), false);
+  assert.equal(G.freeProgramBuilt([{ status: 'ended' }]), true);
+});
 check('an ask card is bounded, and "Are you 18 or older?" is never pre-answered', () => {
   const a = G.validateAsk({ submit: 'Build my plan', fields: [
     { id: 'days', label: 'Days a week', type: 'choice', options: ['2', '3', '4', '5'], value: '4' },
@@ -512,7 +598,7 @@ check('the app\'s starters.json and the server\'s starters.ts are the same three
   assert.deepEqual(STARTERS.map((s) => s.key), ['bodyweight', 'dumbbells', 'gym']);
   assert.deepEqual(STARTERS.map((s) => s.minutes), [20, 25, 35]);
 });
-check('every starter movement is a catalog id', async () => {
+check('every starter movement is a catalog id', () => {
   const src = fs.readFileSync('supabase/functions/spotter/catalog.ts', 'utf8');
   for (const s of STARTERS) for (const b of s.blocks) for (const e of b.exercises) {
     assert.ok(src.includes('"' + e.canonical_id + '"') || src.includes("'" + e.canonical_id + "'") || src.includes('id: "' + e.canonical_id + '"'), e.canonical_id);

@@ -13174,23 +13174,26 @@ export const APP = String.raw`
 
   // Where a goal stands, in the words and fractions every surface prints.
   // goalStatusOf decides; this only says it. A lift reads its estimated max (the
-  // baseline until a set says otherwise), a fat-loss goal its last weigh-in,
-  // anything else its sessions against the plan's pace. f is how far the bar
-  // fills and t where the plan's tick stands, both along the line from the start
-  // to the target. A load says how far off the line it is ("Ahead · +6 lb"); a
-  // count of sessions reads better as the word alone. logs: the recap hands in
-  // the session it has not saved yet.
+  // baseline until a set says more), a fat-loss goal its last weigh-in, anything
+  // else its sessions against the plan's pace. f is how far the bar fills and t
+  // where the plan's tick stands: along the line from the start weight to the
+  // target for fat loss, and through the block's sessions for everything else — a
+  // lift's estimate barely moves until the test week, so a bar of it would sit
+  // empty while the person does every session. Ahead on a lift says by how much
+  // ("Ahead · +6 lb"), behind by how many sessions. logs: the recap hands in the
+  // session it has not saved yet.
   function goalView(g, logs) {
     var s = state.profile && state.profile.settings, st = goalStatusOf(g, { logs: logs || state.logs, body: s && s.body });
     var k = g.kind, fat = k === "fat", w = fat || k === "lift", b = +g.baseline || 0, t = +g.target || 0, u = w ? " " + g.unit : "";
-    var at = k === "lift" ? st.latest || b : st.latest, n = ((g.program && g.program.days_per_week) || t || 3) * st.weeks;
-    var d = k === "lift" ? " · " + (at > st.expected ? "+" : "") + Math.abs(at - st.expected) + u : "";
+    var at = k === "lift" ? st.latest || b : st.latest, n = ((g.program && g.program.days_per_week) || t || 3) * st.weeks, short = st.due - st.sessions;
+    var d = k !== "lift" ? "" : st.status === "ahead" ? " · +" + (at - st.expected) + u
+      : st.status === "behind" ? " · " + short + (short === 1 ? " session" : " sessions") : "";
     var nums = w ? (at === null ? "Weigh in to track it" : (fat ? "" : "est. ") + at + " → " + t + u) : at + " of ~" + st.expected + " sessions";
-    function f(x) { return x === null ? 0 : clamp(w ? (x - b) / (t - b || 1) : x / n, 0, 1); }
+    function f(x, y) { return fat ? (x === null ? 0 : clamp((x - b) / (t - b || 1), 0, 1)) : clamp(y / (n || 1), 0, 1); }
     // Before its first day a program is on no line yet, so it is neither ahead
     // nor behind: the pill says when it starts and the line how long it runs.
     return { st: st, nums: nums, line: nums + " · " + (st.started ? "week " + st.week + " of " + st.weeks : st.weeks + " weeks"),
-      f: f(at), t: f(st.expected), pill: !st.started ? ["", "calendar", "Starts " + pdWord(g.start_day)]
+      f: f(at, st.sessions), t: f(st.expected, st.due), pill: !st.started ? ["", "calendar", "Starts " + pdWord(g.start_day)]
         : fat && st.status === "ahead" ? ["", "arrow-up-right", "Ahead of plan"]
         : fat && st.status === "behind" ? ["", "hourglass", "Slower than plan"]
         : { "on track": ["ok", "check", "On track"], ahead: ["ok", "arrow-up-right", "Ahead" + d], behind: ["low", "hourglass", "Behind" + d],
@@ -13370,7 +13373,7 @@ export const APP = String.raw`
   // see, and a sheet opened before the overlay's history entry is spent would be
   // closed by it.
   function sumCheck(l) {
-    var g = activeGoal(), day = ymd(new Date()), p, end, v, was, line;
+    var g = activeGoal(), day = ymd(new Date()), p, end, v, was, nx, rows, done, line;
     function mine(r) { return r.prescription && r.prescription.goal_id === g.id; }
     p = g && (state.plan || []).filter(function (r) { return r.day === day && r.workout_id === l.workout_id && mine(r); })[0];
     p = p && p.prescription;
@@ -13380,10 +13383,19 @@ export const APP = String.raw`
     // This session is not in the logs yet (its insert is still in the air), so it is handed in.
     v = goalView(g, [l].concat(state.logs || []));
     line = v.nums;
-    if (g.kind === "lift" && v.st.latest) {
-      was = liftMax(state.logs, g.exercise, rxWeekStart(g, p.week), g.unit);
-      was = was ? Math.round(was.est) : +g.baseline;
-      line = "est. max " + v.st.latest + " " + g.unit + " (" + (v.st.latest < was ? "−" : "+") + Math.abs(v.st.latest - was) + ")";
+    // A lift's week, told the way its loads move (rxBasis): a set that says the
+    // lifter is stronger raises next week, and says so with the new estimate;
+    // otherwise the week is its sessions, because a sub-maximal set's estimate
+    // under the baseline means nothing and must never read as a loss.
+    if (g.kind === "lift") {
+      was = Math.round(rxBasis(g, p.week, state.logs));
+      nx = Math.round(rxBasis(g, p.week + 1, [l].concat(state.logs || [])));
+      rows = (state.plan || []).filter(function (r) { return mine(r) && r.day >= ymd(rxWeekStart(g, p.week)) && r.day <= end; });
+      done = rows.filter(function (r) {
+        return (r.day === day && r.workout_id === l.workout_id) || sessionFor(daySessions(state.logs, r.day), r.workout_id);
+      }).length;
+      line = nx > was ? "est. max " + nx + " " + g.unit + " (+" + (nx - was) + "), so next week goes up"
+        : done + " of " + rows.length + (rows.length === 1 ? " session" : " sessions") + " done";
     }
     return tcard("good sumnext", "week " + p.week + " of " + g.weeks + " done", { title: g.title }, line, [["btn ghost", "Adjust with Pumpy",
       function (m) { leaveWorkout(); setTimeout(function () { openGoalChat({ adjust: g, message: m }); }, 300); },
@@ -14639,15 +14651,21 @@ export const APP = String.raw`
   // Where week w of a goal's program starts: its first day, plus seven a week.
   function rxWeekStart(g, week) { return addDays(dayDate(g.start_day), 7 * (Math.max(1, week) - 1)); }
 
-  // The max a week's loads come from. Week one is the baseline the program was
-  // built on; every later week is the newest estimate from sets logged before it
-  // began. Held near the baseline, so one mistyped set cannot throw a week.
+  // The max a week's loads come from: the baseline the program was built on,
+  // raised when a set logged before that week began says the lifter is stronger,
+  // and never lowered by one that does not. A program's own sets are sub-maximal
+  // on purpose — five at 75 % is about a ten-rep weight — and Epley on them reads
+  // a max well under the real one: followed to the letter, the program would
+  // drift lighter every week (the review's bug 1). So an estimate under the
+  // baseline is evidence of nothing, and a week gone badly is the person's to
+  // tell Pumpy, or to answer by ending the goal. Capped at a tenth over the
+  // larger of the baseline and the target, so one mistyped set cannot throw a week.
   function rxBasis(g, week, logs) {
     var base = Number(g.baseline) || 0, top = Math.max(base, Number(g.target) || 0), m;
     if (!base) return 0;
     if (week <= 1) return base;
     m = liftMax(logs, g.exercise, rxWeekStart(g, week), g.unit);
-    return m ? clamp(m.est, base * 0.9, top * 1.1) : base;
+    return m && m.est > base ? Math.min(m.est, top * 1.1) : base;
   }
 
   function prescriptionFor(row, d) {
@@ -14677,13 +14695,17 @@ export const APP = String.raw`
 
   // ---------- where a goal stands (seam) ----------
   //
-  // Against the straight line from where it started to where it is going: the
-  // latest estimated max for a lift, the latest weigh-in for fat loss, sessions
-  // against the plan's pace for the rest. Inside a plate (or one per cent) of
-  // the line is "on track"; past its last day it is "reached" or "done". A fat
-  // goal with no weigh-in after its first week says so ("no data") rather than
-  // guessing, and before its first day it is "upcoming". d = { logs, body
-  // (settings.body), now }.
+  // A fat-loss goal: the latest weigh-in against the straight line from where it
+  // started to where it is going, inside a pound (half a kilo) "on track"; no
+  // weigh-in after its first week says so ("no data") rather than guessing. A
+  // lift: the estimate never reads under the baseline, for the reason the loads
+  // never drop (rxBasis), and "ahead" is an estimate over the line by more than a
+  // plate (or one per cent); "behind" is about the plan, not the estimate —
+  // sessions due by now and not done, two or more and under three in four. Any
+  // other goal: sessions against the plan's pace. Past its last day a goal is
+  // "reached" or "done", and before its first it is "upcoming". sessions and due
+  // are for every kind (the lift card's bar is how far through the block).
+  // d = { logs, body (settings.body), now }.
   function goalStatusOf(g, d) {
     d = d || {};
     var now = d.now || new Date(), today = dayDate(ymd(now)), start = dayDate(g.start_day), end = dayDate(g.end_day);
@@ -14691,15 +14713,21 @@ export const APP = String.raw`
     var weeks = g.weeks || Math.max(1, Math.ceil((span + 1) / 7));
     var base = Number(g.baseline) || 0, target = Number(g.target) || 0, frac = clamp(day / span, 0, 1), tol, got, m, per;
     var out = { kind: g.kind, week: clamp(Math.floor(day / 7) + 1, 1, weeks), weeks: weeks, status: "on track",
-      latest: null, expected: null, started: day >= 0, over: day > span, unit: g.unit || null };
+      latest: null, expected: null, started: day >= 0, over: day > span, unit: g.unit || null, sessions: 0, due: 0 };
+    // Sessions since the start against the program's pace, pro rata.
+    per = (g.program && g.program.days_per_week) || (g.kind === "consistency" && target) || 3;
+    (d.logs || []).forEach(function (l) {
+      if (isSession(l) && l.started_at && ymd(new Date(l.started_at)) >= g.start_day && ymd(new Date(l.started_at)) <= ymd(now)) out.sessions++;
+    });
+    out.due = Math.round(per * Math.max(0, Math.min(day, span + 1)) / 7);
     if (g.kind === "lift" && base && target) {
       m = liftMax(d.logs, g.exercise, addDays(today, 1), g.unit);
-      out.latest = m ? Math.round(m.est) : null;
+      got = out.latest = Math.max(base, m ? Math.round(m.est) : 0);
       out.expected = Math.round(base + (target - base) * frac);
       tol = Math.max(plateOf(g.unit), target * 0.01);
-      got = out.latest === null ? base : out.latest;
       out.status = out.over ? (got >= target ? "reached" : "done")
-        : got >= out.expected + tol ? "ahead" : got < out.expected - tol ? "behind" : "on track";
+        : got > base && got >= out.expected + tol ? "ahead"
+        : out.due >= 2 && out.sessions < out.due * 0.75 ? "behind" : "on track";
     } else if (g.kind === "fat" && base && target) {
       out.latest = lastWeighIn(d.body, g.start_day, g.unit);
       out.expected = Math.round((base - (base - target) * frac) * 10) / 10;
@@ -14709,13 +14737,8 @@ export const APP = String.raw`
         : out.over ? (m <= target ? "reached" : "done")
         : m <= out.expected - tol ? "ahead" : m > out.expected + tol ? "behind" : "on track";
     } else {
-      // Sessions since the start against the program's pace, pro rata.
-      per = (g.program && g.program.days_per_week) || (g.kind === "consistency" && target) || 3;
-      out.latest = 0;
-      (d.logs || []).forEach(function (l) {
-        if (isSession(l) && l.started_at && ymd(new Date(l.started_at)) >= g.start_day && ymd(new Date(l.started_at)) <= ymd(now)) out.latest++;
-      });
-      out.expected = Math.round(per * Math.max(0, Math.min(day, span + 1)) / 7);
+      out.latest = out.sessions;
+      out.expected = out.due;
       out.status = out.over ? "done" : out.latest > out.expected ? "ahead"
         : out.expected && out.latest < out.expected * 0.75 ? "behind" : "on track";
     }
