@@ -1848,7 +1848,7 @@ export const STYLE = String.raw`<style>
   .segbtn { position: relative; z-index: 1; flex: 1; min-width: 0; min-height: 32px; border: none;
     background: none; color: var(--ink-2); font-size: 13px; font-weight: 700; padding: 0 10px;
     letter-spacing: -.005em; transition: color var(--t-2) var(--e-soft); }
-  .segbtn[aria-selected="true"] { color: var(--ink); }
+  .segbtn[aria-selected="true"], .segbtn[aria-checked="true"] { color: var(--ink); }
   .secthead b { font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
   .wbnav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
   .planbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
@@ -2739,17 +2739,29 @@ export const STYLE = String.raw`<style>
     .pumpybar button { transition: none; }
     .pblabel, .pumpybar.labelled .pblabel { transition: opacity var(--t-1) var(--e-soft); }
   }
-  .pumpyhello { text-align: center; padding: 22px 12px 8px; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
-  .pumpyhello .pmark { width: 60px; height: 60px; margin: 0 auto 12px; box-shadow: var(--sh-md); }
-  .pumpyhello .pmark svg { width: 34px; height: 34px; }
-  .pumpyhello h2 { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0 0 6px; color: var(--ink);
-    letter-spacing: -.015em; }
-  .pumpyhello p { margin: 0 auto; max-width: 340px; }
-  .quick { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 16px 0 4px; }
-  /* The library chips refuse to shrink; these have to, or a long ask runs off both
-     edges of the phone instead of wrapping. */
-  .quick .chip { flex: 0 1 auto; max-width: 100%; white-space: normal; text-align: left;
-    line-height: 1.3; padding: 9px 13px; }
+  /* The empty chat (app.ts pumpyHello): the question, the goal chips, two quiet
+     links. A chip is a full-width row, not a pill, because an outcome carries a
+     number and a reason ("your best ~287") that a pill has no second line for —
+     the title-and-quieter-line suggestion ChatGPT's empty chat uses. Sized so
+     all four sit above the composer on a 6.1" phone; the drawing gave up most. */
+  .pumpyhello { text-align: center; padding: 4px 0 2px; color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+  .pumpyhello h2 { font-family: var(--display); font-size: 22px; font-weight: 700; margin: 0 0 5px; color: var(--ink);
+    letter-spacing: -.015em; line-height: 1.2; }
+  .pumpyhello p { margin: 0 auto; max-width: 320px; }
+  .gchips { display: grid; gap: 8px; margin: 16px 0 2px; text-align: left; }
+  .gchip { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; padding: 9px 12px 9px 15px;
+    border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: var(--sh-sm);
+    color: var(--ink); font: inherit; text-align: left; transition: transform var(--t-1) var(--e-out); }
+  .gchip:active { transform: scale(.98); }
+  .gchip span { flex: 1; min-width: 0; }
+  .gchip b { display: block; font-size: 15px; font-weight: 650; line-height: 1.3; letter-spacing: -.01em; }
+  .gchip small { display: block; margin-top: 2px; font-size: 12.5px; line-height: 1.35; color: var(--muted); }
+  /* "1 free plan" and "Plus": a tag, ember-ink on ember-soft (4.7:1). */
+  .gchip i, .glinks i { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: var(--ember-soft);
+    color: var(--ember-ink); font: normal 700 11px/1.2 var(--sans); white-space: nowrap; }
+  .glinks { display: flex; flex-wrap: wrap; justify-content: center; column-gap: 18px; }
+  .glinks button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0;
+    background: none; color: var(--ink-2); font: 600 13px/1.3 var(--sans); }
   .msgrow { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; }
   .msgcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .reportresponse { align-self: flex-start; min-height: 44px; padding: 8px 0;
@@ -2804,6 +2816,54 @@ export const STYLE = String.raw`<style>
   .proposal .declined { color: var(--muted); font-size: 13px; margin-top: 10px;
     animation: donein var(--t-3) var(--e-out); }
   @keyframes donein { from { opacity: 0; transform: translateY(-5px); } }
+  /* A form or a program takes the chat's whole width (research §3). */
+  .msgrow.wide { max-width: none; }
+  .msgrow.wide .msgcol { flex: 1; }
+  /* The ask card: a form, so a hairline rather than the proposal's ember border,
+     which stays with the card that writes. Its controls are the app's own — the
+     segmented control, the set sheet's stepper, the chip — scaled to a card. */
+  .askcard { display: grid; gap: 14px; padding: 16px; border: 1px solid var(--line); border-radius: 18px;
+    background: var(--card); box-shadow: var(--sh-sm); }
+  .askl { margin-bottom: 7px; font-size: 13px; font-weight: 650; color: var(--ink-2); }
+  .askcard .segbtn { min-height: 36px; font-size: 15px; }
+  .askcard .segpill { transition: transform var(--t-2) var(--e-spring), opacity var(--t-2) var(--e-soft); }
+  .askcard .seg.none .segpill { opacity: 0; transition: none; }
+  .askcard .stepper { justify-content: flex-start; margin: 0; }
+  .askcard .stepper button { width: 44px; height: 44px; }
+  .askcard .stepper .val { width: 92px; font-size: 24px; }
+  .askfrom { display: block; margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .askchips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .askchips .chip { position: relative; min-height: 36px; font-size: 14px; }
+  .askchips .chip::after { content: ""; position: absolute; inset: -4px 0; }
+  .askpick input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; }
+  .askcard.sent { padding: 11px 14px; overflow: hidden; }
+  .askcard.sent div { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .askcard.sent .ic { width: 15px; height: 15px; color: var(--good); }
+  /* The program card. The verdict is a mark and a word on a tint, so colour is
+     never all that says it; the stretch amber is darkened on light, where
+     --warn reads 3.9:1 on its tint. */
+  .verdict { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; padding: 5px 10px 5px 8px;
+    border-radius: 999px; font-size: 12.5px; font-weight: 700; background: #EFF8F3; color: var(--good); }
+  .verdict .ic { width: 14px; height: 14px; }
+  .verdict.stretch { background: #FBF1DE; color: #845600; }
+  .verdict.too_fast { background: var(--ember-soft); color: var(--ember-ink); }
+  .pnote { margin: 8px 0 0; font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+  .pswap { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 13px; font-weight: 650;
+    color: var(--ember-ink); }
+  .proposal .olink { position: relative; margin: 10px 8px 0 0; }
+  .proposal .olink::after { content: ""; position: absolute; inset: -9px 0; }
+  .pwk .pline { display: flex; align-items: baseline; gap: 8px; }
+  .pwk .pline b { flex: 0 0 32px; }
+  .pwk .pline span { flex: 1; min-width: 0; }
+  .pwk .pline em { font-style: normal; font-weight: 650; color: var(--ink); white-space: nowrap; }
+  .proposal .linkbtn { margin-top: 8px; }
+  @media (prefers-color-scheme: dark) {
+    .verdict { background: #173026; }
+    .verdict.stretch { background: #33270F; color: var(--warn); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .askcard .segpill { transition: opacity var(--t-2) var(--e-soft); }
+  }
   /* --pbar: the paused bar, when there is one, stands between it and the tab bar. */
   .composer { position: sticky; bottom: calc(var(--ptab, calc(78px + var(--sab))) + var(--pbar, 0px));
     margin-bottom: calc(var(--ptab, calc(78px + var(--sab))) + var(--pbar, 0px));
@@ -3132,7 +3192,7 @@ export const STYLE = String.raw`<style>
     background: #F5F1E8; box-shadow: 0 0 0 1px var(--line); }
   .pumpyart img { display: block; width: 100%; height: 100%; object-fit: cover; }
   .pumpyart.artfailed { display: none; }
-  .pumpyhello .pumpyart { width: 140px; height: 140px; margin-bottom: 16px; }
+  .pumpyhello .pumpyart { width: 84px; height: 84px; border-radius: 22px; margin-bottom: 12px; }
   /* An unavailable drawing must not move the greeting halfway through its entrance. */
   .pumpyhello .pumpyart.artfailed { display: block; visibility: hidden; }
   #workout.summary .pumpyart { width: 88px; height: 88px; border-radius: 22px; margin-bottom: 12px; }
@@ -3206,7 +3266,7 @@ export const STYLE = String.raw`<style>
     .btn:active, .iconbtn:active, .addbtn:active, .chip:active, .carditem:active,
     .addex:active, .planbtn:active,
     .setpill:active, .wnav:active, .wfinish:active, .ring:active, .scprev:active,
-    .uploadrow:active, .pumpybar button:active { transform: none; }
+    .uploadrow:active, .pumpybar button:active, .gchip:active { transform: none; }
   }
   /* Keep the workout visible; supporting detail opens in place on request. */
   .savebtn { width: auto; min-height: 44px; padding: 0 12px; gap: 5px; font-size: 12px; font-weight: 650; white-space: nowrap; }
