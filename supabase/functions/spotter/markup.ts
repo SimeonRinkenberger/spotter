@@ -729,6 +729,17 @@ export const MARKUP_BODY = String.raw`</head>
   <div class="btnrow"><button class="btn" id="countdone">Done</button></div>
 </div></div>
 
+<!-- The goal card, opened (app.ts, gsFill): where the goal started and where it
+     ends, the line it is on, this program week's days and, for fat loss, the
+     weigh-in and the sources. Before the account sheet, which a weigh-in opens
+     over it. -->
+<div class="sheet" id="goalsheet" role="dialog" aria-modal="true" aria-labelledby="gstitle"><div class="sheetbody">
+  <div class="grabber"></div>
+  <div id="gsbody"></div>
+  <div class="btnrow"><button class="btn ghost" data-close="goalsheet">Done</button><button class="btn" id="gsadjust">Adjust with Pumpy</button></div>
+  <button class="danger" id="gsend">End goal</button>
+</div></div>
+
 <div class="sheet" id="copysheet"><div class="sheetbody">
   <div class="grabber"></div>
   <h2>Copy a week</h2>
@@ -892,6 +903,8 @@ export const MARKUP_BODY = String.raw`</head>
       <span class="v goalset"><button class="chip" id="goalless" aria-label="One session a week fewer">&minus;</button><b id="goalnum">3</b><button class="chip" id="goalmore" aria-label="One session a week more">+</button></span></div>
     <div class="kv"><span class="k">Weight unit</span>
       <span class="v"><button class="chip" id="unittoggle">lb</button></span></div>
+    <!-- Optional, typed by the person, in the unit above (app.ts, openWeighIn). -->
+    <button class="kv row" id="setbodyrow"><span class="k">Body weight</span><span class="v" id="setbody">Not set</span><svg class="ic chev"><use href="#i-chev"></use></svg></button>
     <div class="kv"><span class="k">Timer sounds</span>
       <span class="v"><button class="chip" id="soundtoggle">On</button></span></div>
     <!-- Unhidden only where the browser will actually buzz. iOS Safari has no

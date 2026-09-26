@@ -54,12 +54,14 @@ function check(name, body) {
 // ---------- the world the lifted rules run in ----------
 const LIFT = ['ymd', 'addDays', 'mondayOf', 'dayDate', 'isSession', 'isPending', 'isFailed', 'upNextOf', 'dayOf',
   'setsIn', 'daySessions', 'dayRows', 'sessionFor', 'nextPlanned', 'tryNext', 'readyList', 'workoutStatus',
-  'statusLabel', 'aheadWord', 'planDays', 'readyPick', 'readTrainSeg'];
+  'statusLabel', 'aheadWord', 'planDays', 'readyPick', 'readTrainSeg',
+  // B.2: S2 carries the planned row's prescription, worked out by the seam's one rule.
+  'prescriptionFor', 'rxText', 'rxWeekStart', 'rxBasis', 'liftMax', 'e1rm', 'unitTo', 'plateOf', 'toPlate', 'clamp'];
 function world() {
   const c = vm.createContext({ Date, JSON, Math, String, Number, Object, Array, console, isFinite,
     state: { profile: null },
     localStorage: { store: {}, getItem(k) { return k in this.store ? this.store[k] : null; }, setItem(k, v) { this.store[k] = String(v); } } });
-  vm.runInContext(decl('AHEAD_DAYS') + decl('SEGS') + LIFT.map(fn).join(''), c);
+  vm.runInContext(decl('AHEAD_DAYS') + decl('SEGS') + decl('LB_PER_KG') + decl('MAX_WINDOW') + LIFT.map(fn).join(''), c);
   return (js) => {
     const v = vm.runInContext(js, c);
     return v && typeof v === 'object' ? JSON.parse(JSON.stringify(v)) : v;
@@ -112,6 +114,19 @@ check('S2: one of two planned done — the other is up next, and today\'s sessio
 check('S2: a different workout trained instead leaves the plan standing', () => {
   const r = up({ plan: [P('2026-09-25', 'a')], logs: [LOG('c', '2026-09-25')] });
   assert.equal(r.s, 2); assert.equal(r.w.id, 'a'); assert.equal(r.done[0].workout_id, 'c');
+});
+check('S2 (B.2): a program day carries its prescription, in this week\'s numbers; any other day carries none', () => {
+  const G = { id: 'g1', kind: 'lift', exercise: 'bench-press', baseline: 287, target: 295, unit: 'lb', start_day: '2026-09-18' };
+  const rx = { v: 1, goal_id: 'g1', week: 2, label: 'Build', exercise: 'bench-press', sets: 5, reps: '5', pct: 0.775, weight: 220, unit: 'lb' };
+  const row = Object.assign(P('2026-09-25', 'a'), { prescription: rx });
+  const bench = (w, reps, day) => LOG('b', day, 1, { entries: [{ canonical_id: 'bench-press', sets: [{ reps, weight: w, unit: 'lb' }] }] });
+  let r = up({ plan: [row], goals: [G], unit: 'lb' });
+  assert.equal(r.s, 2); assert.equal(r.rx.text, 'W2 · Build · 5×5 @ 220 lb', 'week 2 from the baseline, to a plate');
+  // A heavier week 1 moves week 2's load; logs from today on do not.
+  r = up({ plan: [row], goals: [G], unit: 'lb', logs: [bench(265, 5, '2026-09-20'), bench(300, 5, '2026-09-25')] });
+  assert.equal(r.rx.weight, 240, '0.775 × est. 309 from the set before the week began');
+  assert.equal(up({ plan: [row], goals: [G], unit: 'kg' }).rx.text, 'W2 · Build · 5×5 @ 100 kg', 'read in the account\'s unit');
+  assert.equal(up({ plan: [P('2026-09-25', 'a')], goals: [G] }).rx, null);
 });
 check('S3: done today as planned — the recap, the day\'s totals, and what is next', () => {
   const r = up({ plan: [P('2026-09-25', 'a'), P('2026-09-29', 'b'), P('2026-09-27', 'c')],
