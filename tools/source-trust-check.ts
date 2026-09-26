@@ -16,6 +16,8 @@ class GuardError extends Error {};
 const aiActor={getStore:()=>null};
 function rest(t:string){return 'https://fixture.invalid/'+t;}
 async function fetch(){state.inserted++;return Response.json([{id:42}]);}
+// index.ts's db helpers call rest.ts's serviceFetch (one retry on a 401 PGRST303): here, the stub above.
+function serviceFetch(i:any,o?:any){return fetch(i,o);}
 async function dbSelect(t:string){if(t==='workouts')return [{id:'w',platform:'tiktok',ingest_status:'ready',shortcode:'tt-test',url:'https://example.com'}];return [];}
 async function settledAll(a:any[]){return Promise.all(a);}
 async function countsFor(){return {extracts:0};}
