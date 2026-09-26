@@ -100,7 +100,7 @@ function pumpyFixture(settings) {
   t.nodes.set('pumpyview', { scrollTop: 0 });
   Object.assign(t.c, {
     toast: (m) => toasts.push(m), renderPumpy() {}, guideLearn() {}, isFree: () => false, openPlans() {},
-    absorbMeter() {}, liveEvent() {}, NO_TOUCH: false, MAX_REFS: 6,
+    absorbMeter() {}, liveEvent() {}, NO_TOUCH: false, MAX_REFS: 6, PUMPY_CAPS: ['ask', 'program'],
     pumpy: { thread: null, messages: [], busy: false, refs: [], live: null, stick: true },
   });
   vm.runInContext(oneLine('aiDeclined') + '\n' + fn('sendPumpy'), t.c);
