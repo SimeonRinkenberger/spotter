@@ -212,7 +212,7 @@ function world(opts = {}) {
     guideClear() {}, guideStill() {}, guidePage() {}, haptic() {}, renderGrid() {}, countStats() {},
     restorePlan() {}, prepareTrain() {}, quietly() {}, loadPumpy() {}, renderPumpy() {}, paintSeg() {}, drawTrainBody() {},
     // The Pumpy new-chat clock (gtm-owner-ux): setView starts it when Pumpy is left.
-    pumpyAway() {}, pumpyBack() {}, freshenPumpy() {}, pumpyIdleTimer: 0,
+    pumpyAway() {}, pumpyBack() {}, freshenPumpy() {}, pumpyIdleTimer: 0, remindOnTrain: false, firstPlanMoment() {},
     // What the week bar, a sheet and Workout Mode call when a drag lands.
     steps: [], closed: [], moves: [], pull: opts.pull || null,
     paintTrainBar() {}, closeSheet(id) { sandbox.closed.push(id); d.byId[id].classList.remove('open'); },
