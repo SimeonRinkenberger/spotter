@@ -17189,6 +17189,10 @@ export const APP = String.raw`
         }
         if (prog && accept) programIn(m, r);
         else if (r.plan) state.plan = null;
+        // Days Pumpy put on the calendar are a first plan too: the reminder offer
+        // waits for the next arrival on Train, where those days are, as a
+        // program's does (programIn). firstPlanMoment asks only once, ever.
+        if (accept && m.meta.proposal.kind === "plan_days") remindOnTrain = true;
         renderPumpy();
       }).catch(function () {
         toast("Could not reach Spotter — check your connection.");
