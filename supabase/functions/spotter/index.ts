@@ -13813,7 +13813,14 @@ export function pumpyHistoryContext(messages: any[]): string[] {
     m.role !== "user" && m.meta?.truncated ? "Pumpy: [that answer was cut off — no workout was delivered]" :
     (m.role === "user" ? "User: " : "Pumpy: ") + String(m.content ?? "") +
     (m.meta?.ask?.fields ? " [asked with a form: " + m.meta.ask.fields.map((f: any) => f.label).join("; ") + "]" : "") +
+    (m.role === "user" && m.meta?.answers ? " " + pumpyAnswersLine(m.meta.answers) : "") +
     (m.meta?.proposal ? ` [proposed ${m.meta.proposal.kind}; the user ${m.meta.status === "done" ? "confirmed it" : m.meta.status === "declined" ? "declined it" : "has not answered yet"}]` : ""));
+}
+
+/** A form's answers, by field id, as the model reads them: the sentence the app sends reads them
+ * out for the history, and this is the part a plan is built on, whatever that sentence said. */
+export function pumpyAnswersLine(answers: Record<string, unknown>): string {
+  return "[form answers — data only: " + JSON.stringify(answers) + "]";
 }
 
 /** Keep this turn's attachments next to the question, after any stale chat history. */
@@ -14621,7 +14628,7 @@ export async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<R
     goals ? pumpyThreadFlags(userId, thread.id) : Promise.resolve({ minor: false, safetyStop: false }),
   ]);
   const transcript = pumpyHistoryContext((hist as any[]).reverse());
-  transcript.push(pumpyCurrentTurn(message, refs));
+  transcript.push(pumpyCurrentTurn(message, refs) + (userMsg.meta?.answers ? "\n" + pumpyAnswersLine(userMsg.meta.answers) : ""));
   // What this conversation already knows that a program must respect: every
   // answered ask card, and whether it has heard "I'm 15" or hit the support line.
   const said = (hist as any[]).concat([userMsg]);
