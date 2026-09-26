@@ -59,6 +59,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { aiActor, createGuardedFetch, GuardError, tokenCost, tokenPrice } from "./ai-guard.ts";
 import { deterministicCombine } from "./pumpy-combine.ts";
+import {
+  adultAnswer, type Ask, askAsText, blockedSentence, capsOf, cleanAnswers, cleanCoachText, expandProgram, freeProgramState,
+  liftMaxAt, unitTo,
+  GOAL_FREE_TURNS, liftHistory, type LogRow, mentionsMinor, PROGRAM_MAX_TEMPLATES, safetyCheck, type TemplateRef,
+  type Program, type Unit, validateAsk,
+} from "./goals.ts";
+import { STARTERS } from "./starters.ts";
 // Card-size covers (storeThumb): a plain-JS JPEG codec, so nothing but the function ships.
 import jpeg from "npm:jpeg-js@0.4.4";
 
@@ -775,7 +782,9 @@ async function capLimit(
  * deleted from half a dozen places, including the worker.
  */
 async function libraryCount(userId: string): Promise<number> {
-  return await dbCount("workouts", `user_id=eq.${userId}`);
+  // A Spotter Starter kept to Workouts and a program's own workouts are not saves
+  // (B.2): guard_workout_library does not count them, and nor does this.
+  return await dbCount("workouts", `user_id=eq.${userId}&or=(kind.is.null,kind.not.in.(starter,program))`);
 }
 
 // A legacy backstop, no longer the thing that meters Pumpy. Credits are the
@@ -13100,7 +13109,8 @@ async function runPumpyTool(userId: string, name: string, args: any): Promise<un
     case "search_catalog": return toolSearchCatalog(String(args?.query ?? args?.q ?? ""));
     case "get_plan": return await toolGetPlan(userId, args?.week_start ? String(args.week_start) : undefined, Number(args?.weeks ?? 1));
     case "get_logs_summary": return await toolLogsSummary(userId, Number(args?.days ?? 14));
-    default: return { error: "unknown tool " + name + "; the tools are list_library, get_workout, get_exercise_detail, search_catalog, get_plan, get_logs_summary" };
+    case "get_lift_history": return await toolLiftHistory(userId, String(args?.exercise ?? args?.id ?? ""));
+    default: return { error: "unknown tool " + name + "; the tools are list_library, get_workout, get_exercise_detail, search_catalog, get_plan, get_logs_summary, get_lift_history" };
   }
 }
 
@@ -13210,7 +13220,14 @@ type PumpyProposal =
     kind: "append_exercises"; workout_id: string; workout_title: string; block_title: string | null;
     exercises: Exercise[]; summary: string;
   }
-  | { kind: "plan_days"; days: { day: string; workout_id: string; workout_title: string }[]; summary: string };
+  | { kind: "plan_days"; days: { day: string; workout_id: string; workout_title: string }[]; summary: string }
+  | Program;
+
+/** What a proposal is judged against in its conversation (B.2). Absent: builds 5-10. */
+type ProposalCtx = {
+  caps: Set<string>; free: string | null; unit: Unit; today: string;
+  answers: Record<string, unknown>[]; minor: boolean; safetyStop: boolean; bodyWeight: number | null;
+};
 
 /** Model-written exercises, through the same normalizer extraction uses, then the catalog. */
 function pumpyExercises(list: unknown): Exercise[] {
@@ -13389,8 +13406,16 @@ async function pumpyAttachSources(userId: string, blocks: Block[], cited: Map<st
   console.log("pumpy cite:", kept, "attached,", dropped, "dropped, across", uuids.length, "workout(s)");
 }
 
-export async function validateProposal(userId: string, p: any): Promise<PumpyProposal | { error: string }> {
+export async function validateProposal(userId: string, p: any, v?: ProposalCtx): Promise<PumpyProposal | { error: string }> {
   const kind = String(p?.kind ?? "");
+  // Basic's free conversation builds one thing, a program; anything else is Plus.
+  if (v?.free && kind !== "program") {
+    return { error: "in this conversation propose only a program (kind program), or ask for what you still need" };
+  }
+  if (kind === "program") {
+    if (!v?.caps.has("program")) return { error: "unknown proposal kind program" };
+    return await validateProgram(userId, p, v);
+  }
   const summary = swapStr(p?.summary, 400);
   const sizeError = pumpyProposalSizeError(p);
   if (sizeError) return { error: sizeError };
@@ -13463,9 +13488,82 @@ export async function validateProposal(userId: string, p: any): Promise<PumpyPro
   return { error: "unknown proposal kind " + kind };
 }
 
+// A program's workouts, resolved: a saved one by its id (with the catalog ids it
+// holds, so a prescription can be checked against it), or a new one normalized the
+// way create_workout is, with its id chosen now so the stored proposal is the thing
+// the confirm writes. Then the pure half (goals.ts expandProgram) dates it, loads
+// it and holds it to the honesty rules.
+async function validateProgram(userId: string, raw: any, v: ProposalCtx): Promise<PumpyProposal | { error: string }> {
+  const list: any[] = Array.isArray(raw?.templates) ? raw.templates : [];
+  if (!list.length) return { error: "a program needs templates" };
+  if (list.length > PROGRAM_MAX_TEMPLATES) return { error: "use at most " + PROGRAM_MAX_TEMPLATES + " workouts" };
+  const templates = new Map<string, TemplateRef>();
+  const known = list.some((t) => t?.workout_id && !isUuid(String(t.workout_id))) ? await workoutIds(userId) : [];
+  for (const t of list) {
+    const ref = String(t?.ref ?? "").trim().slice(0, 12);
+    if (!ref || templates.has(ref)) return { error: "give each template its own ref, like t1" };
+    if (t?.workout_id) {
+      const id = await resolveHandle(userId, t.workout_id, known);
+      if (typeof id !== "string") return { error: "template " + ref + ": " + id.error };
+      const rows = await dbSelect("workouts", `id=eq.${id}&user_id=eq.${userId}&select=id,title,blocks,category,duration_minutes`);
+      if (!rows.length) return { error: "template " + ref + ": no such workout in this library" };
+      const w = rows[0];
+      templates.set(ref, { ref, workout_id: w.id, new: false, title: w.title ?? "Workout", exercises: exCount(w.blocks),
+        canon: canonOf(w.blocks), category: w.category ?? null, duration_minutes: w.duration_minutes ?? null });
+    } else {
+      const made = await validateProposal(userId, { ...t, kind: "create_workout" });
+      if ("error" in made) return { error: "template " + ref + ": " + made.error };
+      if (made.kind !== "create_workout") return { error: "template " + ref + ": not a workout" };
+      templates.set(ref, { ref, workout_id: crypto.randomUUID(), new: true, title: made.title, exercises: exCount(made.blocks),
+        canon: canonOf(made.blocks), category: made.category, duration_minutes: made.duration_minutes,
+        create: { title: made.title, category: made.category, difficulty: made.difficulty, duration_minutes: made.duration_minutes,
+          equipment: made.equipment, muscle_groups: made.muscle_groups, blocks: made.blocks, summary: made.summary } });
+    }
+  }
+  const lift = String(raw?.goal?.exercise ?? "");
+  const [hist, active] = await settledAll<any>([
+    raw?.goal?.type === "lift" && catalogById(lift) ? toolLiftHistory(userId, lift) : Promise.resolve(null),
+    dbSelect("goals", `user_id=eq.${userId}&status=eq.active&select=id,title&limit=1`),
+  ]);
+  // The newest answer to a question, across every ask card in the conversation.
+  const said = (k: string): number | null => {
+    for (let i = v.answers.length - 1; i >= 0; i--) { const n = Number((v.answers[i] as any)?.[k]); if (n > 0) return n; }
+    return null;
+  };
+  const out = expandProgram(raw, {
+    today: v.today, unit: v.unit, templates,
+    exerciseName: (id) => catalogById(id)?.name ?? null,
+    history: hist && !hist.error ? { novice: !!hist.novice, est: hist.est_max ?? null } : null,
+    answerMax: said("max"), bodyWeight: said("weight") ?? v.bodyWeight,
+    adult: adultAnswer(v.answers), minor: v.minor, safetyStop: v.safetyStop,
+    free: !!v.free, replaces: (active as any[])[0] ? { id: active[0].id, title: active[0].title } : null,
+  });
+  if ("error" in out) return out;
+  return out.program;
+}
+
+function exCount(blocks: any): number {
+  let n = 0;
+  for (const b of Array.isArray(blocks) ? blocks : []) n += Array.isArray(b?.exercises) ? b.exercises.length : 0;
+  return n;
+}
+
+function canonOf(blocks: any): string[] {
+  const out: string[] = [];
+  for (const b of Array.isArray(blocks) ? blocks : []) {
+    for (const e of Array.isArray(b?.exercises) ? b.exercises : []) if (e?.canonical_id && !out.includes(e.canonical_id)) out.push(e.canonical_id);
+  }
+  return out;
+}
+
 /** Read-only preparation. All mutations and the durable confirmation receipt are
  * committed together by confirm_pumpy_proposal. */
 async function execProposal(userId: string, p: PumpyProposal, model: string | null): Promise<Record<string, unknown>> {
+  if (p.kind === "program") {
+    // The goal's id, and the person's own today: "from today on" is theirs, not UTC's.
+    const prof = await dbSelect("profiles", `id=eq.${userId}&select=settings`).catch(() => [] as any[]);
+    return { goal_id: crypto.randomUUID(), today: localToday(prof[0]?.settings?.tz) };
+  }
   if (p.kind === "create_workout") {
     return { id: crypto.randomUUID(), model };
   }
@@ -13603,6 +13701,19 @@ const PUMPY_STATIC = [
   'Write "say" as the FIRST key of the object, before tool and proposal — the user reads it as you write it.',
 ].join("\n");
 
+// The goals half of the prompt (B.2), sent only to a build that can draw an ask card
+// and a program (caps). Static like PUMPY_STATIC, so the two together are one
+// cacheable prefix; a build without caps keeps its old prompt byte for byte.
+const PUMPY_GOALS = [
+  "GOALS. When the user names an outcome — a lift number (\"bench 305\"), losing weight, building muscle, training more often — your job is ONE program proposal they can confirm.",
+  "- get_lift_history {exercise} → one catalog lift: the estimated max (Epley, sets of 10 reps or fewer, last 8 weeks), best sets, weekly estimates, and whether they are new to it. Call it once for a lift goal unless EST. MAXES already has that lift.",
+  "- Ask only what you cannot infer, in ONE ask card, then build. An ask card is a reply {\"say\": string, \"ask\": {\"fields\": [{\"id\": string, \"label\": string, \"type\": \"choice\"|\"number\"|\"date\", \"options\": [2-6 short strings, choice only], \"value\": pre-fill, \"unit\": string}], \"submit\": \"Build my plan\"}, \"tool\": null, \"proposal\": null}. Pre-fill what you know (their estimated max, next Monday for the start). Lift fields: days (Days a week, choice 2/3/4/5), minutes (Session length, choice 30/45/60/75, unit min), start (Start, date), max (Current <lift> max, number, unit lb or kg). Weight loss adds weight (Current weight, number) when BODY WEIGHT is missing, and adult (Are you 18 or older?, choice Yes/No) — required and never pre-filled. Never ask twice; when the answers arrive, propose.",
+  "- The proposal: {\"kind\":\"program\",\"goal\":{\"type\":\"lift\"|\"fat\"|\"muscle\"|\"consistency\",\"title\":short like \"Bench 305\",\"exercise\":catalog id (lift),\"target\":number,\"unit\":\"lb\"|\"kg\",\"baseline\":number (lift: est. max; fat: current weight),\"daily\":{\"steps\":int} or {\"cardio_minutes\":int} (fat),\"weigh_in_dow\":1-7 (fat)},\"verdict\":\"realistic\"|\"stretch\"|\"too_fast\",\"verdict_note\":one sentence,\"templates\":[{\"ref\":\"t1\",\"workout_id\":id} or {\"ref\":\"t2\", create_workout fields}],\"weeks\":[{\"week\":1,\"label\":\"Build\",\"days\":[{\"dow\":1,\"ref\":\"t1\",\"rx\":{\"exercise\":catalog id,\"sets\":5,\"reps\":\"5\",\"pct\":0.75,\"rpe\":8}}]}],\"start\":\"YYYY-MM-DD\",\"summary\":one sentence}. dow 1 is Monday, 7 Sunday; the app dates every day from start. Up to 12 weeks, 6 days a week, 6 templates; prefer saved workouts by id and create at most 2. Put rx only on the goal lift's day, pct of the baseline: the app rounds loads to plates and adapts later weeks to what they log. Leave out null fields. A 12-week, 4-day program must fit in one reply.",
+  "- Lift goals. Typical progress a month: presses about 2-5 lb (1-2.5 kg) for an intermediate, squats and deadlifts about 3-8 lb (1.5-4 kg), about double in someone's first months; even competitive lifters gain only about 10-13 kg a year. Within the top of that range the goal is realistic, up to half again past it a stretch, beyond that too fast. Never refuse: for too fast, build a milestone block toward what is reachable (target = the milestone), say plainly how long the goal usually takes, and end with a test week. Structure: build weeks, a lighter week about every 4th, heavier weeks, a test.",
+  "- Weight-loss goals. At most 1% of body weight and 2 lb (0.9 kg) a week — CDC and NHS guidance is about 1-2 lb or 0.5-1 kg a week. Asked for faster (10 lb in a month), reframe kindly: a realistic range and a longer plan. Say honestly that training builds strength and keeps muscle while the scale mostly follows food. The plan is training, a daily steps or cardio target, and a weekly weigh-in. Never set calorie targets, never advise on food, supplements or medication, never shame. Adults only.",
+  "- In say, give the verdict and its reason in one or two sentences. No medical claims and no disclaimers of your own: the app adds the right line to weight-loss plans.",
+].join("\n");
+
 // -- reference workouts --
 //
 // The snapshot lists every workout by title, so the coach has always known them
@@ -13674,6 +13785,7 @@ export function pumpyHistoryContext(messages: any[]): string[] {
   return messages.map((m: any) =>
     m.role !== "user" && m.meta?.truncated ? "Pumpy: [that answer was cut off — no workout was delivered]" :
     (m.role === "user" ? "User: " : "Pumpy: ") + String(m.content ?? "") +
+    (m.meta?.ask?.fields ? " [asked with a form: " + m.meta.ask.fields.map((f: any) => f.label).join("; ") + "]" : "") +
     (m.meta?.proposal ? ` [proposed ${m.meta.proposal.kind}; the user ${m.meta.status === "done" ? "confirmed it" : m.meta.status === "declined" ? "declined it" : "has not answered yet"}]` : ""));
 }
 
@@ -13702,16 +13814,21 @@ export function pumpyRefBlock(w: any): string {
  * interleaved above: the moment a date appears in the middle of the rules, the
  * cacheable prefix stops there and every turn pays full price for the half below.
  */
-export function pumpySystem(today: Date, refs: any[], snapshot: string): string {
+export function pumpySystem(today: Date, refs: any[], snapshot: string,
+  opt: { goals?: boolean; ask?: boolean; free?: boolean; tz?: string | null } = {}): string {
+  // The person's own date when their zone is known: a program that starts "Monday"
+  // must mean their Monday. Without one, UTC, exactly as before.
+  const local = opt.tz ? new Date(localToday(opt.tz) + "T12:00:00Z") : today;
   const dyn = [
-    "Today is " + WEEKDAYS[today.getUTCDay()] + " " + ymdUtc(today) + ". This week starts Monday " + ymdUtc(utcMonday(today)) + ".",
+    "Today is " + WEEKDAYS[local.getUTCDay()] + " " + ymdUtc(local) + ". This week starts Monday " + ymdUtc(utcMonday(local)) + ".",
+    opt.free ? "This is the user's one free goal conversation on Spotter Basic: answer with an ask card or a program proposal, nothing else." : "",
     refs.length
       ? "The user is working on these workouts — they are written out below, so do not call get_workout for them:\n\n" +
         refs.map(pumpyRefBlock).join("\n\n")
       : "",
     snapshot,
   ].filter(Boolean).join("\n\n");
-  return PUMPY_STATIC + "\nThe current message attachments are the user's explicitly selected workouts. " +
+  return PUMPY_STATIC + (opt.goals ? "\n" + PUMPY_GOALS : "") + "\nThe current message attachments are the user's explicitly selected workouts. " +
     "When the user says these workouts, these ones, or combine these, use ALL of that selection. " +
     "It replaces earlier attachment selections and overrides earlier assistant claims about which workouts are available. " +
     "Their complete supplied exercise details are in CURRENT STATE. Preserve sets, reps, durations, rests, rounds, equipment, variations and user edits. Missing fields are unknown, not bodyweight or zero. " +
@@ -13738,6 +13855,13 @@ function pumpyClean(say: string, userMessage: string): string {
   if (dropped) {
     console.warn("pumpy: dropped", dropped, "diagnostic sentence(s) from an answer");
     if (!out) out = "I cannot tell you what is going on there — ease the load and range on it, or leave it out today.";
+  }
+  // B.2: a calorie number to eat, or a medication or supplement to take, is never
+  // said, whatever the model wrote (goals.ts cleanCoachText).
+  const coach = cleanCoachText(out);
+  if (coach.dropped) {
+    console.warn("pumpy: dropped", coach.dropped, "calorie or medication sentence(s) from an answer");
+    out = coach.text || "I can't advise on that — I can help with the training side.";
   }
   if (PUMPY_PAIN_RE.test(userMessage) && out && !out.includes(PAIN_NOTE)) out = out + " " + PAIN_NOTE;
   return out.slice(0, PUMPY_SAY_CHARS);
@@ -13846,7 +13970,7 @@ export function makeSayGate(limit: number): SayGate {
         if (shown + out.length >= limit) continue;
         out += ch;
         shownOfSentence += ch.length;
-        if (DIAGNOSIS_RE.test(sentence)) {
+        if (DIAGNOSIS_RE.test(sentence) || blockedSentence(sentence)) {
           blocked = true;
           const here = Math.min(out.length, shownOfSentence);
           out = out.slice(0, out.length - here);
@@ -13872,6 +13996,7 @@ export const PUMPY_TOOL_STATUS: Record<string, string> = {
   search_catalog: "Checking the exercise catalog…",
   get_plan: "Reading your plan…",
   get_logs_summary: "Looking at your recent sessions…",
+  get_lift_history: "Looking at your lifts…",
 };
 
 // -- the last step always answers --
@@ -13951,7 +14076,7 @@ function pumpyFallbackSay(names: string[]): string {
 // tier answered would not be a limit at all.
 
 type PumpyTotals = { day: number; month: number; minute: number };
-type PumpyMeter = { plan: string; day: number | null; month: number | null; totals: PumpyTotals };
+type PumpyMeter = { plan: string; day: number | null; month: number | null; totals: PumpyTotals; profile?: Record<string, any> | null };
 
 function pumpyCredits(inTok: number, outTok: number, calls: number): number {
   if (calls <= 0) return 0;
@@ -13964,7 +14089,9 @@ async function pumpyMeter(userId: string): Promise<PumpyMeter> {
   let totals: PumpyTotals = { day: 0, month: 0, minute: 0 };
   try {
     const [prof, tot] = await settledAll<any>([
-      dbSelect("profiles", `id=eq.${userId}&select=plan,pumpy_limits`),
+      // settings and free_goal_thread ride along for B.2: the goal snapshot and the
+      // free-program gate read them, and this is already the round trip that asks.
+      dbSelect("profiles", `id=eq.${userId}&select=plan,pumpy_limits,settings,free_goal_thread`),
       rpc("pumpy_usage_totals", { p_user: userId }),
     ]);
     profile = (prof as any[])[0] ?? null;
@@ -13978,7 +14105,7 @@ async function pumpyMeter(userId: string): Promise<PumpyMeter> {
     // Missing accounting must stop new paid work. Saved workouts remain readable.
     throw new GuardError("accounting_unavailable");
   }
-  return { ...pumpyLimitsFor(profile), totals };
+  return { ...pumpyLimitsFor(profile), totals, profile };
 }
 
 /**
@@ -14037,6 +14164,194 @@ async function pumpyRecordUsage(
   }
 }
 
+// ---------- B.2: goals, asks and Basic's one free program ----------
+
+const PUMPY_PLUS_ONLY = "Pumpy coaching is included with Spotter Plus: combine saved workouts, build a plan, get exercise alternatives and personalized recommendations.";
+const PUMPY_FREE_USED = "Your free plan is built. Spotter Plus keeps Pumpy adjusting it week to week, and builds anything else you ask for.";
+
+/** The person's date where they are ("YYYY-MM-DD"); UTC when the zone is unknown or bad. */
+function localToday(tz: unknown): string {
+  try {
+    if (typeof tz === "string" && tz) {
+      return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    }
+  } catch { /* an unknown zone falls back to UTC */ }
+  return ymdUtc(new Date());
+}
+
+/**
+ * Basic's one door to the coach. A build that declared "program" may open ONE goal
+ * conversation (a goal chip, "Set a goal with Pumpy"): the first such turn claims it
+ * in profiles.free_goal_thread, a column no client can write. Every later turn must be
+ * in that conversation, which stays open until it has a live program or has used its
+ * GOAL_FREE_TURNS. Everything else is the Plus answer it has always been.
+ */
+async function freeGoalGate(userId: string, meter: PumpyMeter, body: any, caps: Set<string>):
+  Promise<{ thread: string } | { refuse: Record<string, unknown> }> {
+  const plusOnly = { status: "limit", kind: "pumpy", plan: meter.plan, upgrade: true, message: PUMPY_PLUS_ONLY };
+  if (!caps.has("program")) return { refuse: plusOnly };
+  const goalDoor = body?.goal === true;
+  const tid = String(body?.thread_id ?? "");
+  let free: string | null = meter.profile?.free_goal_thread ?? null;
+  if (!free) {
+    if (!goalDoor || isUuid(tid)) return { refuse: plusOnly };
+    const claim = crypto.randomUUID();
+    const won = await dbPatch("profiles", `id=eq.${userId}&free_goal_thread=is.null`,
+      { free_goal_thread: claim, free_goal_at: new Date().toISOString() });
+    // Two first turns at once: one claim wins, and both go to the winner's conversation.
+    free = won?.free_goal_thread === claim ? claim
+      : (await dbSelect("profiles", `id=eq.${userId}&select=free_goal_thread`))[0]?.free_goal_thread ?? null;
+    if (!free) return { refuse: plusOnly };
+  } else if (isUuid(tid) ? tid !== free : !goalDoor) {
+    return { refuse: plusOnly };
+  }
+  const state = await freeStateFor(userId, free);
+  if (state === "used") {
+    return { refuse: { status: "limit", kind: "goal", plan: meter.plan, upgrade: true, message: PUMPY_FREE_USED,
+      free_program: { state, thread_id: free } } };
+  }
+  return { thread: free };
+}
+
+/** "available", "open" or "used", from the goals that conversation made and the turns it has had. */
+async function freeStateFor(userId: string, free: string | null): Promise<"available" | "open" | "used"> {
+  if (!free) return "available";
+  const [goals, turns] = await settledAll<any>([
+    dbSelect("goals", `user_id=eq.${userId}&thread_id=eq.${free}&select=status`),
+    dbCount("saves_log", `user_id=eq.${userId}&kind=eq.goal_turn&shortcode=eq.${free}`),
+  ]);
+  return freeProgramState(free, goals as { status: string }[], Number(turns) || 0);
+}
+
+/** An ask card's answers, kept only for the questions it asked; the card is then marked answered. */
+async function pumpyAnswers(userId: string, threadId: string, body: any): Promise<Record<string, string | number>> {
+  const askId = Number(body?.ask_id);
+  if (!body?.answers || typeof body.answers !== "object" || !Number.isSafeInteger(askId) || askId < 1) return {};
+  try {
+    const rows = await dbSelect("pumpy_messages",
+      `id=eq.${askId}&user_id=eq.${userId}&thread_id=eq.${threadId}&role=eq.assistant&select=id,meta`);
+    const m = rows[0];
+    if (!m?.meta?.ask) return {};
+    const answers = cleanAnswers(body.answers, validateAsk(m.meta.ask));
+    if (!m.meta.ask.answered) {
+      await dbPatch("pumpy_messages", `id=eq.${askId}&user_id=eq.${userId}`, { meta: { ...m.meta, ask: { ...m.meta.ask, answered: true } } });
+    }
+    return answers;
+  } catch (e) {
+    console.error("pumpy answers could not be read", e);
+    return {};
+  }
+}
+
+/** Has this conversation heard that the person is under 18? */
+async function pumpyMinorKnown(userId: string, threadId: string): Promise<boolean> {
+  try {
+    const rows = await dbSelect("pumpy_messages",
+      `thread_id=eq.${threadId}&user_id=eq.${userId}&role=eq.user&meta->>minor=eq.true&select=id&limit=1`);
+    return rows.length > 0;
+  } catch { return false; }
+}
+
+async function toolLiftHistory(userId: string, raw: string) {
+  const q = String(raw ?? "").trim();
+  const e = catalogById(q) ?? canonicalize(q)?.entry ?? null;
+  if (!e) return { error: "unknown lift — use a catalog id like bench-press" };
+  const [logs, prof] = await settledAll<any>([
+    dbSelect("workout_logs",
+      `user_id=eq.${userId}&started_at=gte.${new Date(Date.now() - 84 * 86400000).toISOString()}&select=started_at,entries&order=started_at.desc&limit=200`),
+    dbSelect("profiles", `id=eq.${userId}&select=settings`),
+  ]);
+  const unit: Unit = (prof as any[])[0]?.settings?.unit === "kg" ? "kg" : "lb";
+  return { name: e.name, ...liftHistory(logs as LogRow[], e.id, Date.now(), unit) };
+}
+
+// What a goal coach needs beside the library: what they told us they want, their
+// weight if they typed one, their best lifts, and the goal already running.
+const SNAP_LIFTS = ["bench-press", "back-squat", "deadlift", "overhead-press", "front-squat", "hip-thrust"];
+
+async function pumpyGoalSnapshot(userId: string, settings: any, unit: Unit): Promise<string> {
+  const lines: string[] = [];
+  const it = settings?.intent;
+  if (it && !it.skipped) {
+    const aim = ({ strength: "get stronger", muscle: "build muscle", fat: "lose fat", consistency: "be consistent" } as Record<string, string>)[it.aim] ?? "";
+    const lift = it.lift?.exercise ? "wants " + it.lift.exercise + (it.lift.target ? " " + it.lift.target + " " + (it.lift.unit ?? unit) : "") : "";
+    const where = it.where === "both" ? "trains at the gym and at home" : it.where === "home" ? "trains at home" : it.where === "gym" ? "trains at a gym" : "";
+    const bits = [aim, lift, where].filter(Boolean);
+    if (bits.length) lines.push("INTENT: " + bits.join("; "));
+  }
+  const b = settings?.body;
+  if (Number(b?.weight) > 0) lines.push("BODY WEIGHT: " + b.weight + " " + (b.unit === "kg" ? "kg" : "lb") + (b.at ? " on " + b.at : "") + " (typed by the user)");
+  const [goals, logs] = await settledAll<any>([
+    dbSelect("goals", `user_id=eq.${userId}&status=eq.active&select=*&limit=1`),
+    dbSelect("workout_logs",
+      `user_id=eq.${userId}&started_at=gte.${new Date(Date.now() - 56 * 86400000).toISOString()}&select=started_at,entries&order=started_at.desc&limit=150`),
+  ]);
+  const est: string[] = [];
+  for (const id of SNAP_LIFTS) {
+    const m = liftMaxAt(logs as LogRow[], id, Date.now() + 1, unit);
+    if (m) est.push((catalogById(id)?.name ?? id) + " ~" + Math.round(m.est));
+  }
+  if (est.length) lines.push("EST. MAXES (Epley, last 8 weeks, " + unit + "): " + est.join(", "));
+  const g = (goals as any[])[0];
+  if (g) {
+    const days = (Date.parse(localToday(settings?.tz) + "T12:00:00Z") - Date.parse(g.start_day + "T12:00:00Z")) / 86400000;
+    const week = Math.min(g.weeks, Math.max(1, Math.floor(days / 7) + 1));
+    lines.push("ACTIVE GOAL: " + g.title + " (" + g.kind + (g.exercise ? ", " + g.exercise : "") + ") " +
+      (g.baseline ? "from " + g.baseline + " " : "") + (g.target ? "to " + g.target + " " + (g.unit ?? "") : "") +
+      (g.dream ? " (asked for " + g.dream + ")" : "") + ", " + g.start_day + " to " + g.end_day + ", week " + week + " of " + g.weeks +
+      ". A new program replaces it; say so when you propose one.");
+  }
+  return lines.join("\n");
+}
+
+async function pumpyGoalSnapshotSafe(userId: string, settings: any, unit: Unit): Promise<string> {
+  try { return await pumpyGoalSnapshot(userId, settings, unit); }
+  catch (e) { console.error("pumpy goal snapshot failed — the turn goes on without it —", e); return ""; }
+}
+
+// Undo, for 15 minutes after a program lands (undo_pumpy_program).
+async function handlePumpyUndo(req: Request, userId: string, cors: Cors): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const mid = Number(body?.message_id);
+  if (!Number.isSafeInteger(mid) || mid < 1) return json({ status: "error", message: "Choose the plan to undo." }, 400, cors);
+  try {
+    const result = await rpc("undo_pumpy_program", { p_user: userId, p_message: mid });
+    const code = result?.status === "not_found" ? 404 : result?.status === "conflict" ? 409 : 200;
+    return json(result, code, cors);
+  } catch (e) {
+    console.error("pumpy: undo failed", mid, e);
+    return json({ status: "error", message: "Spotter could not undo that. Please try again." }, 503, cors);
+  }
+}
+
+// Keep a Spotter Starter in Workouts: written from the server's own list (starters.ts),
+// never from anything the client sends, as kind "starter", which the library cap
+// neither refuses nor counts. Once per starter per person (shortcode starter-<key>).
+async function handleStarterKeep(req: Request, userId: string, cors: Cors): Promise<Response> {
+  const body = await req.json().catch(() => ({}));
+  const s = STARTERS.find((x) => x.key === String(body?.key ?? ""));
+  if (!s) return json({ status: "error", message: "That starter does not exist." }, 400, cors);
+  const shortcode = "starter-" + s.key;
+  const mine = () => dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${shortcode}&select=*`);
+  const had = await mine();
+  if (had.length) return json({ status: "ok", workout: had[0], created: false }, 200, cors);
+  try {
+    const row = await dbInsert("workouts", {
+      user_id: userId, url: "spotter://starter/" + s.key, shortcode, platform: "spotter", kind: "starter",
+      author: "Spotter", title: s.title, category: s.category, muscle_groups: s.muscle_groups, equipment: s.equipment,
+      difficulty: "beginner", duration_minutes: s.minutes, blocks: s.blocks, tags: ["starter"], has_full_workout: true,
+      extracted_by: "spotter:starter", ingest_status: "ready",
+    });
+    return json({ status: "ok", workout: row, created: true }, 200, cors);
+  } catch (e) {
+    // Two taps at once: the unique (user_id, shortcode) let one through.
+    const again = await mine();
+    if (again.length) return json({ status: "ok", workout: again[0], created: false }, 200, cors);
+    console.error("starter keep failed", userId, s.key, e);
+    return json({ status: "error", message: "Could not keep that workout. Try again in a moment." }, 503, cors);
+  }
+}
+
 async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promise<Response> {
   const body = await req.json().catch(() => ({}));
   const inputError = pumpyInputError(body);
@@ -14050,8 +14365,15 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   await ensureConfig();
   const cfg = pumpyConfig();
   const meter = await pumpyMeter(userId);
-  if (!plusPlan(meter.plan)) return json({ status: "limit", kind: "pumpy", plan: meter.plan, upgrade: true,
-    message: "Pumpy coaching is included with Spotter Plus: combine saved workouts, build a plan, get exercise alternatives and personalized recommendations." }, 403, cors);
+  const caps = capsOf(body);
+  // Basic reaches the coach through one door: its free goal conversation (B.2). A
+  // build that cannot draw a program never gets one, which is today's answer.
+  let freeThread: string | null = null;
+  if (!plusPlan(meter.plan)) {
+    const gate = await freeGoalGate(userId, meter, body, caps);
+    if ("refuse" in gate) return json(gate.refuse, 403, cors);
+    freeThread = gate.thread;
+  }
   const over = (used: number, cap: number | null) => cap !== null && used >= cap;
 
   if (meter.totals.minute >= cfg.perMinute) {
@@ -14092,7 +14414,7 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   }
 
   let thread: any = null;
-  const tid = String(body?.thread_id ?? "");
+  const tid = freeThread ?? String(body?.thread_id ?? "");
   if (isUuid(tid)) {
     const t = await dbSelect("pumpy_threads", `id=eq.${tid}&user_id=eq.${userId}&select=*`);
     thread = t[0] ?? null;
@@ -14121,7 +14443,10 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   // Existing conversations may contain constraints absent from this terse request.
   const combined = !thread && !tid ? deterministicCombine(message, refs, PUMPY_CONTEXT_CHARS) : null;
   if (!thread) {
-    thread = await dbInsert("pumpy_threads", { user_id: userId, title: message.slice(0, 60), workout_id: ctxWorkout?.id ?? null });
+    // Basic's free conversation keeps the id the server gave it, even when the
+    // person deleted it and came back: the ledger that counts its turns is keyed on it.
+    thread = await dbInsert("pumpy_threads", { ...(freeThread ? { id: freeThread } : {}), user_id: userId,
+      title: message.slice(0, 60), workout_id: ctxWorkout?.id ?? null });
   } else if (thread.workout_id !== (ctxWorkout?.id ?? null)) {
     // "Ask Pumpy about this workout" into a thread that already exists: the
     // thread now remembers the card, so the context survives the next turn.
@@ -14131,10 +14456,33 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   // The thread row holds one workout and there is no migration here, so the full
   // list rides on the user's own message: reopening the thread reads the chips
   // back off its most recent user turn.
+  // An ask card's answers, kept only for the questions it asked, on the message
+  // that sent them; the card itself is marked answered so it cannot be sent twice.
+  const answers = await pumpyAnswers(userId, thread.id, body);
   const userMsg = await dbInsert("pumpy_messages", {
     thread_id: thread.id, user_id: userId, role: "user", content: message,
-    meta: { refs: refs.map((w) => w.id) },
+    meta: {
+      refs: refs.map((w) => w.id),
+      ...(body?.goal === true ? { goal: true } : {}),
+      ...(Object.keys(answers).length ? { answers } : {}),
+      ...(mentionsMinor(message) || answers.adult === "No" ? { minor: true } : {}),
+    },
   });
+
+  // Before any model: signs of disordered eating, someone under 18 asking to lose
+  // weight, a question about medication or supplements. Each has its line, the
+  // same every time, and no plan (goals.ts safetyCheck). Free, and not a goal turn.
+  const safety = safetyCheck(message, { tz: meter.profile?.settings?.tz, minorKnown: await pumpyMinorKnown(userId, thread.id) });
+  if (safety) {
+    const m = await dbInsert("pumpy_messages", {
+      thread_id: thread.id, user_id: userId, role: "assistant", content: safety.reply, meta: { safety: safety.kind },
+    });
+    await pumpyRecordUsage(userId, thread.id, { calls: 0, inTok: 0, outTok: 0, credits: 0, cost: 0, model: null, shortCircuit: true });
+    try { await dbPatch("pumpy_threads", `id=eq.${thread.id}`, { updated_at: new Date().toISOString() }); } catch { /* cosmetic */ }
+    console.log("pumpy turn", thread.id, "safety=" + safety.kind);
+    return json({ status: "ok", thread_id: thread.id, user_message: userMsg, messages: [m], pending: null, model: null,
+      usage: { calls: 0, input_tokens: 0, output_tokens: 0, credits: 0 }, pumpy: pumpyBlock(meter) }, 200, cors);
+  }
 
   if (combined) {
     const m = await dbInsert("pumpy_messages", {
@@ -14178,7 +14526,7 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
   // not a stream of anything. From here the model is involved, so from here the
   // answer can be watched being written.
   if (!haveAI()) return json({ status: "error", message: "AI is not configured yet." }, 503, cors);
-  const args: PumpyTurn = { userId, thread, userMsg, message, refs, meter, cfg };
+  const args: PumpyTurn = { userId, thread, userMsg, message, refs, meter, cfg, caps, free: freeThread };
   if (!wantStream) return json(await pumpyRun(args, null), 200, cors);
   return ndjsonResponse(cors, async (sink) => {
     sink.send({ t: "final", ...(await pumpyRun(args, sink)) });
@@ -14195,21 +14543,41 @@ async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promis
 type PumpyTurn = {
   userId: string; thread: any; userMsg: any; message: string; refs: any[];
   meter: PumpyMeter; cfg: ReturnType<typeof pumpyConfig>;
+  /** What the client can draw (B.2): "ask" and "program". Absent on builds 5-10. */
+  caps?: Set<string>;
+  /** Basic's free goal conversation, when this turn is in it. */
+  free?: string | null;
 };
 
 export async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<Record<string, unknown>> {
   const { userId, thread, userMsg, message, refs, meter, cfg } = a;
+  const caps = a.caps ?? new Set<string>();
+  const goals = caps.has("program");
+  const settings = meter.profile?.settings ?? {};
+  const unit: Unit = settings.unit === "kg" ? "kg" : "lb";
   // The last few visible turns, compactly. Tool results from earlier turns are
   // not replayed — they can be thousands of tokens — only what each side said.
-  const [snapshot, hist] = await settledAll<any>([
+  const [snapshot, hist, goalSnap] = await settledAll<any>([
     pumpySnapshotSafe(userId),
     dbSelect("pumpy_messages",
       `thread_id=eq.${thread.id}&user_id=eq.${userId}&role=in.(user,assistant)&id=lt.${userMsg.id}&select=role,content,meta&order=id.desc&limit=${Math.max(1, Math.min(20, cfg.historyTurns))}`),
+    goals ? pumpyGoalSnapshotSafe(userId, settings, unit) : Promise.resolve(""),
   ]);
   const transcript = pumpyHistoryContext((hist as any[]).reverse());
   transcript.push(pumpyCurrentTurn(message, refs));
+  // What this conversation already knows that a program must respect: every
+  // answered ask card, and whether it has heard "I'm 15" or hit the support line.
+  const said = (hist as any[]).concat([userMsg]);
+  const vctx: ProposalCtx = {
+    caps, free: a.free ?? null, unit, today: localToday(settings.tz),
+    answers: said.filter((m: any) => m.role === "user" && m.meta?.answers).map((m: any) => m.meta.answers),
+    minor: said.some((m: any) => m.meta?.minor),
+    safetyStop: said.some((m: any) => m.meta?.safety === "ed"),
+    bodyWeight: Number(settings.body?.weight) > 0 ? unitTo(Number(settings.body.weight), settings.body.unit === "kg" ? "kg" : "lb", unit) : null,
+  };
 
-  const system = pumpySystem(new Date(), refs, snapshot as string);
+  const system = pumpySystem(new Date(), refs, (snapshot as string) + (goalSnap ? "\n\n" + goalSnap : ""),
+    { goals, ask: caps.has("ask"), free: !!a.free, tz: settings.tz });
   // A coach's turn is two sentences and maybe a proposal — and a proposal can be
   // a whole combined workout. Both dials are app_config's `pumpy.max_out` and
   // `pumpy.reasoning`, read through pumpyConfig() onto PUMPY_DEFAULTS (which says
@@ -14381,8 +14749,11 @@ export async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<R
 
     let proposal: PumpyProposal | null = null;
     let proposalError: string | null = null;
+    // One ask card per turn, and never beside a proposal: a turn that has enough to
+    // propose has nothing left to ask. A build that cannot draw it hears the questions.
+    const ask: Ask | null = goals && !r?.proposal ? validateAsk(r?.ask) : null;
     if (r?.proposal && typeof r.proposal === "object") {
-      const v = await validateProposal(userId, r.proposal);
+      const v = await validateProposal(userId, r.proposal, vctx);
       if ("error" in v) {
         transcript.push("[proposal rejected: " + v.error + " — fix it or answer without one]");
         if (step < PUMPY_MAX_STEPS - 1) { undoStreamed(); continue; }
@@ -14392,8 +14763,8 @@ export async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<R
         proposal = v;
       }
     }
-    const cleaned = pumpyClean(say, message);
-    let content = proposalError || cleaned || (proposal ? proposal.summary : "");
+    const cleaned = pumpyClean(say, message) + (ask && !caps.has("ask") ? " " + askAsText(ask) : "");
+    let content = proposalError || cleaned.trim() || (proposal ? proposal.summary : "") || (ask ? askAsText(ask) : "");
     let fellBack = false;
     if (!content) {
       // Nothing said and nothing proposed. The turn still read the catalog or a
@@ -14406,6 +14777,7 @@ export async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<R
     const meta: Record<string, unknown> = proposal
       ? { proposal, status: "pending", model: by }
       : { model: by };
+    if (ask && caps.has("ask")) meta.ask = ask;
     if (fellBack) meta.fallback = learned.length ? "learned" : "generic";
     const m = await dbInsert("pumpy_messages", {
       thread_id: thread.id, user_id: userId, role: "assistant", content, meta,
@@ -14423,6 +14795,12 @@ export async function pumpyRun(a: PumpyTurn, sink: StreamSink | null): Promise<R
   // One row per turn however many round trips it took: the legacy backstop counts turns.
   try { await dbInsert("saves_log", { user_id: userId, kind: "chat", cached: false, shortcode: null }); }
   catch (e) { console.error("chat saves_log insert failed", e); }
+  // Basic's free conversation is GOAL_FREE_TURNS model turns, counted where the
+  // client cannot reach and a deleted thread cannot take the count with it.
+  if (a.free && calls > 0) {
+    try { await dbInsert("saves_log", { user_id: userId, kind: "goal_turn", cached: false, shortcode: a.free }); }
+    catch (e) { console.error("goal_turn saves_log insert failed", e); }
+  }
   console.log("pumpy turn", thread.id, "calls=" + calls, "tools=" + toolCalls, "in=" + inTok, "out=" + outTok,
     "credits=" + credits, "snapshot_chars=" + String(snapshot).length, "by=" + (by ?? "-"),
     sink ? "streamed=" + onScreen : "whole",
@@ -15600,6 +15978,8 @@ Deno.serve(async (req: Request) => {
     if (req.method === "POST" && path === "/api/swap") return await handleSwap(req, userId, cors);
     if (req.method === "POST" && path === "/api/pumpy/chat") return await handlePumpyChat(req, userId, cors);
     if (req.method === "POST" && path === "/api/pumpy/confirm") return await handlePumpyConfirm(req, userId, cors);
+    if (req.method === "POST" && path === "/api/pumpy/undo") return await handlePumpyUndo(req, userId, cors);
+    if (req.method === "POST" && path === "/api/starters/keep") return await handleStarterKeep(req, userId, cors);
 
     if (req.method === "POST" && path === "/api/auth/apple/grant") {
       const body = await req.json().catch(() => ({}));
@@ -15709,6 +16089,11 @@ Deno.serve(async (req: Request) => {
           used: mc.previews, resets_at: utcNextMonth(),
         },
         pumpy: pumpyBlock(meter),
+        // Basic's one free goal program (B.2): whether it is still there to take.
+        free_program: plusPlan(uc.plan) ? null : {
+          state: await freeStateFor(userId, meter.profile?.free_goal_thread ?? null),
+          thread_id: meter.profile?.free_goal_thread ?? null,
+        },
       }, 200, cors);
     }
 
