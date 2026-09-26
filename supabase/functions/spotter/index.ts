@@ -14334,7 +14334,7 @@ async function handleStarterKeep(req: Request, userId: string, cors: Cors): Prom
   const shortcode = "starter-" + s.key;
   const mine = () => dbSelect("workouts", `user_id=eq.${userId}&shortcode=eq.${shortcode}&select=*`);
   const had = await mine();
-  if (had.length) return json({ status: "ok", workout: had[0], created: false }, 200, cors);
+  if (had.length) return json({ status: "ok", workout: await starterLogsTo(userId, had[0], s.title), created: false }, 200, cors);
   try {
     const row = await dbInsert("workouts", {
       user_id: userId, url: "spotter://starter/" + s.key, shortcode, platform: "spotter", kind: "starter",
@@ -14342,14 +14342,29 @@ async function handleStarterKeep(req: Request, userId: string, cors: Cors): Prom
       difficulty: "beginner", duration_minutes: s.minutes, blocks: s.blocks, tags: ["starter"], has_full_workout: true,
       extracted_by: "spotter:starter", ingest_status: "ready",
     });
-    return json({ status: "ok", workout: row, created: true }, 200, cors);
+    return json({ status: "ok", workout: await starterLogsTo(userId, row, s.title), created: true }, 200, cors);
   } catch (e) {
     // Two taps at once: the unique (user_id, shortcode) let one through.
     const again = await mine();
-    if (again.length) return json({ status: "ok", workout: again[0], created: false }, 200, cors);
+    if (again.length) return json({ status: "ok", workout: await starterLogsTo(userId, again[0], s.title), created: false }, 200, cors);
     console.error("starter keep failed", userId, s.key, e);
     return json({ status: "error", message: "Could not keep that workout. Try again in a moment." }, 503, cors);
   }
+}
+
+// A starter done before it was kept was logged with no card (it had no id yet), so
+// Ready to try, the card's status and "last time" would all read the kept copy as never
+// done. Keeping it gives this account's card-less sessions of it that card: matched by
+// the starter's title, which only a starter's own log carries with no workout_id. Best
+// effort — the keep stands if this fails, and a later keep tries again.
+async function starterLogsTo(userId: string, w: { id: string }, title: string): Promise<typeof w> {
+  try {
+    await dbPatchMany("workout_logs",
+      `user_id=eq.${userId}&workout_id=is.null&workout_title=eq.${encodeURIComponent(title)}`, { workout_id: w.id });
+  } catch (e) {
+    console.error("starter logs link failed", userId, w.id, e);
+  }
+  return w;
 }
 
 async function handlePumpyChat(req: Request, userId: string, cors: Cors): Promise<Response> {
