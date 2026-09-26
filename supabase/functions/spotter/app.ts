@@ -1180,7 +1180,7 @@ export const APP = String.raw`
   function guestKeep(p) {
     // An id of its own, so a retry after a lost answer is refused as a
     // duplicate rather than saved twice.
-    if (window.crypto && crypto.randomUUID) p.id = crypto.randomUUID();
+    if (!p.id && window.crypto && crypto.randomUUID) p.id = crypto.randomUUID();
     try { localStorage.setItem(GUEST_KEY, JSON.stringify(p)); } catch (e) { /* private mode: kept for this visit only */ }
   }
 
@@ -1230,9 +1230,11 @@ export const APP = String.raw`
         var row = box.appendChild(el("div", "strow")), img = el("img"), k;
         img.alt = "";
         img.src = cardArt({ kind: "starter", starter: s.key });
+        // Workout Mode opens first and the sheet closes behind it, on the one
+        // history entry, as every sheet hands over (askPaused).
         row.appendChild(rowBtn(img, s.title, s.minutes + " min · " + STARTER_NEED[s.key], function () {
-          closeSheet("asksheet");
           runStarter(s);
+          closeSheet("asksheet");
         }));
         if (!state.user) return;
         k = row.appendChild(el("button", "chip", starterKept(s.key) ? "Kept" : "Keep"));
@@ -10517,7 +10519,9 @@ export const APP = String.raw`
     pausedBar.sync();
     if (drawn.train && trainLean) drawDay();
     if (current) paintDock(current);
-    if (introLater) introAsk();
+    // Once the leaving has finished moving history: a sheet opened under a
+    // traversal still in flight would land on the wrong entry.
+    if (introLater) setTimeout(introAsk, 400);
   }
 
   // A session paused and walked away from waits in one bar above the tab bar, on
@@ -10979,6 +10983,8 @@ export const APP = String.raw`
   // truth whatever order the taps came in. One at a time, and never before the
   // row exists: in the live moment the insert may still be in the air.
   function sumWrite(c) {
+    // A guest's recap corrects the copy waiting on this phone (guestKeep).
+    if (!state.user) { guestKeep(c.payload); return; }
     if (!c.payload.id) { if (sumQueue.indexOf(c) < 0) sumQueue.push(c); return; }
     if (c.busy) { c.again = true; return; }
     var entries = c.logged.filter(function (e) { return e.sets.length; }), body = JSON.stringify(entries);
